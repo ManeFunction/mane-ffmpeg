@@ -1,0 +1,207 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using ManeFfmpeg.Core.Editing;
+using ManeFfmpeg.Core.Model;
+
+namespace ManeFfmpeg.App.ViewModels;
+
+public sealed partial class MainWindowViewModel
+{
+    /// <summary>Show keyframes and snap splits to them; turned on automatically for stream-copy presets.</summary>
+    [ObservableProperty]
+    public partial bool SnapToKeyframes { get; set; }
+
+    partial void OnSnapToKeyframesChanged(bool value)
+    {
+        if (value)
+            foreach (var source in State.Sources)
+                if (_media.TryGetValue(source.Id, out var info))
+                    _ = LoadAnalysisAsync(source, info);
+        Timeline.Invalidate();
+    }
+
+    public string TimelineDurationText => TimeFormat.Display(State.Timeline.Duration);
+
+    // ---- Inspector --------------------------------------------------------------------------------
+
+    private Clip? PrimaryClip => State.Timeline.Clips.FirstOrDefault(c => Timeline.Selection.Contains(c.Id));
+
+    private IReadOnlySet<string> TargetClips()
+    {
+        if (Timeline.Selection.Count > 0)
+            return Timeline.Selection;
+        return State.Timeline.Locate(Timeline.Playhead) is { } at
+            ? new HashSet<string> { State.Timeline.Clips[at.Index].Id }
+            : new HashSet<string>();
+    }
+
+    public bool HasSelection => Timeline.Selection.Count > 0;
+
+    public string SelectionTitle => Timeline.Selection.Count switch
+    {
+        0 => "No clip selected",
+        1 => PrimaryClip is { } c ? State.Source(c.SourceId)?.DisplayName ?? "Clip" : "Clip",
+        var n => $"{n} clips selected",
+    };
+
+    public string SelectionDetails
+    {
+        get
+        {
+            if (PrimaryClip is not { } clip)
+                return "Click a clip on the timeline to edit it. Space plays, S splits at the playhead.";
+            if (Timeline.Selection.Count > 1)
+            {
+                var total = State.Timeline.Clips.Where(c => Timeline.Selection.Contains(c.Id))
+                    .Aggregate(TimeSpan.Zero, (s, c) => s + c.Duration);
+                return $"Total {TimeFormat.Display(total)}";
+            }
+            return $"Duration {TimeFormat.Display(clip.Duration)}";
+        }
+    }
+
+    public string ClipIn
+    {
+        get => PrimaryClip is { } c ? TimeFormat.Display(c.In) : "";
+        set
+        {
+            if (PrimaryClip is { } c && TimeFormat.TryParse(value, out var t) && SourceDuration(c) is { } d)
+                Commit(State with { Timeline = TimelineEditor.SetRange(State.Timeline, c.Id, t, c.Out, d) });
+            OnSelectionChanged();
+        }
+    }
+
+    public string ClipOut
+    {
+        get => PrimaryClip is { } c ? TimeFormat.Display(c.Out) : "";
+        set
+        {
+            if (PrimaryClip is { } c && TimeFormat.TryParse(value, out var t) && SourceDuration(c) is { } d)
+                Commit(State with { Timeline = TimelineEditor.SetRange(State.Timeline, c.Id, c.In, t, d) });
+            OnSelectionChanged();
+        }
+    }
+
+    /// <summary>Audio offset of the selected clip(s), in milliseconds; positive = audio later.</summary>
+    public decimal? AudioOffsetMs
+    {
+        get => PrimaryClip is { } c ? (decimal)Math.Round(c.AudioOffset.TotalMilliseconds, 1) : null;
+        set
+        {
+            if (value is not { } ms || Timeline.Selection.Count == 0)
+                return;
+            var offset = TimeSpan.FromTicks((long)Math.Round((double)ms * TimeSpan.TicksPerMillisecond));
+            Commit(State with { Timeline = TimelineEditor.SetAudioOffset(State.Timeline, Timeline.Selection, offset) });
+        }
+    }
+
+    public string AudioOffsetHint => PrimaryClip is { } c && FrameDuration(c) is { } frame && frame > TimeSpan.Zero
+        ? c.AudioOffset == TimeSpan.Zero
+            ? "Audio in sync with its video."
+            : $"≈ {c.AudioOffset.TotalMilliseconds / frame.TotalMilliseconds:+0.0;−0.0} frames · audio plays {(c.AudioOffset > TimeSpan.Zero ? "later" : "earlier")}"
+        : "";
+
+    internal void OnSelectionChanged()
+    {
+        OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(SelectionTitle));
+        OnPropertyChanged(nameof(SelectionDetails));
+        OnPropertyChanged(nameof(ClipIn));
+        OnPropertyChanged(nameof(ClipOut));
+        OnPropertyChanged(nameof(AudioOffsetMs));
+        OnPropertyChanged(nameof(AudioOffsetHint));
+    }
+
+    private TimeSpan? SourceDuration(Clip clip) => _media.TryGetValue(clip.SourceId, out var info) ? info.Duration : null;
+
+    private TimeSpan? FrameDuration(Clip clip) =>
+        _media.TryGetValue(clip.SourceId, out var info) && info.Video is { } v ? TimeFormat.FrameDuration(v.FrameRate) : null;
+
+    // ---- Edits ------------------------------------------------------------------------------------
+
+    [RelayCommand]
+    private void Split()
+    {
+        var timeline = State.Timeline;
+        if (timeline.Locate(Timeline.Playhead) is not { } at)
+            return;
+        var clip = timeline.Clips[at.Index];
+        var source = State.Source(clip.SourceId);
+        var sourceTime = clip.In + (Timeline.Playhead - at.ClipStart);
+        if (source is not null && _media.TryGetValue(source.Id, out var info) && info.Video is { } video)
+        {
+            sourceTime = SnapToKeyframes && _app.Keyframes?.TryGet(source.Path) is { } keyframes
+                ? Nearest(keyframes.Times, sourceTime)
+                : TimeFormat.SnapToFrame(sourceTime, video.FrameRate, video.StartOffset);
+        }
+        var (next, rightId) = TimelineEditor.Split(timeline, at.Index, sourceTime);
+        if (rightId is null)
+        {
+            StatusMessage = "Move the playhead inside a clip (away from its edges) to split.";
+            return;
+        }
+        Commit(State with { Timeline = next });
+        Timeline.Selection.Clear();
+        Timeline.Selection.Add(rightId);
+        Timeline.Invalidate();
+        OnSelectionChanged();
+        StatusMessage = null;
+    }
+
+    private static TimeSpan Nearest(IReadOnlyList<TimeSpan> times, TimeSpan target) =>
+        times.MinBy(t => Math.Abs((t - target).Ticks));
+
+    [RelayCommand]
+    private void DeleteSelection()
+    {
+        if (Timeline.Selection.Count == 0)
+        {
+            StatusMessage = "Select clips to delete.";
+            return;
+        }
+        Commit(State with { Timeline = TimelineEditor.Delete(State.Timeline, Timeline.Selection) });
+    }
+
+    [RelayCommand]
+    private void SelectAll() => Timeline.SelectAll();
+
+    [RelayCommand]
+    private void NudgeAudio(string milliseconds)
+    {
+        var ms = double.Parse(milliseconds, System.Globalization.CultureInfo.InvariantCulture);
+        Commit(State with { Timeline = TimelineEditor.NudgeAudioOffset(State.Timeline, TargetClips(), TimeSpan.FromMilliseconds(ms)) });
+    }
+
+    [RelayCommand]
+    private void NudgeAudioFrames(string frames)
+    {
+        var targets = TargetClips();
+        var clip = State.Timeline.Clips.FirstOrDefault(c => targets.Contains(c.Id));
+        if (clip is null || FrameDuration(clip) is not { } frame)
+            return;
+        var delta = frame * int.Parse(frames, System.Globalization.CultureInfo.InvariantCulture);
+        Commit(State with { Timeline = TimelineEditor.NudgeAudioOffset(State.Timeline, targets, delta) });
+    }
+
+    [RelayCommand]
+    private void ResetAudioOffset() =>
+        Commit(State with { Timeline = TimelineEditor.SetAudioOffset(State.Timeline, TargetClips(), TimeSpan.Zero) });
+
+    [RelayCommand]
+    private void ApplyOffsetToSource()
+    {
+        if (PrimaryClip is not { } clip)
+            return;
+        Commit(State with { Timeline = TimelineEditor.SetAudioOffsetForSource(State.Timeline, clip.SourceId, clip.AudioOffset) });
+        StatusMessage = $"Audio offset {TimeFormat.Offset(clip.AudioOffset)} applied to every clip of {State.Source(clip.SourceId)?.DisplayName}.";
+    }
+
+    [RelayCommand]
+    private void ZoomIn() => Timeline.ZoomAroundPlayhead(1.5);
+
+    [RelayCommand]
+    private void ZoomOut() => Timeline.ZoomAroundPlayhead(1 / 1.5);
+
+    [RelayCommand]
+    private void ZoomFit() => Timeline.Fit();
+}

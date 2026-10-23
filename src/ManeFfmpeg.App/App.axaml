@@ -1,0 +1,66 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ManeFfmpeg.App.App"
+             Name="Mane FFmpeg"
+             RequestedThemeVariant="Dark">
+
+    <NativeMenu.Menu>
+        <NativeMenu>
+            <NativeMenuItem Header="About Mane FFmpeg" Click="OnAboutClicked" />
+            <NativeMenuItem Header="Settings…" Click="OnSettingsClicked" />
+        </NativeMenu>
+    </NativeMenu.Menu>
+
+    <Application.Resources>
+        <StreamGeometry x:Key="IconPlay">M8,5 L19,12 L8,19 Z</StreamGeometry>
+        <StreamGeometry x:Key="IconPause">M7,5 H10.5 V19 H7 Z M13.5,5 H17 V19 H13.5 Z</StreamGeometry>
+        <StreamGeometry x:Key="IconStepBack">M6,5 H8 V19 H6 Z M18,5 L9,12 L18,19 Z</StreamGeometry>
+        <StreamGeometry x:Key="IconStepForward">M16,5 H18 V19 H16 Z M6,5 L15,12 L6,19 Z</StreamGeometry>
+        <StreamGeometry x:Key="IconToStart">M5,5 H7 V19 H5 Z M13,5 L8,12 L13,19 Z M20,5 L15,12 L20,19 Z</StreamGeometry>
+        <StreamGeometry x:Key="IconToEnd">M17,5 H19 V19 H17 Z M11,5 L16,12 L11,19 Z M4,5 L9,12 L4,19 Z</StreamGeometry>
+        <StreamGeometry x:Key="IconSpeaker">M4,9 H8 L13,5 V19 L8,15 H4 Z M15.5,8.5 C17,10 17,14 15.5,15.5 L16.9,16.9 C19,14.8 19,9.2 16.9,7.1 Z</StreamGeometry>
+        <SolidColorBrush x:Key="PanelBrush" Color="#1B1C21" />
+        <SolidColorBrush x:Key="PanelBorderBrush" Color="#2A2B31" />
+        <SolidColorBrush x:Key="AccentWarnBrush" Color="#F5A623" />
+        <SolidColorBrush x:Key="ErrorBrush" Color="#FF6B6B" />
+        <SolidColorBrush x:Key="OkBrush" Color="#5FD38D" />
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+
+        <Style Selector="Border.panel">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+        <Style Selector="TextBlock.title">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Opacity" Value="0.7" />
+        </Style>
+        <Style Selector="TextBlock.dim">
+            <Setter Property="Opacity" Value="0.6" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Button.tool">
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Button.icon">
+            <Setter Property="Padding" Value="6" />
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.icon PathIcon">
+            <Setter Property="Width" Value="16" />
+            <Setter Property="Height" Value="16" />
+        </Style>
+        <Style Selector="GridSplitter">
+            <Setter Property="Background" Value="#101114" />
+        </Style>
+    </Application.Styles>
+</Application>

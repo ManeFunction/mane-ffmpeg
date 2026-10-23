@@ -1,0 +1,248 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:ManeFfmpeg.App.ViewModels"
+        xmlns:controls="using:ManeFfmpeg.App.Controls"
+        xmlns:model="using:ManeFfmpeg.Core.Model"
+        mc:Ignorable="d" d:DesignWidth="1400" d:DesignHeight="900"
+        x:Class="ManeFfmpeg.App.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Icon="/Assets/app.ico"
+        Title="{Binding Title}"
+        Width="1400" Height="900" MinWidth="960" MinHeight="640"
+        DragDrop.AllowDrop="True">
+
+    <DockPanel>
+        <NativeMenuBar DockPanel.Dock="Top" />
+
+        <!-- Export bar -->
+        <Border DockPanel.Dock="Bottom" Classes="panel" Margin="8,0,8,8" Padding="10,8">
+            <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" >
+                    <TextBlock Grid.Column="0" Text="Preset" VerticalAlignment="Center" Classes="title" Margin="0,0,8,0" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="0,0,12,0">
+                        <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}" MinWidth="170"
+                                  IsEnabled="{Binding IsIdle}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="model:Preset">
+                                    <TextBlock Text="{Binding Name}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button Classes="tool" Content="Edit presets…" Command="{Binding ShowPresetsCommand}" />
+                    </StackPanel>
+                    <Grid Grid.Column="2" ColumnDefinitions="Auto,*,Auto,Auto">
+                        <TextBlock Text="Save to" VerticalAlignment="Center" Classes="title" Margin="0,0,8,0" />
+                        <Border Grid.Column="1" Background="#121317" CornerRadius="4" Padding="8,0" BorderBrush="{StaticResource PanelBorderBrush}"
+                                BorderThickness="1" ToolTip.Tip="{Binding OutputDisplay}">
+                            <TextBlock Text="{Binding OutputDisplay}" VerticalAlignment="Center" TextTrimming="LeadingCharacterEllipsis" />
+                        </Border>
+                        <Button Grid.Column="2" Classes="tool" Content="Choose…" Margin="4,0,0,0"
+                                Command="{Binding ChooseOutputCommand}" IsEnabled="{Binding IsIdle}" />
+                        <Button Grid.Column="3" Classes="tool" Content="Auto" Margin="4,0,0,0"
+                                Command="{Binding UseAutomaticOutputCommand}" IsEnabled="{Binding IsIdle}"
+                                ToolTip.Tip="Name the file after the project / first video" />
+                    </Grid>
+                    <Button Grid.Column="3" Classes="accent" Content="Export" Margin="12,0,0,0" Padding="22,6"
+                            Command="{Binding ExportCommand}" IsVisible="{Binding IsIdle}" />
+                    <Button Grid.Column="4" Content="Cancel" Margin="8,0,0,0" Padding="16,6"
+                            Command="{Binding CancelExportCommand}" IsVisible="{Binding IsExporting}" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding IsExporting}">
+                    <ProgressBar Value="{Binding ExportProgress}" Minimum="0" Maximum="100" Height="8" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="{Binding ExportProgressText}" Margin="12,0,0,0" VerticalAlignment="Center"
+                               FontFeatures="tnum" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto,Auto">
+                    <SelectableTextBlock Text="{Binding ExportStatus}" VerticalAlignment="Center" TextWrapping="Wrap"
+                                         Foreground="{StaticResource OkBrush}" IsVisible="{Binding !ExportFailed}" />
+                    <SelectableTextBlock Text="{Binding ExportStatus}" VerticalAlignment="Center" TextWrapping="Wrap"
+                                         Foreground="{StaticResource ErrorBrush}" IsVisible="{Binding ExportFailed}" />
+                    <Button Grid.Column="1" Classes="tool" Content="Show in folder" Command="{Binding RevealOutputCommand}"
+                            IsVisible="{Binding CanReveal}" Margin="8,0,0,0" />
+                    <ToggleButton Grid.Column="2" Classes="tool" Content="ffmpeg command" IsChecked="{Binding ShowCommand}"
+                                  Margin="8,0,0,0" FontSize="12" Padding="10,4" />
+                </Grid>
+
+                <TextBox IsVisible="{Binding ShowCommand}" Text="{Binding CommandPreview, Mode=OneWay}" IsReadOnly="True"
+                         TextWrapping="Wrap" MaxHeight="110" FontFamily="Menlo, DejaVu Sans Mono, monospace" FontSize="11"
+                         AcceptsReturn="True" />
+                <TextBox IsVisible="{Binding ExportLog, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding ExportLog, Mode=OneWay}"
+                         IsReadOnly="True" TextWrapping="Wrap" MaxHeight="110" FontFamily="Menlo, DejaVu Sans Mono, monospace"
+                         FontSize="11" AcceptsReturn="True" />
+            </StackPanel>
+        </Border>
+
+        <Grid x:Name="MainGrid" RowDefinitions="*,6,232" Margin="8,8,8,6">
+            <Grid x:Name="TopGrid" Grid.Row="0" ColumnDefinitions="300,6,*">
+                <!-- Left: media bin + inspector -->
+                <Grid Grid.Column="0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" MinHeight="120" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Border Classes="panel" Padding="8">
+                        <DockPanel>
+                            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="2,0,0,6">
+                                <TextBlock Text="VIDEOS" Classes="title" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Classes="tool" Content="+ Add videos…" Command="{Binding AddMediaCommand}" />
+                            </Grid>
+                            <TextBlock DockPanel.Dock="Bottom" Text="{Binding ToolsError}" Foreground="{StaticResource ErrorBrush}"
+                                       TextWrapping="Wrap" FontSize="12" Margin="2,6,0,0"
+                                       IsVisible="{Binding ToolsError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                            <Panel>
+                                <TextBlock Text="Drop video files here or use “Add videos…”." Classes="dim" TextWrapping="Wrap"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" Margin="16"
+                                           IsVisible="{Binding HasNoSources}" />
+                                <ListBox x:Name="SourcesList" ItemsSource="{Binding Sources}" Background="Transparent">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SourceItemViewModel">
+                                            <Grid ColumnDefinitions="4,*" Margin="0,2">
+                                                <Border Background="{Binding Brush}" CornerRadius="2" />
+                                                <StackPanel Grid.Column="1" Margin="8,0,0,0" Spacing="2">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                                               ToolTip.Tip="{Binding Path}" />
+                                                    <TextBlock Text="{Binding Details}" Classes="dim" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding StatusText}" FontSize="11" TextWrapping="Wrap"
+                                                               Foreground="{StaticResource AccentWarnBrush}"
+                                                               IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                                    <ComboBox ItemsSource="{Binding AudioChoices}" SelectedIndex="{Binding AudioStreamIndex}"
+                                                              IsVisible="{Binding HasAudioChoice}" FontSize="11" HorizontalAlignment="Stretch"
+                                                              ToolTip.Tip="Audio track used for this video" />
+                                                </StackPanel>
+                                                <Grid.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="Preview this video" Click="OnPreviewSourceClicked" />
+                                                        <MenuItem Header="Add whole video to timeline" Click="OnAppendSourceClicked" />
+                                                        <MenuItem Header="Relink…" Click="OnRelinkSourceClicked" />
+                                                        <Separator />
+                                                        <MenuItem Header="Remove from project" Click="OnRemoveSourceClicked" />
+                                                    </ContextMenu>
+                                                </Grid.ContextMenu>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Panel>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Inspector -->
+                    <Border Grid.Row="1" Classes="panel" Padding="10" Margin="0,8,0,0">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="CLIP" Classes="title" />
+                            <TextBlock Text="{Binding SelectionTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding SelectionDetails}" Classes="dim" TextWrapping="Wrap" />
+                            <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto" IsVisible="{Binding HasSelection}">
+                                <TextBlock Text="In" Classes="dim" />
+                                <TextBlock Grid.Column="2" Text="Out" Classes="dim" />
+                                <TextBox Grid.Row="1" Text="{Binding ClipIn, UpdateSourceTrigger=LostFocus}" FontFeatures="tnum" />
+                                <TextBox Grid.Row="1" Grid.Column="2" Text="{Binding ClipOut, UpdateSourceTrigger=LostFocus}" FontFeatures="tnum" />
+                            </Grid>
+                            <StackPanel Spacing="6" IsVisible="{Binding HasSelection}">
+                                <TextBlock Text="Audio offset (ms) — positive plays audio later" Classes="dim" TextWrapping="Wrap" />
+                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                    <Button Classes="tool" Content="−10" Command="{Binding NudgeAudioCommand}" CommandParameter="-10" />
+                                    <NumericUpDown Grid.Column="1" Value="{Binding AudioOffsetMs}" Increment="1" FormatString="0.#"
+                                                   Minimum="-60000" Maximum="60000" Margin="4,0" />
+                                    <Button Grid.Column="2" Classes="tool" Content="+10" Command="{Binding NudgeAudioCommand}" CommandParameter="10" />
+                                </Grid>
+                                <Grid ColumnDefinitions="*,*,*" >
+                                    <Button Classes="tool" Content="−1 frame" HorizontalAlignment="Stretch" Margin="0,0,4,0"
+                                            Command="{Binding NudgeAudioFramesCommand}" CommandParameter="-1" />
+                                    <Button Grid.Column="1" Classes="tool" Content="Reset" HorizontalAlignment="Stretch" Margin="0,0,4,0"
+                                            Command="{Binding ResetAudioOffsetCommand}" />
+                                    <Button Grid.Column="2" Classes="tool" Content="+1 frame" HorizontalAlignment="Stretch"
+                                            Command="{Binding NudgeAudioFramesCommand}" CommandParameter="1" />
+                                </Grid>
+                                <TextBlock Text="{Binding AudioOffsetHint}" Classes="dim" TextWrapping="Wrap" />
+                                <Button Classes="tool" Content="Use this offset for all clips of this video" HorizontalAlignment="Stretch"
+                                        Command="{Binding ApplyOffsetToSourceCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <GridSplitter Grid.Column="1" ResizeDirection="Columns" />
+
+                <!-- Preview -->
+                <Border Grid.Column="2" Classes="panel" Padding="0" ClipToBounds="True">
+                    <DockPanel>
+                        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="10,6">
+                            <TextBlock Text="{Binding PreviewTitle}" Classes="title" VerticalAlignment="Center" />
+                            <Button Grid.Column="1" Classes="tool" Content="← Back to timeline" Command="{Binding BackToTimelineCommand}"
+                                    IsVisible="{Binding IsSourceMode}" />
+                        </Grid>
+
+                        <!-- Transport -->
+                        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="Auto,*,Auto,Auto" Margin="8,6">
+                            <StackPanel Orientation="Horizontal" Spacing="2">
+                                <Button Classes="icon" Command="{Binding GoToStartCommand}" ToolTip.Tip="To start (Home)">
+                                    <PathIcon Data="{StaticResource IconToStart}" />
+                                </Button>
+                                <Button Classes="icon" Command="{Binding StepFrameCommand}" CommandParameter="-1" ToolTip.Tip="Previous frame (←)">
+                                    <PathIcon Data="{StaticResource IconStepBack}" />
+                                </Button>
+                                <Button Classes="icon" Command="{Binding PlayPauseCommand}" ToolTip.Tip="Play / pause (Space)" Width="44">
+                                    <Panel>
+                                        <PathIcon Data="{StaticResource IconPlay}" IsVisible="{Binding !IsPlaying}" />
+                                        <PathIcon Data="{StaticResource IconPause}" IsVisible="{Binding IsPlaying}" />
+                                    </Panel>
+                                </Button>
+                                <Button Classes="icon" Command="{Binding StepFrameCommand}" CommandParameter="1" ToolTip.Tip="Next frame (→)">
+                                    <PathIcon Data="{StaticResource IconStepForward}" />
+                                </Button>
+                                <Button Classes="icon" Command="{Binding GoToEndCommand}" ToolTip.Tip="To end (End)">
+                                    <PathIcon Data="{StaticResource IconToEnd}" />
+                                </Button>
+                                <TextBlock Text="{Binding PositionText}" VerticalAlignment="Center" Margin="10,0,0,0" FontFeatures="tnum" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsSourceMode}" Margin="0,0,12,0">
+                                <TextBlock Text="{Binding MarksText}" VerticalAlignment="Center" Classes="dim" FontFeatures="tnum" Margin="0,0,6,0" />
+                                <Button Classes="tool" Content="Mark In (I)" Command="{Binding SetMarkInCommand}" />
+                                <Button Classes="tool" Content="Mark Out (O)" Command="{Binding SetMarkOutCommand}" />
+                                <Button Classes="tool accent" Content="Add to timeline" Command="{Binding AddMarkedRangeCommand}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4">
+                                <PathIcon Data="{StaticResource IconSpeaker}" Width="14" Height="14" Opacity="0.7" />
+                                <Slider Minimum="0" Maximum="100" Value="{Binding Volume}" Width="90" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Grid>
+
+                        <controls:MpvVideoView x:Name="Video" Player="{Binding Player}" Message="{Binding PreviewMessage}" />
+                    </DockPanel>
+                </Border>
+            </Grid>
+
+            <GridSplitter Grid.Row="1" ResizeDirection="Rows" />
+
+            <!-- Timeline -->
+            <Border Grid.Row="2" Classes="panel" Padding="0" ClipToBounds="True">
+                <DockPanel>
+                    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" Margin="8,6">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Classes="tool" Content="✂ Split (S)" Command="{Binding SplitCommand}" />
+                            <Button Classes="tool" Content="Delete" Command="{Binding DeleteSelectionCommand}" />
+                            <Button Classes="tool" Content="Undo" Command="{Binding UndoCommand}" />
+                            <Button Classes="tool" Content="Redo" Command="{Binding RedoCommand}" />
+                            <CheckBox Content="Snap to keyframes" IsChecked="{Binding SnapToKeyframes}" Margin="10,0,0,0" FontSize="12"
+                                      ToolTip.Tip="Show keyframes and split on them — needed for exact stream-copy cuts" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" Text="{Binding StatusMessage}" Classes="dim" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" Margin="12,0" />
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="{Binding TimelineDurationText}" VerticalAlignment="Center" Classes="dim" FontFeatures="tnum" Margin="0,0,8,0" />
+                            <Button Classes="tool" Content="−" Command="{Binding ZoomOutCommand}" ToolTip.Tip="Zoom out (−)" />
+                            <Button Classes="tool" Content="Fit" Command="{Binding ZoomFitCommand}" ToolTip.Tip="Fit timeline" />
+                            <Button Classes="tool" Content="+" Command="{Binding ZoomInCommand}" ToolTip.Tip="Zoom in (+)" />
+                        </StackPanel>
+                    </Grid>
+                    <controls:TimelineControl x:Name="TimelineView" Timeline="{Binding Timeline}" />
+                </DockPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

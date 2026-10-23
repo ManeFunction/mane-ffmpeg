@@ -1,0 +1,69 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ManeFfmpeg.App.ViewModels"
+        xmlns:model="using:ManeFfmpeg.Core.Model"
+        x:Class="ManeFfmpeg.App.Views.PresetsWindow"
+        x:DataType="vm:PresetsViewModel"
+        Title="Export Presets" Width="860" Height="560" MinWidth="700" MinHeight="460"
+        WindowStartupLocation="CenterOwner" Icon="/Assets/app.ico">
+    <Grid ColumnDefinitions="270,*" Margin="12">
+        <DockPanel Margin="0,0,12,0">
+            <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,8,0,0">
+                <Grid ColumnDefinitions="*,6,*,6,*">
+                    <Button Content="Add" HorizontalAlignment="Stretch" Command="{Binding AddCommand}" />
+                    <Button Grid.Column="2" Content="Duplicate" HorizontalAlignment="Stretch" Command="{Binding DuplicateCommand}" />
+                    <Button Grid.Column="4" Content="Delete" HorizontalAlignment="Stretch" Command="{Binding DeleteCommand}" />
+                </Grid>
+                <Button Content="Restore built-in presets" HorizontalAlignment="Stretch" Command="{Binding RestoreBuiltInsCommand}" />
+            </StackPanel>
+            <Border Classes="panel">
+                <ListBox ItemsSource="{Binding Presets}" SelectedItem="{Binding Selected}" Background="Transparent">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="model:Preset">
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Arguments}" Classes="dim" TextTrimming="CharacterEllipsis" FontSize="11" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+        </DockPanel>
+
+        <ScrollViewer Grid.Column="1" IsVisible="{Binding HasSelection}">
+            <StackPanel Spacing="10">
+                <TextBlock Text="Name" Classes="title" />
+                <TextBox Text="{Binding Name}" />
+                <TextBlock Text="ffmpeg output options" Classes="title" />
+                <TextBox Text="{Binding Arguments}" AcceptsReturn="False" TextWrapping="Wrap" MinHeight="60"
+                         FontFamily="Menlo, DejaVu Sans Mono, monospace" FontSize="12"
+                         PlaceholderText="-c:v libx265 -crf 28 -preset slow -c:a copy" />
+                <TextBlock Classes="dim" TextWrapping="Wrap"
+                           Text="Everything ffmpeg accepts between the inputs and the output file. Inputs, -map, -ss/-t and the output name are filled in by the editor; -vf/-af are applied after the clips are joined." />
+                <Grid ColumnDefinitions="*,12,*">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="File extension" Classes="title" />
+                        <AutoCompleteBox Text="{Binding Extension}" ItemsSource="{Binding ExtensionSuggestions}" FilterMode="StartsWith"
+                                         PlaceholderText="empty = same as the first video" MinimumPrefixLength="0" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="6">
+                        <TextBlock Text="Audio when copying isn't possible" Classes="title" />
+                        <TextBox Text="{Binding AudioFallback}" FontFamily="Menlo, DejaVu Sans Mono, monospace" FontSize="12" />
+                    </StackPanel>
+                </Grid>
+                <Border Classes="panel" Padding="10">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="What this preset does" Classes="title" />
+                        <TextBlock Text="{Binding Analysis}" TextWrapping="Wrap" FontSize="12" />
+                        <TextBlock Text="{Binding Warnings}" TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource AccentWarnBrush}"
+                                   IsVisible="{Binding Warnings, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    </StackPanel>
+                </Border>
+                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                    <Button Content="Revert" Command="{Binding RevertCommand}" />
+                    <Button Content="Save preset" Classes="accent" Command="{Binding SaveCommand}" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Window>
