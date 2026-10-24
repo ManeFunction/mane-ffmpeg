@@ -92,23 +92,11 @@ public static class ExportPlanner
         if (clips.Count == 0)
             throw new ExportPlanException("The timeline is empty.");
 
-        PresetArguments args;
-        IReadOnlyList<string> fallback;
-        try
-        {
-            args = PresetArguments.Parse(job.Preset.Arguments);
-            fallback = PresetArguments.Tokenize(job.Preset.AudioFallbackArguments);
-        }
-        catch (FormatException ex)
-        {
-            throw new ExportPlanException($"Preset \"{job.Preset.Name}\": {ex.Message}");
-        }
-        if (args.NoVideo)
-            throw new ExportPlanException("The preset disables video (-vn).");
-        if (args.VideoCopy && args.VideoFilter is not null)
-            throw new ExportPlanException("The preset copies video (-c:v copy) but also sets a video filter.");
-        if (args.AudioCopy && args.AudioFilter is not null)
-            throw new ExportPlanException("The preset copies audio (-c:a copy) but also sets an audio filter.");
+        var analysis = PresetAnalysis.Of(job.Preset);
+        if (!analysis.IsValid)
+            throw new ExportPlanException($"Preset \"{job.Preset.Name}\": {analysis.Errors[0]}");
+        var args = analysis.Arguments!;
+        var fallback = analysis.Fallback;
 
         var items = clips.Select(c => Resolve(job, c, args)).ToList();
         foreach (var item in items)

@@ -93,16 +93,8 @@ public sealed partial class MainWindowViewModel
 
     partial void OnSelectedPresetChanged(Preset? value)
     {
-        if (value is not null)
-        {
-            try
-            {
-                SnapToKeyframes = PresetArguments.Parse(value.Arguments).VideoCopy;
-            }
-            catch (FormatException)
-            {
-            }
-        }
+        if (value is not null && PresetAnalysis.Of(value).Arguments is { } args)
+            SnapToKeyframes = args.VideoCopy;
         OnPropertyChanged(nameof(OutputDisplay));
         RefreshDirty();
         InvalidatePlanPreview();
@@ -199,7 +191,7 @@ public sealed partial class MainWindowViewModel
         if (SelectedPreset is not { } preset)
             throw new ExportPlanException("Choose a preset.");
         var keyframes = new Dictionary<string, KeyframeIndex>();
-        if (PresetArguments.Parse(preset.Arguments).VideoCopy && _app.Keyframes is { } service)
+        if (PresetAnalysis.Of(preset).VideoCopy && _app.Keyframes is { } service)
         {
             foreach (var source in State.Sources.Where(s => State.Timeline.Clips.Any(c => c.SourceId == s.Id)))
             {

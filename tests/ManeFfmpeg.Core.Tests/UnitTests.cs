@@ -108,6 +108,55 @@ public class PresetArgumentsTests
     }
 }
 
+public class PresetAnalysisTests
+{
+    [Theory]
+    [InlineData("-c:v libx264 -vn", "disables video")]
+    [InlineData("-c:v copy -vf scale=640:-2", "Video filters")]
+    [InlineData("-c:a copy -af volume=2", "Audio filters")]
+    [InlineData("-c:v libx264 extra.mkv", "extra.mkv")]
+    [InlineData("-vf 'scale", "quote")]
+    public void Unusable_presets_are_errors(string arguments, string expected)
+    {
+        var analysis = PresetAnalysis.Of(arguments, Preset.DefaultAudioFallback);
+        Assert.False(analysis.IsValid);
+        Assert.Contains(analysis.Errors, e => e.Contains(expected, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Bad_fallback_is_an_error_and_warnings_pass_through()
+    {
+        var analysis = PresetAnalysis.Of("-y -c:v copy -c:a copy", "-c:a 'aac");
+        Assert.Contains(analysis.Errors, e => e.StartsWith("Audio fallback"));
+        Assert.Single(analysis.Warnings);
+        Assert.True(analysis.VideoCopy);
+    }
+
+    [Fact]
+    public void Audio_summary_follows_the_planner()
+    {
+        Assert.Contains("audio offset", PresetAnalysis.Of(Preset.PlaneCopy).AudioSummary("-c:a aac")!);
+        Assert.Contains("single clip", PresetAnalysis.Of(Preset.ForStorage).AudioSummary("-c:a aac")!);
+        Assert.Contains("dropped", PresetAnalysis.Of("-c:v libx264 -an", "").AudioSummary("")!);
+    }
+
+    [Fact]
+    public void Planner_refuses_an_invalid_preset_by_name()
+    {
+        var job = new ExportJob
+        {
+            State = new ProjectState([new SourceMedia { Id = "s", Path = "/m/a.mp4" }],
+                new Timeline([new Clip { Id = "c", SourceId = "s", In = TimeSpan.Zero, Out = TimeSpan.FromSeconds(1) }])),
+            Media = new Dictionary<string, MediaInfo>(),
+            Preset = Preset.PlaneCopy with { Name = "broken", Arguments = "-c:v copy -vn" },
+            OutputPath = "/m/out.mp4",
+            WorkDirectory = "/tmp/w",
+        };
+        var ex = Assert.Throws<ExportPlanException>(() => ExportPlanner.Plan(job));
+        Assert.Contains("\"broken\"", ex.Message);
+    }
+}
+
 public class TimelineEditorTests
 {
     private static Clip C(string id, double inS, double outS, double offsetMs = 0) => new()

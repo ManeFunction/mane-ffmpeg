@@ -85,36 +85,22 @@ public sealed partial class PresetsViewModel : ViewModelBase
 
     private void Analyze()
     {
-        try
+        var analysis = PresetAnalysis.Of(Arguments, AudioFallback);
+        if (analysis.Arguments is { } args)
         {
-            var args = PresetArguments.Parse(Arguments);
-            var video = args.VideoCopy
-                ? "Video: copied without re-encoding. Cuts snap to keyframes; all clips must share one format."
-                : $"Video: encoded with {args.VideoCodec ?? "ffmpeg's default for the container"}.";
-            var audio = args.NoAudio ? "Audio: dropped (-an)."
-                : args.AudioCopy
-                    ? $"Audio: copied when possible (one clip). With several clips or audio offsets it's encoded with “{AudioFallback}”."
-                    : $"Audio: encoded with {args.AudioCodec ?? "ffmpeg's default for the container"}.";
             var filters = (args.VideoFilter, args.AudioFilter) switch
             {
                 (null, null) => "",
                 _ => $"\nFilters applied after joining clips: {string.Join(", ", new[] { args.VideoFilter, args.AudioFilter }.OfType<string>())}",
             };
             var extension = string.IsNullOrWhiteSpace(Extension) ? "Output: same container as the first video." : $"Output: .{Extension.Trim().TrimStart('.')} file.";
-            Analysis = $"{video}\n{audio}\n{extension}{filters}";
-            var warnings = args.Warnings.ToList();
-            if (args.VideoCopy && args.VideoFilter is not null)
-                warnings.Add("Video filters can't be used while copying video.");
-            if (args.AudioCopy && args.AudioFilter is not null)
-                warnings.Add("Audio filters can't be used while copying audio.");
-            PresetArguments.Tokenize(AudioFallback);
-            Warnings = string.Join("\n", warnings);
+            Analysis = $"{analysis.VideoSummary}\n{analysis.AudioSummary(AudioFallback)}\n{extension}{filters}";
         }
-        catch (FormatException ex)
+        else
         {
             Analysis = "";
-            Warnings = ex.Message;
         }
+        Warnings = string.Join("\n", analysis.Errors.Concat(analysis.Warnings));
     }
 
     [RelayCommand(CanExecute = nameof(IsModified))]
