@@ -21,8 +21,9 @@ public sealed class TimelineControl : Control
     private const double Header = 44;
     private const double RulerHeight = 26;
     private const double VideoTop = RulerHeight + 8;
-    private const double TrackHeight = 62;
-    private const double AudioTop = VideoTop + TrackHeight + 6;
+    private const double VideoHeight = 62;
+    private const double AudioTop = VideoTop + VideoHeight + 6;
+    private const double AudioHeight = VideoHeight / 2;
     private const double EdgeGrab = 6;
     private const double DragThreshold = 4;
 
@@ -108,7 +109,7 @@ public sealed class TimelineControl : Control
     }
 
     protected override Size MeasureOverride(Size availableSize) =>
-        new(0, AudioTop + TrackHeight + 10);
+        new(0, AudioTop + AudioHeight + 10);
 
     private double X(TimelineViewModel vm, TimeSpan t) => Header + (t.TotalSeconds - vm.Scroll) * vm.Zoom;
 
@@ -126,13 +127,13 @@ public sealed class TimelineControl : Control
         if (vm.Zoom <= 0)
         {
             DrawText(context, "Add videos to build a timeline. Drag clips to reorder, drag edges to trim, drag the audio row to fix sync.",
-                new Point(Header + 12, AudioTop - 8), TextBrush, 13);
+                new Point(Header + 12, VideoTop + VideoHeight / 2), TextBrush, 13);
             return;
         }
 
         DrawRuler(context, vm, size);
-        context.FillRectangle(TrackBackground, new Rect(Header, VideoTop, size.Width, TrackHeight));
-        context.FillRectangle(TrackBackground, new Rect(Header, AudioTop, size.Width, TrackHeight));
+        context.FillRectangle(TrackBackground, new Rect(Header, VideoTop, size.Width, VideoHeight));
+        context.FillRectangle(TrackBackground, new Rect(Header, AudioTop, size.Width, AudioHeight));
 
         using (context.PushClip(new Rect(Header, 0, Math.Max(0, size.Width - Header), size.Height)))
         {
@@ -151,7 +152,7 @@ public sealed class TimelineControl : Control
             if (_drag == Drag.Reorder && _insertIndex >= 0)
             {
                 var x = X(vm, vm.Timeline.StartOf(_insertIndex));
-                context.DrawLine(DropPen, new Point(x, VideoTop - 4), new Point(x, AudioTop + TrackHeight + 4));
+                context.DrawLine(DropPen, new Point(x, VideoTop - 4), new Point(x, AudioTop + AudioHeight + 4));
             }
 
             var ph = X(vm, vm.Playhead);
@@ -171,8 +172,8 @@ public sealed class TimelineControl : Control
         }
 
         context.FillRectangle(HeaderBrush, new Rect(0, 0, Header, size.Height));
-        DrawText(context, "V1", new Point(14, VideoTop + TrackHeight / 2 - 8), TextBrush, 12);
-        DrawText(context, "A1", new Point(14, AudioTop + TrackHeight / 2 - 8), TextBrush, 12);
+        DrawText(context, "V1", new Point(14, VideoTop + VideoHeight / 2 - 8), TextBrush, 12);
+        DrawText(context, "A1", new Point(14, AudioTop + AudioHeight / 2 - 8), TextBrush, 12);
     }
 
     private void DrawRuler(DrawingContext context, TimelineViewModel vm, Size size)
@@ -212,8 +213,8 @@ public sealed class TimelineControl : Control
         var color = SourceItemViewModel.Palette[vm.ColorIndex(clip.SourceId) % SourceItemViewModel.Palette.Length];
         var missing = source is null || vm.IsMissing(clip.SourceId);
         var selected = vm.Selection.Contains(clip.Id);
-        var videoRect = new Rect(x0 + 1, VideoTop + 1, Math.Max(1, x1 - x0 - 2), TrackHeight - 2);
-        var audioRect = new Rect(x0 + 1, AudioTop + 1, Math.Max(1, x1 - x0 - 2), TrackHeight - 2);
+        var videoRect = new Rect(x0 + 1, VideoTop + 1, Math.Max(1, x1 - x0 - 2), VideoHeight - 2);
+        var audioRect = new Rect(x0 + 1, AudioTop + 1, Math.Max(1, x1 - x0 - 2), AudioHeight - 2);
         var dragged = _drag == Drag.Reorder && selected;
         var alpha = dragged ? (byte)110 : (byte)230;
 
@@ -249,7 +250,7 @@ public sealed class TimelineControl : Control
                 var audio = info.Audio(source.AudioStreamIndex);
                 if (audio is null)
                 {
-                    DrawText(context, "no audio", new Point(Math.Max(audioRect.Left, Header) + 6, audioRect.Top + 22), TextBrush, 11);
+                    DrawText(context, "no audio", new Point(Math.Max(audioRect.Left, Header) + 6, audioRect.Top + (audioRect.Height - 14) / 2), TextBrush, 11);
                 }
                 else
                 {
@@ -258,7 +259,7 @@ public sealed class TimelineControl : Control
                     DrawWaveform(context, vm, clip, start, audioRect, vm.Waveform(source), width);
                 }
                 if (clip.AudioOffset != TimeSpan.Zero)
-                    DrawBadge(context, $"♪ {TimeFormat.Offset(clip.AudioOffset)}", new Point(Math.Max(audioRect.Left, Header) + 5, audioRect.Top + 4));
+                    DrawBadge(context, $"♪ {TimeFormat.Offset(clip.AudioOffset)}", new Point(Math.Max(audioRect.Left, Header) + 5, audioRect.Top + (audioRect.Height - 16) / 2));
             }
         }
 
@@ -295,8 +296,8 @@ public sealed class TimelineControl : Control
     {
         if (waveform is null)
             return;
-        var mid = rect.Top + rect.Height / 2 + 4;
-        var half = rect.Height / 2 - 8;
+        var mid = rect.Top + rect.Height / 2;
+        var half = rect.Height / 2 - 3;
         var left = Math.Max(rect.Left, Header);
         var right = Math.Min(rect.Right, width);
         var perPixel = TimeSpan.FromSeconds(1 / vm.Zoom);
@@ -354,9 +355,9 @@ public sealed class TimelineControl : Control
         return null;
     }
 
-    private static bool InVideoRow(Point p) => p.Y >= VideoTop && p.Y < VideoTop + TrackHeight;
+    private static bool InVideoRow(Point p) => p.Y >= VideoTop && p.Y < VideoTop + VideoHeight;
 
-    private static bool InAudioRow(Point p) => p.Y >= AudioTop && p.Y < AudioTop + TrackHeight;
+    private static bool InAudioRow(Point p) => p.Y >= AudioTop && p.Y < AudioTop + AudioHeight;
 
     private int InsertIndexAt(TimelineViewModel vm, double x)
     {

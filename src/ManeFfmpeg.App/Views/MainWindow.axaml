@@ -76,7 +76,7 @@
             </StackPanel>
         </Border>
 
-        <Grid x:Name="MainGrid" RowDefinitions="*,6,232" Margin="8,8,8,6">
+        <Grid x:Name="MainGrid" RowDefinitions="*,6,200" Margin="8,8,8,6">
             <Grid x:Name="TopGrid" Grid.Row="0" ColumnDefinitions="300,6,*">
                 <!-- Left: media bin + inspector -->
                 <Grid x:Name="LeftGrid" Grid.Column="0" ColumnDefinitions="*,Auto">

@@ -260,7 +260,7 @@ internal static class DebugAutomation
     {
         var control = window.TimelineView;
         var vm = window.ViewModel.Timeline;
-        var y = row switch { "ruler" => 14.0, "video" => 65.0, _ => 133.0 };
+        var y = row switch { "ruler" => 14.0, "video" => 65.0, _ => 117.0 };
         Point At(double t) => new(44 + (t - vm.Scroll) * vm.Zoom, y);
         var origin = control.TranslatePoint(new Point(0, 0), window) ?? default;
         var pointer = new Pointer(Pointer.GetNextFreeId(), PointerType.Mouse, true);
