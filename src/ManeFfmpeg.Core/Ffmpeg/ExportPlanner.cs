@@ -274,12 +274,24 @@ public static class ExportPlanner
                 var segment = Path.Combine(ctx.Job.WorkDirectory, $"segment{i:D3}.mkv");
                 var seek = starts[i] > PreRoll ? starts[i] - PreRoll : TimeSpan.Zero;
                 var cut = new List<string>(Prefix) { "-ss", TimeFormat.Seconds(seek), "-i", item.Source.Path, "-map", $"0:{item.Video.Index}" };
+                // Output-side seek and length compare decode timestamps; the keyframe decodes "delay" early.
+                var cutStart = starts[i] - delay - seek;
+                var cutLength = length;
                 if (copyAudio)
                     cut.AddRange(["-map", $"0:{item.Audio!.Index}"]);
-                // Output-side seek and length compare decode timestamps; the keyframe decodes "delay" early.
-                cut.AddRange(["-c", "copy", "-ss", TimeFormat.Seconds(starts[i] - delay - seek)]);
+                else
+                {
+                    // With video alone, ffmpeg counts output time from the video's first timestamp rather than
+                    // the container start, and a seek even slightly past the keyframe drops its whole GOP.
+                    // Seek by that difference and half a frame earlier; the frame before is no keyframe and
+                    // isn't copied.
+                    var margin = TimeFormat.FrameDuration(item.Video.FrameRate) / 2;
+                    cutStart -= item.Video.StartOffset + margin;
+                    cutLength += margin;
+                }
+                cut.AddRange(["-c", "copy", "-ss", TimeFormat.Seconds(cutStart)]);
                 if (!toEnd)
-                    cut.AddRange(["-t", TimeFormat.Seconds(length)]);
+                    cut.AddRange(["-t", TimeFormat.Seconds(cutLength)]);
                 cut.AddRange(["-f", "matroska", segment]);
                 steps.Add(new ExportStep($"Cutting clip {i + 1} of {ctx.Items.Count}", cut, length, false));
                 list.Append("file ").Append(ConcatQuote(segment)).Append('\n');

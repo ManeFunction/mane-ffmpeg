@@ -195,6 +195,17 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
     }
 
     [FfmpegFact]
+    public async Task Transport_stream_plane_copy_with_offset_keeps_the_first_gop()
+    {
+        // The offset forces filtered audio, so each segment is cut from the video stream alone.
+        var (plan, _, output) = await ExportAsync(Preset.PlaneCopy, "mkv", [("t", media.TransportStream)], C("t", 1.13, 4.5, +120));
+        Assert.Equal(ExportMode.StreamCopy, plan.Mode);
+        var (flashes, beeps, duration) = await media.MeasureAsync(output);
+        Assert.InRange(duration, 3.3, 3.5);
+        AssertCopyTimes([0.9, 2.9], [1.02, 3.02], flashes, beeps);
+    }
+
+    [FfmpegFact]
     public async Task Cancel_removes_partial_output()
     {
         var infos = new Dictionary<string, MediaInfo> { ["a"] = await media.ProbeAsync(media.Sync30) };
