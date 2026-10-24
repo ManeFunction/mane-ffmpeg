@@ -414,7 +414,6 @@ public partial class MainWindow : Window, IMainWindowView
                 WindowState = WindowState.Maximized;
         }
         TopGrid.ColumnDefinitions[0].Width = new GridLength(Math.Clamp(layout.LeftPaneWidth, 220, 600));
-        MainGrid.RowDefinitions[2].Height = new GridLength(Math.Clamp(layout.TimelineHeight, 150, 600));
         if (layout.Compact)
         {
             // Bounds above are the full-size ones; shrink once the full layout has been measured.
@@ -433,7 +432,6 @@ public partial class MainWindow : Window, IMainWindowView
             ViewModel.IsCompact ? _expandedHeight ?? Height : Height, WindowState == WindowState.Maximized),
         LeftPaneWidth = ViewModel.IsCompact ? _expandedLeftWidth.Value : TopGrid.ColumnDefinitions[0].ActualWidth,
         Compact = ViewModel.IsCompact,
-        TimelineHeight = MainGrid.RowDefinitions[2].ActualHeight,
         TimelineZoom = ViewModel.Timeline.Zoom,
         TimelineScroll = ViewModel.Timeline.Scroll,
         Playhead = ViewModel.Timeline.Playhead,

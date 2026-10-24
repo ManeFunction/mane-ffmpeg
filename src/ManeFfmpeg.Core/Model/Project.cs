@@ -23,7 +23,6 @@ public sealed record ProjectLayout
 {
     public WindowBounds? Window { get; init; }
     public double LeftPaneWidth { get; init; } = 300;
-    public double TimelineHeight { get; init; } = 200;
 
     /// <summary>Timeline zoom in pixels per second; 0 means "fit".</summary>
     public double TimelineZoom { get; init; }

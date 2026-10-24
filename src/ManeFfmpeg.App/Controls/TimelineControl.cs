@@ -20,7 +20,9 @@ public sealed class TimelineControl : Control
 
     private const double Header = 44;
     private const double RulerHeight = 26;
-    private const double VideoTop = RulerHeight + 8;
+    // Gap between the ruler and V1, repeated below A1.
+    private const double TrackMargin = 8;
+    private const double VideoTop = RulerHeight + TrackMargin;
     private const double VideoHeight = 62;
     private const double AudioTop = VideoTop + VideoHeight + 6;
     private const double AudioHeight = VideoHeight / 2;
@@ -110,7 +112,7 @@ public sealed class TimelineControl : Control
     }
 
     protected override Size MeasureOverride(Size availableSize) =>
-        new(0, AudioTop + AudioHeight + 10);
+        new(0, AudioTop + AudioHeight + TrackMargin);
 
     private double X(TimelineViewModel vm, TimeSpan t) => Header + (t.TotalSeconds - vm.Scroll) * vm.Zoom;
 
