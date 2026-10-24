@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 
@@ -8,6 +9,19 @@ namespace ManeFfmpeg.App.Services;
 /// <summary>Small modal message boxes, built in code (Avalonia has no stock message box).</summary>
 public static class Dialogs
 {
+    /// <summary>
+    /// Makes Esc close the window, like Cancel. Handled on bubbling, so an open dropdown inside the window
+    /// closes first and the next Esc closes the window.
+    /// </summary>
+    public static void CloseOnEscape(this Window window) =>
+        window.KeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Escape || e.KeyModifiers != KeyModifiers.None || e.Handled)
+                return;
+            e.Handled = true;
+            window.Close();
+        };
+
     /// <summary>Shows a message with buttons; returns the index of the pressed button, or -1 if closed.</summary>
     public static async Task<int> AskAsync(Window owner, string title, string message, params string[] buttons)
     {
@@ -21,6 +35,8 @@ public static class Dialogs
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             ShowInTaskbar = false,
         };
+        // Esc closes like the window's close button: the result stays -1 (cancel).
+        dialog.CloseOnEscape();
         var buttonRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
         for (var i = 0; i < buttons.Length; i++)
         {

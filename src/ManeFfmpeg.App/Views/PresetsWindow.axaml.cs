@@ -11,5 +11,6 @@ public partial class PresetsWindow : Window
         InitializeComponent();
         DataContext = new PresetsViewModel();
         EditMenu.Attach(this);
+        this.CloseOnEscape();
     }
 }

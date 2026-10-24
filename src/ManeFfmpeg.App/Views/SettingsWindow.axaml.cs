@@ -12,6 +12,7 @@ public partial class SettingsWindow : Window
         InitializeComponent();
         DataContext = new SettingsViewModel();
         EditMenu.Attach(this);
+        this.CloseOnEscape();
     }
 
     private void OnCloseClicked(object? sender, RoutedEventArgs e) => Close();

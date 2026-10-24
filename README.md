@@ -101,7 +101,7 @@ The integration tests check A/V sync of real exports. They use synthetic video w
 | Alt+← / → | Audio 10 ms earlier / later |
 | Alt+Shift+← / → | Audio 1 frame earlier / later |
 | I / O / Enter | Mark In / Out / add the range (source preview) |
-| Esc | Back to the timeline / clear the selection |
+| Esc | Back to the timeline / clear the selection; closes Presets, Settings and message dialogs (as Cancel) |
 | ⌘Z / ⇧⌘Z | Undo / redo (Ctrl on Linux) |
 | ⌘N, ⌘O, ⌘S, ⇧⌘S, ⌘E, ⌘W | New window, open, save, save as, export, close |
 | ⌘+ / ⌘− / ⌘0, or ⌘/Ctrl+wheel | Zoom in, zoom out, fit |

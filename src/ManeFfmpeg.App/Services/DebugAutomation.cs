@@ -213,6 +213,68 @@ internal static class DebugAutomation
                         dialog.Close();
                         break;
                     }
+                    case "popup-esc":
+                    {
+                        // popup-esc presets|settings|ask|about [focus]: opens the popup, presses Esc, reports if it closed
+                        var parts = arg.Split(' ');
+                        Avalonia.Controls.Window popup;
+                        Task? pending = null;
+                        switch (parts[0])
+                        {
+                            case "presets":
+                                popup = new PresetsWindow();
+                                popup.Show(window);
+                                break;
+                            case "settings":
+                                popup = new SettingsWindow();
+                                popup.Show(window);
+                                break;
+                            default:
+                                pending = parts[0] == "ask"
+                                    ? Dialogs.AskAsync(window, "Save changes?", "Test", "Save", "Don't save", "Cancel").ContinueWith(t => Console.WriteLine($"[popup-esc] ask result {t.Result}"), TaskScheduler.FromCurrentSynchronizationContext())
+                                    : Dialogs.InfoAsync(window, "About", "Test");
+                                await Task.Delay(800);
+                                popup = window.OwnedWindows.Last();
+                                break;
+                        }
+                        await Task.Delay(800);
+                        if (parts.Length > 1 && popup.FindControl<Control>(parts[1]) is { } inner)
+                            inner.Focus();
+                        var closed = false;
+                        popup.Closed += (_, _) => closed = true;
+                        var target = popup.FocusManager?.GetFocusedElement() as Avalonia.Interactivity.Interactive ?? popup;
+                        target.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Escape, Source = target });
+                        await Task.Delay(500);
+                        Console.WriteLine($"[popup-esc] {arg}: focus={target.GetType().Name} closed={closed}");
+                        if (!closed)
+                            popup.Close();
+                        if (pending is not null)
+                            await pending;
+                        break;
+                    }
+                    case "dropdown-esc":
+                    {
+                        // Opens the settings theme dropdown, presses Esc twice: first closes the dropdown, then the window.
+                        var popup = new SettingsWindow();
+                        popup.Show(window);
+                        await Task.Delay(800);
+                        var combo = Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(popup).OfType<ComboBox>().First();
+                        combo.Focus();
+                        combo.IsDropDownOpen = true;
+                        await Task.Delay(400);
+                        var closed = false;
+                        popup.Closed += (_, _) => closed = true;
+                        for (var i = 1; i <= 2; i++)
+                        {
+                            var target = popup.FocusManager?.GetFocusedElement() as Avalonia.Interactivity.Interactive ?? popup;
+                            target.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Escape, Source = target });
+                            await Task.Delay(400);
+                            Console.WriteLine($"[dropdown-esc] Esc #{i}: dropdownOpen={combo.IsDropDownOpen} windowClosed={closed}");
+                        }
+                        if (!closed)
+                            popup.Close();
+                        break;
+                    }
                     case "presets-snapshot":
                         await SnapshotWindowAsync(new PresetsWindow(), arg);
                         break;
