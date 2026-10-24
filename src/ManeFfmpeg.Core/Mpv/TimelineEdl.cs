@@ -28,7 +28,8 @@ public static class TimelineEdl
             if (state.Source(clip.SourceId) is not { } source || !media.TryGetValue(source.Id, out var info) || info.Video is null)
                 return null;
             count++;
-            Segment(video, source.Path, clip.In, clip.Duration);
+            // EDL segment starts are file timestamps, which begin at the container start time, not at 0.
+            Segment(video, source.Path, clip.In + info.StartTime, clip.Duration);
 
             var stream = info.Audio(source.AudioStreamIndex);
             if (stream is null)
@@ -49,7 +50,7 @@ public static class TimelineEdl
                 continue;
             }
             Silence(audio, silencePath, lead);
-            Segment(audio, source.Path, readFrom, readLength);
+            Segment(audio, source.Path, readFrom + info.StartTime, readLength);
             Silence(audio, silencePath, clip.Duration - lead - readLength);
         }
 

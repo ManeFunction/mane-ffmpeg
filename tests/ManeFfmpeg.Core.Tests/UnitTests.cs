@@ -309,4 +309,24 @@ public class TimelineEdlTests
             "%14%/c/silence.mka,0.000000,0.120000;%10%/m/a,b.mp4,0.000000,1.880000",
             edl);
     }
+
+    [Fact]
+    public void Segments_use_file_timestamps_when_the_container_starts_late()
+    {
+        var info = new MediaInfo
+        {
+            Duration = TimeSpan.FromSeconds(10),
+            StartTime = TimeSpan.FromSeconds(1.4),
+            Video = new VideoStreamInfo { Index = 0, Codec = "h264", Width = 640, Height = 360, FrameRate = new Rational(30, 1) },
+            AudioStreams = [new AudioStreamInfo { Index = 1, Codec = "aac", SampleRate = 48000, Channels = 2 }],
+        };
+        var state = new ProjectState(
+            [new SourceMedia { Id = "s", Path = "/m/a.ts" }],
+            new Timeline([new Clip { Id = "1", SourceId = "s", In = TimeSpan.FromSeconds(2), Out = TimeSpan.FromSeconds(5), AudioOffset = TimeSpan.FromMilliseconds(-100) }]));
+        var edl = TimelineEdl.Build(state, new Dictionary<string, MediaInfo> { ["s"] = info }, "/c/silence.mka");
+        Assert.Equal(
+            "edl://!new_stream;!track_meta,title=mane-video;%7%/m/a.ts,3.400000,3.000000;" +
+            "!new_stream;!track_meta,title=mane-audio;%7%/m/a.ts,3.500000,3.000000",
+            edl);
+    }
 }
