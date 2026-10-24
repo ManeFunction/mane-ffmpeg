@@ -34,7 +34,7 @@
                     </StackPanel>
                     <Grid Grid.Column="2" ColumnDefinitions="Auto,*,Auto,Auto">
                         <TextBlock Text="Save to" VerticalAlignment="Center" Classes="title" Margin="0,0,8,0" />
-                        <Border Grid.Column="1" Background="#121317" CornerRadius="4" Padding="8,0" BorderBrush="{StaticResource PanelBorderBrush}"
+                        <Border Grid.Column="1" Background="{DynamicResource FieldBrush}" CornerRadius="4" Padding="8,0" BorderBrush="{DynamicResource PanelBorderBrush}"
                                 BorderThickness="1" ToolTip.Tip="{Binding OutputDisplay}">
                             <TextBlock Text="{Binding OutputDisplay}" VerticalAlignment="Center" TextTrimming="LeadingCharacterEllipsis" />
                         </Border>
@@ -140,7 +140,7 @@
                             <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto" IsVisible="{Binding HasSelection}">
                                 <TextBlock Text="In" Classes="dim" />
                                 <TextBlock Grid.Column="2" Text="Out" Classes="dim" />
-                                <TextBox Grid.Row="1" Text="{Binding ClipIn, UpdateSourceTrigger=LostFocus}" FontFeatures="tnum" />
+                                <TextBox x:Name="ClipInBox" Grid.Row="1" Text="{Binding ClipIn, UpdateSourceTrigger=LostFocus}" FontFeatures="tnum" />
                                 <TextBox Grid.Row="1" Grid.Column="2" Text="{Binding ClipOut, UpdateSourceTrigger=LostFocus}" FontFeatures="tnum" />
                             </Grid>
                             <StackPanel Spacing="6" IsVisible="{Binding HasSelection}">

@@ -37,6 +37,7 @@ public sealed class TimelineControl : Control
     private static readonly IBrush WaveBrush = new SolidColorBrush(Color.FromArgb(200, 255, 255, 255));
     private static readonly IBrush SilenceBrush = new SolidColorBrush(Color.FromArgb(70, 0, 0, 0));
     private static readonly IBrush BadgeBrush = new SolidColorBrush(Color.Parse("#F5A623"));
+    private static readonly IBrush BadgeTextBrush = new SolidColorBrush(Color.Parse("#1D1E22"));
     private static readonly IBrush MissingBrush = new SolidColorBrush(Color.Parse("#7A2E2E"));
     private static readonly IPen TickPen = new Pen(new SolidColorBrush(Color.Parse("#4A4C55")), 1);
     private static readonly IPen MinorTickPen = new Pen(new SolidColorBrush(Color.Parse("#34363D")), 1);
@@ -323,7 +324,7 @@ public sealed class TimelineControl : Control
 
     private static void DrawBadge(DrawingContext context, string text, Point at)
     {
-        var formatted = Text(text, Brushes.Black, 10, FontWeight.SemiBold);
+        var formatted = Text(text, BadgeTextBrush, 10, FontWeight.SemiBold);
         var rect = new Rect(at.X, at.Y, formatted.Width + 10, formatted.Height + 2);
         context.DrawRectangle(BadgeBrush, null, rect, 6, 6);
         context.DrawText(formatted, new Point(at.X + 5, at.Y + 1));

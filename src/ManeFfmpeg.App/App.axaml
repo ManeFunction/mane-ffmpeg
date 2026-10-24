@@ -12,26 +12,54 @@
     </NativeMenu.Menu>
 
     <Application.Resources>
-        <StreamGeometry x:Key="IconPlay">M8,5 L19,12 L8,19 Z</StreamGeometry>
-        <StreamGeometry x:Key="IconPause">M7,5 H10.5 V19 H7 Z M13.5,5 H17 V19 H13.5 Z</StreamGeometry>
-        <StreamGeometry x:Key="IconStepBack">M6,5 H8 V19 H6 Z M18,5 L9,12 L18,19 Z</StreamGeometry>
-        <StreamGeometry x:Key="IconStepForward">M16,5 H18 V19 H16 Z M6,5 L15,12 L6,19 Z</StreamGeometry>
-        <StreamGeometry x:Key="IconToStart">M5,5 H7 V19 H5 Z M13,5 L8,12 L13,19 Z M20,5 L15,12 L20,19 Z</StreamGeometry>
-        <StreamGeometry x:Key="IconToEnd">M17,5 H19 V19 H17 Z M11,5 L16,12 L11,19 Z M4,5 L9,12 L4,19 Z</StreamGeometry>
-        <StreamGeometry x:Key="IconSpeaker">M4,9 H8 L13,5 V19 L8,15 H4 Z M15.5,8.5 C17,10 17,14 15.5,15.5 L16.9,16.9 C19,14.8 19,9.2 16.9,7.1 Z</StreamGeometry>
-        <SolidColorBrush x:Key="PanelBrush" Color="#1B1C21" />
-        <SolidColorBrush x:Key="PanelBorderBrush" Color="#2A2B31" />
-        <SolidColorBrush x:Key="AccentWarnBrush" Color="#F5A623" />
-        <SolidColorBrush x:Key="ErrorBrush" Color="#FF6B6B" />
-        <SolidColorBrush x:Key="OkBrush" Color="#5FD38D" />
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <!-- Fluent's dark theme paints windows and focused fields pure black; the UI uses very dark grays
+                     instead (pure black is kept for the video preview only). -->
+                <ResourceDictionary x:Key="Dark">
+                    <Color x:Key="SystemRegionColor">#FF141519</Color>
+                    <Color x:Key="SystemAltHighColor">#FF141519</Color>
+                    <Color x:Key="SystemChromeBlackHighColor">#FF18191D</Color>
+                    <SolidColorBrush x:Key="SystemRegionBrush" Color="#141519" />
+                    <SolidColorBrush x:Key="SystemControlBackgroundAltHighBrush" Color="#141519" />
+                    <SolidColorBrush x:Key="SystemControlPageBackgroundAltHighBrush" Color="#141519" />
+                    <SolidColorBrush x:Key="SystemControlBackgroundChromeBlackHighBrush" Color="#18191D" />
+                    <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#18191D" />
+                    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#141519" />
+                    <SolidColorBrush x:Key="PanelBrush" Color="#1E1F24" />
+                    <SolidColorBrush x:Key="PanelBorderBrush" Color="#2C2D34" />
+                    <SolidColorBrush x:Key="FieldBrush" Color="#18191D" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#E7E8EC" />
+                    <SolidColorBrush x:Key="PanelBrush" Color="#F7F7F9" />
+                    <SolidColorBrush x:Key="PanelBorderBrush" Color="#D5D7DD" />
+                    <SolidColorBrush x:Key="FieldBrush" Color="#FFFFFF" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
+            <StreamGeometry x:Key="IconPlay">M8,5 L19,12 L8,19 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconPause">M7,5 H10.5 V19 H7 Z M13.5,5 H17 V19 H13.5 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconStepBack">M6,5 H8 V19 H6 Z M18,5 L9,12 L18,19 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconStepForward">M16,5 H18 V19 H16 Z M6,5 L15,12 L6,19 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconToStart">M5,5 H7 V19 H5 Z M13,5 L8,12 L13,19 Z M20,5 L15,12 L20,19 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconToEnd">M17,5 H19 V19 H17 Z M11,5 L16,12 L11,19 Z M4,5 L9,12 L4,19 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconSpeaker">M4,9 H8 L13,5 V19 L8,15 H4 Z M15.5,8.5 C17,10 17,14 15.5,15.5 L16.9,16.9 C19,14.8 19,9.2 16.9,7.1 Z</StreamGeometry>
+            <SolidColorBrush x:Key="AccentWarnBrush" Color="#F5A623" />
+            <SolidColorBrush x:Key="ErrorBrush" Color="#FF6B6B" />
+            <SolidColorBrush x:Key="OkBrush" Color="#5FD38D" />
+        </ResourceDictionary>
     </Application.Resources>
 
     <Application.Styles>
         <FluentTheme />
 
+        <Style Selector=":is(Window)">
+            <Setter Property="Background" Value="{DynamicResource WindowBackgroundBrush}" />
+        </Style>
         <Style Selector="Border.panel">
-            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
+            <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PanelBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="6" />
         </Style>
@@ -62,7 +90,7 @@
             <Setter Property="Height" Value="16" />
         </Style>
         <Style Selector="GridSplitter">
-            <Setter Property="Background" Value="#101114" />
+            <Setter Property="Background" Value="{DynamicResource WindowBackgroundBrush}" />
         </Style>
     </Application.Styles>
 </Application>

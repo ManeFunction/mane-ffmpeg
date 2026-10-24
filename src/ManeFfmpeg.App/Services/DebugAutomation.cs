@@ -168,6 +168,9 @@ internal static class DebugAutomation
                     case "size":
                         Console.WriteLine($"[size] {window.Width:0}x{window.Height:0} min={window.MinHeight}");
                         break;
+                    case "theme":
+                        App.ApplyTheme(Enum.Parse<Core.Persistence.ThemeChoice>(arg, ignoreCase: true));
+                        break;
                     case "snap":
                         vm.SnapToKeyframes = arg == "on";
                         break;
