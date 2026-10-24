@@ -31,6 +31,9 @@ Built with C#, .NET 10 and Avalonia 12.
 - **Projects**
   - `*.mfvp` files are readable JSON. They store edits, the export choice and the window layout, but no media.
   - Source paths are saved both absolute and relative to the project, so you can move a folder that holds the project and its videos together. Missing files can be relinked.
+- **Compact mode**
+  - The *Compact* button or ⇧⌘C hides the video preview and shrinks the window: the video list and clip inspector sit side by side, with play/pause in the timeline toolbar.
+  - Only audio is decoded while compact. The mode is saved with the project.
 - **Several windows**
   - File → New Window. Each window is its own project with its own player and export, so you can export in one window while editing in another.
 
@@ -101,6 +104,7 @@ The integration tests check A/V sync of real exports. They use synthetic video w
 | ⌘Z / ⇧⌘Z | Undo / redo (Ctrl on Linux) |
 | ⌘N, ⌘O, ⌘S, ⇧⌘S, ⌘E, ⌘W | New window, open, save, save as, export, close |
 | ⌘+ / ⌘− / ⌘0, or ⌘/Ctrl+wheel | Zoom in, zoom out, fit |
+| ⇧⌘C (Ctrl+Shift+C on Linux) | Compact mode: hide the video preview (also the *Compact* button) |
 
 Mouse:
 - Click the ruler or a clip to seek; drag on the ruler to scrub.

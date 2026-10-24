@@ -63,6 +63,25 @@ public sealed partial class MainWindowViewModel
     [ObservableProperty]
     public partial double Volume { get; set; } = 100;
 
+    /// <summary>Compact mode: the video preview is hidden and mpv plays audio only.</summary>
+    [ObservableProperty]
+    public partial bool IsCompact { get; set; }
+
+    partial void OnIsCompactChanged(bool value)
+    {
+        if (Player is null)
+            return;
+        if (value)
+            Player.SetString("vid", "no");
+        else if (Mode == PreviewMode.Timeline)
+            SelectTracks(TimelineEdl.VideoTitle, TimelineEdl.AudioTitle, null);
+        else
+            SelectTracks(null, null, PreviewedSource?.Info?.Audio(PreviewedSource.AudioStreamIndex)?.Index);
+    }
+
+    [RelayCommand]
+    private void ToggleCompact() => IsCompact = !IsCompact;
+
     public bool IsSourceMode => Mode == PreviewMode.Source;
 
     public string PreviewTitle => Mode == PreviewMode.Source && PreviewedSource is { } s ? $"Source: {s.Name}" : "Timeline";
@@ -165,7 +184,9 @@ public sealed partial class MainWindowViewModel
                 && (aid is null || (audioStreamIndex is { } wanted && ffIndex == wanted)))
                 aid = id;
         }
-        if (vid is not null)
+        if (IsCompact)
+            Player.SetString("vid", "no");
+        else if (vid is not null)
             Player.SetString("vid", vid);
         Player.SetString("aid", aid ?? "no");
     }
@@ -310,6 +331,15 @@ public sealed partial class MainWindowViewModel
     {
         if (Player is null)
             return;
+        if (IsCompact && Mode == PreviewMode.Timeline)
+        {
+            // No video is decoded in compact mode, so step by one frame of the clip under the playhead.
+            var frame = State.Timeline.Locate(Timeline.Playhead) is { } at && FrameDuration(State.Timeline.Clips[at.Index]) is { } d
+                ? d
+                : TimeSpan.FromSeconds(1 / 30.0);
+            SeekTo(Timeline.Clamp(Timeline.Playhead + (direction == "-1" ? -frame : frame)), false);
+            return;
+        }
         _lastSeekAt = DateTime.MinValue;
         Player.CommandAsync(direction == "-1" ? "frame-back-step" : "frame-step");
     }
@@ -363,6 +393,7 @@ public sealed partial class MainWindowViewModel
     {
         if (item is null || Player is null || item.Status != SourceStatus.Ready)
             return;
+        IsCompact = false;
         Mode = PreviewMode.Source;
         PreviewedSource = item;
         MarkIn = MarkOut = null;

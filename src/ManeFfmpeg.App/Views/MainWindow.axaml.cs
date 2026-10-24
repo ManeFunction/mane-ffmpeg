@@ -22,6 +22,14 @@ public partial class MainWindow : Window, IMainWindowView
     // checkbox doesn't also react to it (Space would otherwise start playback and click "pause" on release).
     private readonly HashSet<Key> _shortcutKeysDown = [];
 
+    // Compact mode: height of the panel row without the preview, and the sizes to restore afterwards.
+    private const double CompactTopHeight = 330;
+    private const double NormalMinHeight = 640;
+    private const double CompactMinHeight = 470;
+    private double? _expandedHeight;
+    private GridLength _expandedLeftWidth = new(300);
+    private NativeMenuItem? _compactMenuItem;
+
     public MainWindow() : this(new MainWindowViewModel())
     {
     }
@@ -39,6 +47,11 @@ public partial class MainWindow : Window, IMainWindowView
         AddHandler(KeyUpEvent, OnWindowKeyUp, RoutingStrategies.Tunnel);
         Deactivated += (_, _) => _shortcutKeysDown.Clear();
         Closing += OnClosing;
+        viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainWindowViewModel.IsCompact))
+                ApplyCompact(viewModel.IsCompact);
+        };
         Closed += (_, _) =>
         {
             // The renderer must go before the player it draws.
@@ -127,8 +140,12 @@ public partial class MainWindow : Window, IMainWindowView
         })
             edit.Items.Add(item);
 
+        _compactMenuItem = Item("Compact Mode (Hide Preview)", vm.ToggleCompactCommand, Key.C, Cmd | KeyModifiers.Shift);
+        _compactMenuItem.ToggleType = MenuItemToggleType.CheckBox;
         var view = new NativeMenu
         {
+            _compactMenuItem,
+            new NativeMenuItemSeparator(),
             Item("Play / Pause", vm.PlayPauseCommand),
             Item("Zoom In", vm.ZoomInCommand, Key.OemPlus, Cmd),
             Item("Zoom Out", vm.ZoomOutCommand, Key.OemMinus, Cmd),
@@ -330,6 +347,58 @@ public partial class MainWindow : Window, IMainWindowView
         Close();
     }
 
+    // ---- Compact mode -----------------------------------------------------------------------------
+
+    /// <summary>
+    /// Hides the preview, puts the video list and clip inspector side by side and shrinks the window to fit;
+    /// turning it off restores the previous layout and height.
+    /// </summary>
+    private void ApplyCompact(bool compact)
+    {
+        if (_compactMenuItem is not null)
+            _compactMenuItem.IsChecked = compact;
+        if (compact == !PreviewPanel.IsVisible)
+            return;
+
+        var resize = WindowState == WindowState.Normal;
+        var topHeight = TopGrid.Bounds.Height;
+        if (compact)
+        {
+            _expandedLeftWidth = TopGrid.ColumnDefinitions[0].Width;
+            if (resize)
+                _expandedHeight = Height;
+            TopGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+            TopGrid.ColumnDefinitions[2].Width = new GridLength(0);
+            PreviewSplitter.IsVisible = false;
+            PreviewPanel.IsVisible = false;
+            Grid.SetRowSpan(BinPanel, 2);
+            Grid.SetRow(InspectorPanel, 0);
+            Grid.SetColumn(InspectorPanel, 1);
+            Grid.SetRowSpan(InspectorPanel, 2);
+            InspectorPanel.Width = 330;
+            InspectorPanel.Margin = new Thickness(8, 0, 0, 0);
+            MinHeight = CompactMinHeight;
+            if (resize && topHeight > CompactTopHeight)
+                Height = Math.Max(CompactMinHeight, Height - topHeight + CompactTopHeight);
+        }
+        else
+        {
+            TopGrid.ColumnDefinitions[0].Width = _expandedLeftWidth;
+            TopGrid.ColumnDefinitions[2].Width = new GridLength(1, GridUnitType.Star);
+            PreviewSplitter.IsVisible = true;
+            PreviewPanel.IsVisible = true;
+            Grid.SetRowSpan(BinPanel, 1);
+            Grid.SetRow(InspectorPanel, 1);
+            Grid.SetColumn(InspectorPanel, 0);
+            Grid.SetRowSpan(InspectorPanel, 1);
+            InspectorPanel.Width = double.NaN;
+            InspectorPanel.Margin = new Thickness(0, 8, 0, 0);
+            MinHeight = NormalMinHeight;
+            if (resize)
+                Height = Math.Max(NormalMinHeight, _expandedHeight ?? Height + 420);
+        }
+    }
+
     // ---- Layout -----------------------------------------------------------------------------------
 
     public void ApplyLayout()
@@ -345,13 +414,25 @@ public partial class MainWindow : Window, IMainWindowView
                 WindowState = WindowState.Maximized;
         }
         TopGrid.ColumnDefinitions[0].Width = new GridLength(Math.Clamp(layout.LeftPaneWidth, 220, 600));
-        MainGrid.RowDefinitions[2].Height = new GridLength(Math.Clamp(layout.TimelineHeight, 180, 600));
+        MainGrid.RowDefinitions[2].Height = new GridLength(Math.Clamp(layout.TimelineHeight, 150, 600));
+        if (layout.Compact)
+        {
+            // Bounds above are the full-size ones; shrink once the full layout has been measured.
+            _expandedHeight = Height;
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => ViewModel.IsCompact = true, Avalonia.Threading.DispatcherPriority.Loaded);
+        }
+        else
+        {
+            ViewModel.IsCompact = false;
+        }
     }
 
     public ProjectLayout CaptureLayout() => new()
     {
-        Window = new WindowBounds(Position.X, Position.Y, Width, Height, WindowState == WindowState.Maximized),
-        LeftPaneWidth = TopGrid.ColumnDefinitions[0].ActualWidth,
+        Window = new WindowBounds(Position.X, Position.Y, Width,
+            ViewModel.IsCompact ? _expandedHeight ?? Height : Height, WindowState == WindowState.Maximized),
+        LeftPaneWidth = ViewModel.IsCompact ? _expandedLeftWidth.Value : TopGrid.ColumnDefinitions[0].ActualWidth,
+        Compact = ViewModel.IsCompact,
         TimelineHeight = MainGrid.RowDefinitions[2].ActualHeight,
         TimelineZoom = ViewModel.Timeline.Zoom,
         TimelineScroll = ViewModel.Timeline.Scroll,

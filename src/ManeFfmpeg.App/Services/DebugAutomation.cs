@@ -162,6 +162,12 @@ internal static class DebugAutomation
                     case "source-seek":
                         vm.Player?.Command("seek", arg, "absolute+exact");
                         break;
+                    case "compact":
+                        vm.IsCompact = arg == "on";
+                        break;
+                    case "size":
+                        Console.WriteLine($"[size] {window.Width:0}x{window.Height:0} min={window.MinHeight}");
+                        break;
                     case "snap":
                         vm.SnapToKeyframes = arg == "on";
                         break;

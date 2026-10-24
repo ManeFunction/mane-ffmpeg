@@ -79,12 +79,12 @@
         <Grid x:Name="MainGrid" RowDefinitions="*,6,232" Margin="8,8,8,6">
             <Grid x:Name="TopGrid" Grid.Row="0" ColumnDefinitions="300,6,*">
                 <!-- Left: media bin + inspector -->
-                <Grid Grid.Column="0">
+                <Grid x:Name="LeftGrid" Grid.Column="0" ColumnDefinitions="*,Auto">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*" MinHeight="120" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
-                    <Border Classes="panel" Padding="8">
+                    <Border x:Name="BinPanel" Classes="panel" Padding="8">
                         <DockPanel>
                             <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="2,0,0,6">
                                 <TextBlock Text="VIDEOS" Classes="title" VerticalAlignment="Center" />
@@ -131,7 +131,8 @@
                     </Border>
 
                     <!-- Inspector -->
-                    <Border Grid.Row="1" Classes="panel" Padding="10" Margin="0,8,0,0">
+                    <Border x:Name="InspectorPanel" Grid.Row="1" Classes="panel" Padding="10" Margin="0,8,0,0">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel Spacing="8">
                             <TextBlock Text="CLIP" Classes="title" />
                             <TextBlock Text="{Binding SelectionTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
@@ -163,13 +164,14 @@
                                         Command="{Binding ApplyOffsetToSourceCommand}" />
                             </StackPanel>
                         </StackPanel>
+                        </ScrollViewer>
                     </Border>
                 </Grid>
 
-                <GridSplitter Grid.Column="1" ResizeDirection="Columns" />
+                <GridSplitter x:Name="PreviewSplitter" Grid.Column="1" ResizeDirection="Columns" />
 
                 <!-- Preview -->
-                <Border Grid.Column="2" Classes="panel" Padding="0" ClipToBounds="True">
+                <Border x:Name="PreviewPanel" Grid.Column="2" Classes="panel" Padding="0" ClipToBounds="True">
                     <DockPanel>
                         <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="10,6">
                             <TextBlock Text="{Binding PreviewTitle}" Classes="title" VerticalAlignment="Center" />
@@ -224,6 +226,16 @@
                 <DockPanel>
                     <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" Margin="8,6">
                         <StackPanel Orientation="Horizontal" Spacing="4">
+                            <!-- Transport while the preview is hidden -->
+                            <StackPanel Orientation="Horizontal" Spacing="2" IsVisible="{Binding IsCompact}" Margin="0,0,8,0">
+                                <Button Classes="icon" Command="{Binding PlayPauseCommand}" ToolTip.Tip="Play / pause (Space)" Width="40">
+                                    <Panel>
+                                        <PathIcon Data="{StaticResource IconPlay}" IsVisible="{Binding !IsPlaying}" />
+                                        <PathIcon Data="{StaticResource IconPause}" IsVisible="{Binding IsPlaying}" />
+                                    </Panel>
+                                </Button>
+                                <TextBlock Text="{Binding PositionText}" VerticalAlignment="Center" FontFeatures="tnum" FontSize="12" />
+                            </StackPanel>
                             <Button Classes="tool" Content="✂ Split (S)" Command="{Binding SplitCommand}" />
                             <Button Classes="tool" Content="Delete" Command="{Binding DeleteSelectionCommand}" />
                             <Button Classes="tool" Content="Undo" Command="{Binding UndoCommand}" />
@@ -235,6 +247,8 @@
                                    TextTrimming="CharacterEllipsis" Margin="12,0" />
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
                             <TextBlock Text="{Binding TimelineDurationText}" VerticalAlignment="Center" Classes="dim" FontFeatures="tnum" Margin="0,0,8,0" />
+                            <ToggleButton x:Name="CompactToggle" Classes="tool" Content="Compact" IsChecked="{Binding IsCompact}" FontSize="12"
+                                          Padding="10,4" Margin="0,0,8,0" ToolTip.Tip="Hide the video preview (⇧⌘C)" />
                             <Button Classes="tool" Content="−" Command="{Binding ZoomOutCommand}" ToolTip.Tip="Zoom out (−)" />
                             <Button Classes="tool" Content="Fit" Command="{Binding ZoomFitCommand}" ToolTip.Tip="Fit timeline" />
                             <Button Classes="tool" Content="+" Command="{Binding ZoomInCommand}" ToolTip.Tip="Zoom in (+)" />

@@ -30,6 +30,9 @@ public sealed record ProjectLayout
     public double TimelineScroll { get; init; }
     public TimeSpan Playhead { get; init; }
     public double Volume { get; init; } = 100;
+
+    /// <summary>Compact mode: video preview hidden. <see cref="Window"/> keeps the full-size bounds.</summary>
+    public bool Compact { get; init; }
 }
 
 public sealed record WindowBounds(int X, int Y, double Width, double Height, bool Maximized);
