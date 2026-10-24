@@ -33,6 +33,9 @@ public sealed record Clip
     public TimeSpan AudioIn => In - AudioOffset;
 
     public TimeSpan AudioOut => Out - AudioOffset;
+
+    /// <summary>Where the whole clip's audio comes from, given where its file's audio stream ends.</summary>
+    public AudioPlacement AudioPlacement(TimeSpan audioEnd) => Model.AudioPlacement.For(In, Duration, AudioOffset, audioEnd);
 }
 
 /// <summary>Clips played back to back, without gaps.</summary>

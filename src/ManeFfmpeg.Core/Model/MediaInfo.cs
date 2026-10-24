@@ -19,6 +19,9 @@ public sealed record MediaInfo
     public AudioStreamInfo? Audio(int audioIndex) =>
         audioIndex >= 0 && audioIndex < AudioStreams.Length ? AudioStreams[audioIndex] : null;
 
+    /// <summary>Where <paramref name="stream"/> ends; the container duration when the stream has none of its own.</summary>
+    public TimeSpan AudioEnd(AudioStreamInfo stream) => stream.Duration ?? Duration;
+
     /// <summary>
     /// Containers whose timestamp seeking can land after the wanted keyframe (MPEG-TS/PS, AVI, FLV, raw
     /// streams). Exports seek a few seconds early there and trim precisely in the filter graph.

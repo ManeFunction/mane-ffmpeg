@@ -38,20 +38,15 @@ public static class TimelineEdl
                 continue;
             }
             anyAudio = true;
-            var start = clip.AudioIn;
-            var lead = start < TimeSpan.Zero ? -start : TimeSpan.Zero;
-            var readFrom = start < TimeSpan.Zero ? TimeSpan.Zero : start;
-            var audioEnd = stream.Duration ?? info.Duration;
-            var readEnd = clip.AudioOut < audioEnd ? clip.AudioOut : audioEnd;
-            var readLength = readEnd - readFrom;
-            if (readLength <= Epsilon)
+            var placement = clip.AudioPlacement(info.AudioEnd(stream));
+            if (placement.IsSilent)
             {
                 Silence(audio, silencePath, clip.Duration);
                 continue;
             }
-            Silence(audio, silencePath, lead);
-            Segment(audio, source.Path, readFrom + info.StartTime, readLength);
-            Silence(audio, silencePath, clip.Duration - lead - readLength);
+            Silence(audio, silencePath, placement.Lead);
+            Segment(audio, source.Path, placement.ReadFrom + info.StartTime, placement.ReadLength);
+            Silence(audio, silencePath, placement.Tail);
         }
 
         if (count == 0)

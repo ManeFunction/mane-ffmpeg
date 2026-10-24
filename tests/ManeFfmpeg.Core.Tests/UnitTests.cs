@@ -285,6 +285,37 @@ public class ProgressParserTests
     }
 }
 
+public class AudioPlacementTests
+{
+    [Theory]
+    // video start, length, offset ms, audio end → lead, read from, read length, tail
+    [InlineData(2.0, 3.0, 120, 10.0, 0.0, 1.88, 3.0, 0.0)] // inside the file
+    [InlineData(0.0, 2.0, 120, 10.0, 0.12, 0.0, 1.88, 0.0)] // slipped before the file start
+    [InlineData(8.0, 2.0, -500, 10.0, 0.0, 8.5, 1.5, 0.5)] // slipped past the audio end
+    [InlineData(0.0, 1.0, 2000, 10.0, 1.0, 0.0, 0.0, 0.0)] // wholly before the file
+    [InlineData(9.0, 1.0, -2000, 10.0, 0.0, 11.0, 0.0, 1.0)] // wholly past the audio end
+    [InlineData(1.0, 4.0, 3000, 2.5, 2.0, 0.0, 2.0, 0.0)] // stream copy start, short audio
+    public void Places_slipped_audio(double videoStart, double length, double offsetMs, double audioEnd,
+        double lead, double readFrom, double readLength, double tail)
+    {
+        var p = AudioPlacement.For(TimeSpan.FromSeconds(videoStart), TimeSpan.FromSeconds(length),
+            TimeSpan.FromMilliseconds(offsetMs), TimeSpan.FromSeconds(audioEnd));
+        Assert.Equal(lead, p.Lead.TotalSeconds, 6);
+        Assert.Equal(readFrom, p.ReadFrom.TotalSeconds, 6);
+        Assert.Equal(readLength, p.ReadLength.TotalSeconds, 6);
+        Assert.Equal(tail, p.Tail.TotalSeconds, 6);
+        Assert.Equal(readLength == 0, p.IsSilent);
+    }
+
+    [Fact]
+    public void Clip_placement_covers_the_whole_clip()
+    {
+        var clip = new Clip { Id = "c", SourceId = "s", In = TimeSpan.FromSeconds(1), Out = TimeSpan.FromSeconds(4), AudioOffset = TimeSpan.FromSeconds(1.5) };
+        Assert.Equal(AudioPlacement.For(clip.In, clip.Duration, clip.AudioOffset, TimeSpan.FromSeconds(10)), clip.AudioPlacement(TimeSpan.FromSeconds(10)));
+        Assert.Equal(TimeSpan.FromSeconds(0.5), clip.AudioPlacement(TimeSpan.FromSeconds(10)).Lead);
+    }
+}
+
 public class TimelineEdlTests
 {
     [Fact]

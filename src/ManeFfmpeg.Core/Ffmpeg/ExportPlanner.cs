@@ -373,13 +373,10 @@ public static class ExportPlanner
         var item = ctx.Items[0];
         var audio = item.Audio!;
         var clip = item.Clip;
-        var start = clip.AudioIn;
-        var lead = start < TimeSpan.Zero ? -start : TimeSpan.Zero;
-        var readFrom = start < TimeSpan.Zero ? TimeSpan.Zero : start;
-        var audioEnd = audio.Duration ?? item.Media.Duration;
-        var readLength = (clip.AudioOut < audioEnd ? clip.AudioOut : audioEnd) - readFrom;
-        if (readLength <= Tolerance)
+        var placement = clip.AudioPlacement(item.Media.AudioEnd(audio));
+        if (placement.IsSilent)
             return null;
+        var (lead, readFrom, readLength, _) = placement;
 
         var preSeek = readFrom > AudioPreSeek ? readFrom - AudioPreSeek : TimeSpan.Zero;
         var tmp = Path.Combine(ctx.Job.WorkDirectory, "audio.mka");
@@ -425,24 +422,19 @@ public static class ExportPlanner
         if (item.Audio is null)
             return $"anullsrc=r={format.Rate}:cl={format.Layout},atrim=duration={len},asetpts=N/SR/TB";
 
-        var start = videoStart - item.Clip.AudioOffset;
-        var lead = start < TimeSpan.Zero ? -start : TimeSpan.Zero;
-        var readFrom = start < TimeSpan.Zero ? TimeSpan.Zero : start;
-        var audioEnd = item.Audio.Duration ?? item.Media.Duration;
-        var end = videoStart + length - item.Clip.AudioOffset;
-        var readLength = (end < audioEnd ? end : audioEnd) - readFrom;
-        if (readLength <= Tolerance)
+        var placement = AudioPlacement.For(videoStart, length, item.Clip.AudioOffset, item.Media.AudioEnd(item.Audio));
+        if (placement.IsSilent)
             return $"anullsrc=r={format.Rate}:cl={format.Layout},atrim=duration={len},asetpts=N/SR/TB";
 
-        var trim = Input(inputs, item, readFrom, readLength);
+        var trim = Input(inputs, item, placement.ReadFrom, placement.ReadLength);
         var chain = new StringBuilder($"[{nextInput}:{item.Audio.Index}]");
         if (trim.Length > 0)
-            chain.Append($"atrim={trim}duration={TimeFormat.Seconds(readLength)},asetpts=PTS-STARTPTS,");
+            chain.Append($"atrim={trim}duration={TimeFormat.Seconds(placement.ReadLength)},asetpts=PTS-STARTPTS,");
         chain.Append(fmt);
         nextInput++;
-        if (lead > TimeSpan.Zero)
+        if (placement.Lead > TimeSpan.Zero)
         {
-            var samples = (long)Math.Round(lead.TotalSeconds * format.Rate);
+            var samples = (long)Math.Round(placement.Lead.TotalSeconds * format.Rate);
             chain.Append(CultureInfo.InvariantCulture, $",adelay=delays={samples}S:all=1");
         }
         chain.Append($",apad=whole_dur={len},atrim=duration={len},asetpts=N/SR/TB");

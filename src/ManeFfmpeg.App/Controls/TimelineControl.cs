@@ -257,8 +257,7 @@ public sealed class TimelineControl : Control
                 }
                 else
                 {
-                    var audioEnd = audio.Duration ?? info.Duration;
-                    DrawSilence(context, vm, clip, start, audioRect, audioEnd);
+                    DrawSilence(context, vm, clip, start, audioRect, clip.AudioPlacement(info.AudioEnd(audio)));
                     DrawWaveform(context, vm, clip, start, audioRect, vm.Waveform(source), width);
                 }
                 if (clip.AudioOffset != TimeSpan.Zero)
@@ -274,10 +273,8 @@ public sealed class TimelineControl : Control
     }
 
     /// <summary>Hatches the parts of the clip where the slipped audio runs past the file (silence on export).</summary>
-    private void DrawSilence(DrawingContext context, TimelineViewModel vm, Clip clip, TimeSpan start, Rect rect, TimeSpan audioEnd)
+    private void DrawSilence(DrawingContext context, TimelineViewModel vm, Clip clip, TimeSpan start, Rect rect, AudioPlacement placement)
     {
-        var lead = clip.AudioIn < TimeSpan.Zero ? -clip.AudioIn : TimeSpan.Zero;
-        var tailStart = audioEnd - clip.AudioIn;
         void Hatch(double a, double b)
         {
             if (b - a < 1)
@@ -288,10 +285,10 @@ public sealed class TimelineControl : Control
                 for (var x = a - rect.Height; x < b; x += 8)
                     context.DrawLine(HatchPen, new Point(x, rect.Bottom), new Point(x + rect.Height, rect.Top));
         }
-        if (lead > TimeSpan.Zero)
-            Hatch(X(vm, start), X(vm, start + (lead < clip.Duration ? lead : clip.Duration)));
-        if (tailStart < clip.Duration)
-            Hatch(X(vm, start + (tailStart > TimeSpan.Zero ? tailStart : TimeSpan.Zero)), X(vm, start + clip.Duration));
+        if (placement.Lead > TimeSpan.Zero)
+            Hatch(X(vm, start), X(vm, start + placement.Lead));
+        if (placement.Tail > TimeSpan.Zero)
+            Hatch(X(vm, start + placement.Lead + placement.ReadLength), X(vm, start + clip.Duration));
     }
 
     private void DrawWaveform(DrawingContext context, TimelineViewModel vm, Clip clip, TimeSpan start, Rect rect,
