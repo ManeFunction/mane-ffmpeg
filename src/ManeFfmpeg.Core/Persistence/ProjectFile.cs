@@ -20,10 +20,7 @@ public static class ProjectFile
 
     public static async Task SaveAsync(Project project, string path, CancellationToken ct = default)
     {
-        var json = Serialize(project, path);
-        var temp = path + ".tmp";
-        await File.WriteAllTextAsync(temp, json, ct);
-        File.Move(temp, path, overwrite: true);
+        await AtomicFile.WriteAllTextAsync(path, Serialize(project, path), ct);
     }
 
     public static async Task<Project> LoadAsync(string path, CancellationToken ct = default)

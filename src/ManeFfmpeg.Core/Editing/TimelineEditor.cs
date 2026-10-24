@@ -12,8 +12,6 @@ public static class TimelineEditor
     /// <summary>Largest audio slip in either direction.</summary>
     public static readonly TimeSpan MaxAudioOffset = TimeSpan.FromSeconds(60);
 
-    public static string NewId() => Guid.NewGuid().ToString("N")[..12];
-
     public static Timeline Append(Timeline timeline, Clip clip) => timeline with { Clips = timeline.Clips.Add(clip) };
 
     public static Timeline Insert(Timeline timeline, int index, Clip clip) =>
@@ -32,7 +30,7 @@ public static class TimelineEditor
         if (cut - clip.In < MinClipDuration || clip.Out - cut < MinClipDuration)
             return (timeline, null);
         var left = clip with { Out = cut };
-        var right = clip with { Id = NewId(), In = cut };
+        var right = clip with { Id = Ids.New(), In = cut };
         var clips = timeline.Clips.SetItem(hit.Index, left).Insert(hit.Index + 1, right);
         return (timeline with { Clips = clips }, right.Id);
     }

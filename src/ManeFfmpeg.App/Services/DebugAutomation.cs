@@ -189,7 +189,7 @@ internal static class DebugAutomation
                         await Task.Delay(800);
                         var box = dialog.FindControl<TextBox>("ArgumentsBox")!;
                         box.Focus();
-                        var modifier = OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
+                        var modifier = EditMenu.CommandModifier;
                         foreach (var k in arg.Split(' '))
                         {
                             box.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Enum.Parse<Key>(k), KeyModifiers = modifier, Source = box });

@@ -83,8 +83,7 @@ public static class ExportPlanner
     /// <summary>How far before a cut to seek in containers with unreliable seeking.</summary>
     private static readonly TimeSpan PreRoll = TimeSpan.FromSeconds(10);
 
-    private static readonly string[] Prefix =
-        ["-nostdin", "-hide_banner", "-loglevel", "error", "-nostats", "-stats_period", "0.5", "-progress", "pipe:1", "-y"];
+    private static readonly string[] Prefix = [.. FfmpegTools.Quiet, "-nostats", "-stats_period", "0.5", "-progress", "pipe:1", "-y"];
 
     public static ExportPlan Plan(ExportJob job)
     {

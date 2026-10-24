@@ -65,8 +65,8 @@ public sealed partial class MainWindowViewModel
         get => PrimaryClip is { } c ? TimeFormat.Display(c.In) : "";
         set
         {
-            if (PrimaryClip is { } c && TimeFormat.TryParse(value, out var t))
-                Commit(State with { Timeline = TimelineEditor.SetRange(State.Timeline, c.Id, t, c.Out, GridOf) });
+            if (PrimaryClip is { } c && TimeFormat.TryParse(value, out var time))
+                CommitTimeline(t => TimelineEditor.SetRange(t, c.Id, time, c.Out, GridOf));
             OnSelectionChanged();
         }
     }
@@ -76,8 +76,8 @@ public sealed partial class MainWindowViewModel
         get => PrimaryClip is { } c ? TimeFormat.Display(c.Out) : "";
         set
         {
-            if (PrimaryClip is { } c && TimeFormat.TryParse(value, out var t))
-                Commit(State with { Timeline = TimelineEditor.SetRange(State.Timeline, c.Id, c.In, t, GridOf) });
+            if (PrimaryClip is { } c && TimeFormat.TryParse(value, out var time))
+                CommitTimeline(t => TimelineEditor.SetRange(t, c.Id, c.In, time, GridOf));
             OnSelectionChanged();
         }
     }
@@ -91,7 +91,7 @@ public sealed partial class MainWindowViewModel
             if (value is not { } ms || Timeline.Selection.Count == 0)
                 return;
             var offset = TimeSpan.FromTicks((long)Math.Round((double)ms * TimeSpan.TicksPerMillisecond));
-            Commit(State with { Timeline = TimelineEditor.SetAudioOffset(State.Timeline, Timeline.Selection, offset) });
+            CommitTimeline(t => TimelineEditor.SetAudioOffset(t, Timeline.Selection, offset));
         }
     }
 
@@ -150,7 +150,7 @@ public sealed partial class MainWindowViewModel
             StatusMessage = "Select clips to delete.";
             return;
         }
-        Commit(State with { Timeline = TimelineEditor.Delete(State.Timeline, Timeline.Selection) });
+        CommitTimeline(t => TimelineEditor.Delete(t, Timeline.Selection));
     }
 
     [RelayCommand]
@@ -160,7 +160,7 @@ public sealed partial class MainWindowViewModel
     private void NudgeAudio(string milliseconds)
     {
         var ms = double.Parse(milliseconds, System.Globalization.CultureInfo.InvariantCulture);
-        Commit(State with { Timeline = TimelineEditor.NudgeAudioOffset(State.Timeline, TargetClips(), TimeSpan.FromMilliseconds(ms)) });
+        CommitTimeline(t => TimelineEditor.NudgeAudioOffset(t, TargetClips(), TimeSpan.FromMilliseconds(ms)));
     }
 
     [RelayCommand]
@@ -171,19 +171,19 @@ public sealed partial class MainWindowViewModel
         if (clip is null || FrameDuration(clip) is not { } frame)
             return;
         var delta = frame * int.Parse(frames, System.Globalization.CultureInfo.InvariantCulture);
-        Commit(State with { Timeline = TimelineEditor.NudgeAudioOffset(State.Timeline, targets, delta) });
+        CommitTimeline(t => TimelineEditor.NudgeAudioOffset(t, targets, delta));
     }
 
     [RelayCommand]
     private void ResetAudioOffset() =>
-        Commit(State with { Timeline = TimelineEditor.SetAudioOffset(State.Timeline, TargetClips(), TimeSpan.Zero) });
+        CommitTimeline(t => TimelineEditor.SetAudioOffset(t, TargetClips(), TimeSpan.Zero));
 
     [RelayCommand]
     private void ApplyOffsetToSource()
     {
         if (PrimaryClip is not { } clip)
             return;
-        Commit(State with { Timeline = TimelineEditor.SetAudioOffsetForSource(State.Timeline, clip.SourceId, clip.AudioOffset) });
+        CommitTimeline(t => TimelineEditor.SetAudioOffsetForSource(t, clip.SourceId, clip.AudioOffset));
         StatusMessage = $"Audio offset {TimeFormat.Offset(clip.AudioOffset)} applied to every clip of {State.Source(clip.SourceId)?.DisplayName}.";
     }
 

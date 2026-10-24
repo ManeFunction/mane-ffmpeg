@@ -82,6 +82,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void Commit(ProjectState next) => History.Commit(next);
 
+    /// <summary>Commits an edit of the timeline alone.</summary>
+    public void CommitTimeline(Func<Timeline, Timeline> edit) => Commit(State with { Timeline = edit(State.Timeline) });
+
     /// <summary>Commits, re-fitting the zoom if the whole timeline was visible before (so appended clips show up).</summary>
     private void CommitKeepingFit(ProjectState next)
     {
@@ -262,8 +265,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
                 _media[source.Id] = info;
                 state = state with { Sources = state.Sources.Add(source) };
             }
-            var clip = new Clip { Id = TimelineEditor.NewId(), SourceId = source.Id, In = TimeSpan.Zero, Out = info.Duration };
-            state = state with { Timeline = TimelineEditor.Append(state.Timeline, clip) };
+            state = state with { Timeline = TimelineEditor.Append(state.Timeline, Clip.Create(source.Id, TimeSpan.Zero, info.Duration)) };
         }
         CommitKeepingFit(state);
         StatusMessage = failed.Count == 0 ? null : "Skipped: " + string.Join("; ", failed);
@@ -272,7 +274,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     private static SourceMedia NewSource(string path)
     {
         var info = new FileInfo(path);
-        return new SourceMedia { Id = TimelineEditor.NewId(), Path = path, FileSize = info.Length, LastWriteUtc = info.LastWriteTimeUtc };
+        return new SourceMedia { Id = Ids.New(), Path = path, FileSize = info.Length, LastWriteUtc = info.LastWriteTimeUtc };
     }
 
     [RelayCommand]
@@ -289,8 +291,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         if (item?.Info is not { Video: not null } info)
             return;
-        var clip = new Clip { Id = TimelineEditor.NewId(), SourceId = item.Id, In = TimeSpan.Zero, Out = info.Duration };
-        CommitKeepingFit(State with { Timeline = TimelineEditor.Append(State.Timeline, clip) });
+        CommitKeepingFit(State with { Timeline = TimelineEditor.Append(State.Timeline, Clip.Create(item.Id, TimeSpan.Zero, info.Duration)) });
     }
 
     [RelayCommand]

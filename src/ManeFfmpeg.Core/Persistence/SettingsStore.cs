@@ -44,8 +44,7 @@ public sealed class SettingsStore
         Current = change(Current);
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-            File.WriteAllText(_path, JsonSerializer.Serialize(Current, SettingsJsonContext.Default.AppSettings));
+            AtomicFile.WriteAllText(_path, JsonSerializer.Serialize(Current, SettingsJsonContext.Default.AppSettings));
         }
         catch (IOException)
         {

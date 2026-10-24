@@ -28,6 +28,9 @@ public sealed record Clip
     public required TimeSpan Out { get; init; }
     public TimeSpan AudioOffset { get; init; }
 
+    /// <summary>A new clip of <paramref name="sourceId"/> from <paramref name="in"/> to <paramref name="out"/>, with a fresh id.</summary>
+    public static Clip Create(string sourceId, TimeSpan @in, TimeSpan @out) => new() { Id = Ids.New(), SourceId = sourceId, In = @in, Out = @out };
+
     public TimeSpan Duration => Out - In;
 
     public TimeSpan AudioIn => In - AudioOffset;

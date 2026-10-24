@@ -31,7 +31,7 @@ public static class SystemNotifier
 
     private static async Task LinuxAsync(string title, string body)
     {
-        var notifySend = FindTool("notify-send");
+        var notifySend = Executables.Find("notify-send");
         if (notifySend is not null)
         {
             var result = await Cli.Wrap(notifySend)
@@ -42,7 +42,7 @@ public static class SystemNotifier
                 return;
         }
 
-        var gdbus = FindTool("gdbus");
+        var gdbus = Executables.Find("gdbus");
         if (gdbus is null)
             return;
         await Cli.Wrap(gdbus)
@@ -52,7 +52,4 @@ public static class SystemNotifier
             .WithValidation(CommandResultValidation.None)
             .ExecuteAsync();
     }
-
-    private static string? FindTool(string name) =>
-        new[] { "/usr/bin", "/bin", "/usr/local/bin" }.Select(d => Path.Combine(d, name)).FirstOrDefault(File.Exists);
 }

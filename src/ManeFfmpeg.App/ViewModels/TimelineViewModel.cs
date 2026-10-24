@@ -142,7 +142,7 @@ public sealed partial class TimelineViewModel(MainWindowViewModel owner) : ViewM
     public void CancelGesture() => owner.History.CancelGesture();
 
     public void MoveSelection(int insertIndex) =>
-        owner.Commit(State with { Timeline = TimelineEditor.Move(Timeline, Selection, insertIndex) });
+        owner.CommitTimeline(t => TimelineEditor.Move(t, Selection, insertIndex));
 
     /// <summary>Live audio feedback while an offset is being dragged.</summary>
     public void PreviewAudioDrag(TimeSpan delta) => owner.PreviewAudioDelay(delta);

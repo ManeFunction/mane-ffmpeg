@@ -85,11 +85,8 @@ public sealed class PresetStore
 
     private void Persist()
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
         var file = new PresetFile { Version = CurrentVersion, Presets = _presets };
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(file, PresetJsonContext.Readable.PresetFile));
-        File.Move(temp, _path, overwrite: true);
+        AtomicFile.WriteAllText(_path, JsonSerializer.Serialize(file, PresetJsonContext.Readable.PresetFile));
         Changed?.Invoke(this, EventArgs.Empty);
     }
 

@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using ManeFfmpeg.App.Services;
 using ManeFfmpeg.App.ViewModels;
 using ManeFfmpeg.Core.Editing;
 using ManeFfmpeg.Core.Model;
@@ -76,7 +77,6 @@ public sealed class TimelineControl : Control
         set => SetValue(TimelineProperty, value);
     }
 
-    private static KeyModifiers CommandModifier => OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -482,7 +482,7 @@ public sealed class TimelineControl : Control
         if (Timeline is not { } vm || _drag == Drag.None)
             return;
         var p = e.GetPosition(this);
-        var command = (_pressModifiers & CommandModifier) != 0;
+        var command = (_pressModifiers & EditMenu.CommandModifier) != 0;
         var shift = (_pressModifiers & KeyModifiers.Shift) != 0;
         switch (_drag)
         {
@@ -539,7 +539,7 @@ public sealed class TimelineControl : Control
         if (Timeline is not { Zoom: > 0 } vm)
             return;
         var p = e.GetPosition(this);
-        if ((e.KeyModifiers & CommandModifier) != 0 || (e.KeyModifiers & KeyModifiers.Alt) != 0)
+        if ((e.KeyModifiers & EditMenu.CommandModifier) != 0 || (e.KeyModifiers & KeyModifiers.Alt) != 0)
         {
             vm.ZoomBy(Math.Pow(1.15, e.Delta.Y), Math.Max(0, p.X - Header));
         }

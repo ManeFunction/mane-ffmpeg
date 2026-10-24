@@ -127,7 +127,7 @@ public sealed partial class PresetsViewModel : ViewModelBase
     {
         var preset = new Preset
         {
-            Id = Guid.NewGuid().ToString("N")[..12],
+            Id = Ids.New(),
             Name = "New preset",
             Arguments = "-c:v libx264 -crf 20 -preset medium -c:a aac -b:a 192k",
             Extension = "mp4",
@@ -141,7 +141,7 @@ public sealed partial class PresetsViewModel : ViewModelBase
     {
         if (Selected is not { } preset)
             return;
-        var copy = preset with { Id = Guid.NewGuid().ToString("N")[..12], Name = preset.Name + " copy" };
+        var copy = preset with { Id = Ids.New(), Name = preset.Name + " copy" };
         _app.Presets.Save(copy);
         Reload(copy.Id);
     }

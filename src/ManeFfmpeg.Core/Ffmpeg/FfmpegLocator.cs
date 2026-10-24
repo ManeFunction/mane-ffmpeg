@@ -10,53 +10,24 @@ public sealed record FfmpegTools(string Ffmpeg, string Ffprobe, string VersionTe
     /// <summary>Oldest ffmpeg the generated commands are written for.</summary>
     public static readonly Version Minimum = new(5, 0);
 
+    /// <summary>Leading ffmpeg options for every run: no stdin, no banner, errors only.</summary>
+    public static IReadOnlyList<string> Quiet { get; } = ["-nostdin", "-hide_banner", "-loglevel", "error"];
+
     public bool IsTooOld => Version is { } v && v < Minimum;
 }
 
 public static partial class FfmpegLocator
 {
-    /// <summary>
-    /// Directories to search. GUI apps on macOS start with a minimal PATH, so the usual
-    /// Homebrew/MacPorts/distro locations are always checked as well.
-    /// </summary>
-    public static IEnumerable<string> SearchDirectories()
-    {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var path = Environment.GetEnvironmentVariable("PATH") ?? "";
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var dirs = path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-            .Concat([
-                "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/opt/local/bin", "/snap/bin",
-                Path.Combine(home, ".local", "bin"), Path.Combine(home, "bin"),
-            ]);
-        foreach (var dir in dirs)
-            if (seen.Add(dir))
-                yield return dir;
-    }
-
-    public static string? FindExecutable(string name, string? preferredPath = null)
-    {
-        if (!string.IsNullOrWhiteSpace(preferredPath))
-            return File.Exists(preferredPath) ? preferredPath : null;
-        foreach (var dir in SearchDirectories())
-        {
-            var candidate = Path.Combine(dir, name);
-            if (File.Exists(candidate))
-                return candidate;
-        }
-        return null;
-    }
-
     /// <summary>Finds ffmpeg and ffprobe (ffprobe defaults to ffmpeg's directory) and reads the version.</summary>
     public static async Task<FfmpegTools?> LocateAsync(string? ffmpegOverride = null, string? ffprobeOverride = null, CancellationToken ct = default)
     {
-        var ffmpeg = FindExecutable("ffmpeg", ffmpegOverride);
+        var ffmpeg = Executables.Find("ffmpeg", ffmpegOverride);
         if (ffmpeg is null)
             return null;
         var sibling = Path.Combine(Path.GetDirectoryName(ffmpeg)!, "ffprobe");
         var ffprobe = !string.IsNullOrWhiteSpace(ffprobeOverride)
-            ? FindExecutable("ffprobe", ffprobeOverride)
-            : File.Exists(sibling) ? sibling : FindExecutable("ffprobe");
+            ? Executables.Find("ffprobe", ffprobeOverride)
+            : File.Exists(sibling) ? sibling : Executables.Find("ffprobe");
         if (ffprobe is null)
             return null;
 

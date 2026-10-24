@@ -436,8 +436,7 @@ public sealed partial class MainWindowViewModel
             StatusMessage = "Set In (I) and Out (O) marks further apart.";
             return;
         }
-        var clip = new Clip { Id = TimelineEditor.NewId(), SourceId = item.Id, In = start, Out = end };
-        CommitKeepingFit(State with { Timeline = TimelineEditor.Append(State.Timeline, clip) });
+        CommitKeepingFit(State with { Timeline = TimelineEditor.Append(State.Timeline, Clip.Create(item.Id, start, end)) });
         StatusMessage = $"Added {TimeFormat.Display(end - start)} from {item.Name} to the end of the timeline.";
         MarkIn = MarkOut = null;
     }

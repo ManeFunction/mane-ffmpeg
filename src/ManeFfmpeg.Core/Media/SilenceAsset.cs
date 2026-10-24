@@ -26,7 +26,7 @@ public static class SilenceAsset
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var temp = path + ".tmp.mka";
             await Cli.Wrap(tools.Ffmpeg)
-                .WithArguments(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+                .WithArguments([.. FfmpegTools.Quiet, "-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
                     "-t", ((int)Length.TotalSeconds).ToString(), "-c:a", "flac", temp])
                 .ExecuteAsync(ct);
             File.Move(temp, path, overwrite: true);

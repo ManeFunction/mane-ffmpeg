@@ -62,7 +62,7 @@ public partial class MainWindow : Window, IMainWindowView
 
     public MainWindowViewModel ViewModel { get; }
 
-    private static KeyModifiers Cmd => OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
+    private static KeyModifiers Cmd => EditMenu.CommandModifier;
 
     // ---- Menu -------------------------------------------------------------------------------------
 

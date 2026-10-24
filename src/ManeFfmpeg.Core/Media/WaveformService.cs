@@ -60,7 +60,7 @@ public sealed class WaveformService(FfmpegTools tools)
 
         var peaks = new List<byte>();
         var result = await Cli.Wrap(tools.Ffmpeg)
-            .WithArguments(["-nostdin", "-hide_banner", "-loglevel", "error", "-i", path, "-map", $"0:{stream}",
+            .WithArguments([.. FfmpegTools.Quiet, "-i", path, "-map", $"0:{stream}",
                 "-ac", "1", "-ar", SampleRate.ToString(), "-f", "s16le", "-acodec", "pcm_s16le", "pipe:1"])
             .WithStandardOutputPipe(PipeTarget.Create(async (output, ct) =>
             {
