@@ -35,7 +35,7 @@
                 <TextBlock Text="Name" Classes="title" />
                 <TextBox Text="{Binding Name}" />
                 <TextBlock Text="ffmpeg output options" Classes="title" />
-                <TextBox Text="{Binding Arguments}" AcceptsReturn="False" TextWrapping="Wrap" MinHeight="60"
+                <TextBox x:Name="ArgumentsBox" Text="{Binding Arguments}" AcceptsReturn="False" TextWrapping="Wrap" MinHeight="60"
                          FontFamily="Menlo, DejaVu Sans Mono, monospace" FontSize="12"
                          PlaceholderText="-c:v libx265 -crf 28 -preset slow -c:a copy" />
                 <TextBlock Classes="dim" TextWrapping="Wrap"

@@ -165,6 +165,45 @@ internal static class DebugAutomation
                     case "snap":
                         vm.SnapToKeyframes = arg == "on";
                         break;
+                    case "presets-keys":
+                    {
+                        // presets-keys <Key> [<Key>…]: sends Cmd/Ctrl+<Key> presses to the arguments box of the presets window
+                        var dialog = new PresetsWindow();
+                        dialog.Show();
+                        await Task.Delay(800);
+                        var box = dialog.FindControl<TextBox>("ArgumentsBox")!;
+                        box.Focus();
+                        var modifier = OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
+                        foreach (var k in arg.Split(' '))
+                        {
+                            box.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Enum.Parse<Key>(k), KeyModifiers = modifier, Source = box });
+                            await Task.Delay(400);
+                            Console.WriteLine($"[presets-keys] after Cmd+{k}: '{box.Text}' sel={box.SelectionStart}-{box.SelectionEnd}");
+                        }
+                        dialog.Close();
+                        break;
+                    }
+                    case "presets-menu":
+                    {
+                        // presets-menu <Item>[,<Item>…]: clicks Edit menu items of the presets window with its arguments box focused
+                        var dialog = new PresetsWindow();
+                        dialog.Show();
+                        await Task.Delay(800);
+                        var box = dialog.FindControl<TextBox>("ArgumentsBox")!;
+                        box.Focus();
+                        var edit = NativeMenu.GetMenu(dialog)!.Items.OfType<NativeMenuItem>().First(i => i.Header == "Edit").Menu!;
+                        foreach (var header in arg.Split(','))
+                        {
+                            var item = edit.Items.OfType<NativeMenuItem>().First(i => i.Header == header);
+                            var methods = typeof(NativeMenuItem).GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                            var click = methods.First(m => m.Name.Contains("Click") && m.GetParameters().Length == 0 && !m.Name.StartsWith("get_") && !m.Name.StartsWith("add_") && !m.Name.StartsWith("remove_"));
+                            click.Invoke(item, null);
+                            await Task.Delay(400);
+                            Console.WriteLine($"[presets-menu] after {header} ({click.Name}): '{box.Text}' sel={box.SelectionStart}-{box.SelectionEnd}");
+                        }
+                        dialog.Close();
+                        break;
+                    }
                     case "presets-snapshot":
                         await SnapshotWindowAsync(new PresetsWindow(), arg);
                         break;

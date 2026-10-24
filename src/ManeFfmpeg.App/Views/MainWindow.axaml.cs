@@ -108,21 +108,24 @@ public partial class MainWindow : Window, IMainWindowView
             file.Items.Add(settings);
         }
 
-        var edit = new NativeMenu
+        // Undo/Redo/Select All act on the focused text field, otherwise on the timeline.
+        var edit = EditMenu.Create(this,
+            undo: () => vm.UndoCommand.Execute(null),
+            redo: () => vm.RedoCommand.Execute(null),
+            selectAll: () => vm.SelectAllCommand.Execute(null));
+        foreach (var item in new NativeMenuItemBase[]
         {
-            Item("Undo", vm.UndoCommand, Key.Z, Cmd),
-            Item("Redo", vm.RedoCommand, Key.Z, Cmd | KeyModifiers.Shift),
             new NativeMenuItemSeparator(),
             Item("Split at Playhead", vm.SplitCommand),
             Item("Delete Selected Clips", vm.DeleteSelectionCommand),
-            Item("Select All Clips", vm.SelectAllCommand, Key.A, Cmd),
             new NativeMenuItemSeparator(),
             Item("Audio 10 ms Earlier", vm.NudgeAudioCommand, parameter: "-10"),
             Item("Audio 10 ms Later", vm.NudgeAudioCommand, parameter: "10"),
             Item("Audio 1 Frame Earlier", vm.NudgeAudioFramesCommand, parameter: "-1"),
             Item("Audio 1 Frame Later", vm.NudgeAudioFramesCommand, parameter: "1"),
             Item("Reset Audio Offset", vm.ResetAudioOffsetCommand),
-        };
+        })
+            edit.Items.Add(item);
 
         var view = new NativeMenu
         {

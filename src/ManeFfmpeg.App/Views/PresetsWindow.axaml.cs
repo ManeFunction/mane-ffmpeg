@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using ManeFfmpeg.App.Services;
 using ManeFfmpeg.App.ViewModels;
 
 namespace ManeFfmpeg.App.Views;
@@ -9,5 +10,6 @@ public partial class PresetsWindow : Window
     {
         InitializeComponent();
         DataContext = new PresetsViewModel();
+        EditMenu.Attach(this);
     }
 }
