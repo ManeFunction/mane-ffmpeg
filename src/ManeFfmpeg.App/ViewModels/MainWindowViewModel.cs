@@ -329,11 +329,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     public async Task LoadProjectAsync(string path)
     {
         var project = await ProjectFile.LoadAsync(path);
+        var preset = await ResolvePresetAsync(project.Export);
         _media.Clear();
         Sources.Clear();
         FilePath = path;
         Layout = project.Layout;
-        ApplyExportSettings(project.Export);
+        ApplyExportSettings(project.Export, preset);
         _savedExport = CurrentExportSettings();
         _savedState = project.State;
         History.Reset(project.State);

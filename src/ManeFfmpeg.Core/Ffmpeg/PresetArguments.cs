@@ -61,12 +61,9 @@ public sealed class PresetArguments
         for (var i = 0; i < tokens.Count; i++)
         {
             var token = tokens[i];
+            // ffmpeg would take a stray value as another output file, written next to the real one.
             if (token.Length < 2 || token[0] != '-' || char.IsDigit(token[1]))
-            {
-                warnings.Add($"Unexpected value \"{token}\" (not after an option).");
-                output.Add(token);
-                continue;
-            }
+                throw new FormatException($"Unexpected value \"{token}\": every value must follow an option, and a preset can't add outputs.");
 
             var name = token[1..];
             var (head, spec) = SplitSpecifier(name);

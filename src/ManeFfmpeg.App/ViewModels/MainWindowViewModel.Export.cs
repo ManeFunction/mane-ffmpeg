@@ -17,6 +17,9 @@ public sealed partial class MainWindowViewModel
     private DispatcherTimer _planTimer = null!;
     private string? _lastOutputPath;
 
+    /// <summary>An existing output file the user agreed to replace (in the save dialog or when asked).</summary>
+    private string? _confirmedOutputPath;
+
     public ObservableCollection<Preset> Presets { get; } = [];
 
     [ObservableProperty]
@@ -82,11 +85,11 @@ public sealed partial class MainWindowViewModel
         Presets.Clear();
         foreach (var preset in _app.Presets.Presets)
             Presets.Add(preset);
-        // "for storage" is the default for new projects.
-        SelectedPreset = Presets.FirstOrDefault(p => p.Id == selectedId)
-                         ?? Presets.FirstOrDefault(p => p.Id == Preset.ForStorage.Id)
-                         ?? Presets.FirstOrDefault();
+        SelectedPreset = Presets.FirstOrDefault(p => p.Id == selectedId) ?? DefaultPreset();
     }
+
+    /// <summary>"for storage" is the default for new projects.</summary>
+    private Preset? DefaultPreset() => Presets.FirstOrDefault(p => p.Id == Preset.ForStorage.Id) ?? Presets.FirstOrDefault();
 
     partial void OnSelectedPresetChanged(Preset? value)
     {
@@ -120,17 +123,30 @@ public sealed partial class MainWindowViewModel
     private ExportSettings CurrentExportSettings() =>
         new() { PresetId = SelectedPreset?.Id, PresetSnapshot = SelectedPreset, OutputPath = OutputPath };
 
-    private void ApplyExportSettings(ExportSettings settings)
+    /// <summary>
+    /// The project's preset. One this machine doesn't have comes from the project file and its arguments go
+    /// straight to ffmpeg, so it's only added when the user agrees, and never in place of an existing preset.
+    /// </summary>
+    private async Task<Preset?> ResolvePresetAsync(ExportSettings settings)
     {
-        var preset = _app.Presets.Find(settings.PresetId);
-        if (preset is null && settings.PresetSnapshot is { } snapshot)
-        {
-            // The project came with a preset this machine doesn't have: add it back.
-            _app.Presets.Save(snapshot);
-            preset = _app.Presets.Find(snapshot.Id);
-        }
-        SelectedPreset = preset ?? Presets.FirstOrDefault();
-        OutputPath = settings.OutputPath;
+        if (_app.Presets.Find(settings.PresetId) is { } known)
+            return known;
+        if (settings.PresetSnapshot is not { } snapshot || snapshot.Id != settings.PresetId || View is null)
+            return null;
+        var answer = await View.AskAsync($"Add the preset “{snapshot.Name}”?",
+            $"This project was exported with a preset you don't have:\n\n{snapshot.Arguments}\n\n" +
+            "Only add presets from projects you trust: ffmpeg runs these options as they are.",
+            "Add preset", "Use my default");
+        if (answer != 0)
+            return null;
+        _app.Presets.Save(snapshot.WithDefaults());
+        return _app.Presets.Find(snapshot.Id);
+    }
+
+    private void ApplyExportSettings(ExportSettings settings, Preset? preset)
+    {
+        SelectedPreset = preset ?? DefaultPreset();
+        OutputPath = settings.OutputPath is { } path && Path.IsPathFullyQualified(path) ? path : null;
     }
 
     private string? DefaultOutputPath()
@@ -215,8 +231,11 @@ public sealed partial class MainWindowViewModel
         if (View is null)
             return;
         var path = await View.PickOutputPathAsync(OutputPath ?? DefaultOutputPath() ?? "export.mp4");
-        if (path is not null)
-            OutputPath = path;
+        if (path is null)
+            return;
+        // The save dialog has already asked about replacing an existing file.
+        _confirmedOutputPath = path;
+        OutputPath = path;
     }
 
     [RelayCommand]
@@ -235,6 +254,16 @@ public sealed partial class MainWindowViewModel
         {
             ShowExportResult("Add videos to the timeline first.", failed: true);
             return;
+        }
+        // An output path restored from a project was never confirmed in the save dialog.
+        if (output != _confirmedOutputPath && File.Exists(output) && View is not null)
+        {
+            var answer = await View.AskAsync($"Replace “{Path.GetFileName(output)}”?",
+                $"A file with this name already exists in {Path.GetDirectoryName(output)}. Exporting will replace it.",
+                "Replace", "Cancel");
+            if (answer != 0)
+                return;
+            _confirmedOutputPath = output;
         }
 
         IsExporting = true;

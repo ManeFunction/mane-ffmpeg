@@ -100,7 +100,7 @@ public sealed class PresetStore
             if (!File.Exists(path))
                 return (null, CurrentVersion);
             var file = JsonSerializer.Deserialize(File.ReadAllText(path), PresetJsonContext.Readable.PresetFile);
-            return (file?.Presets.Where(p => !string.IsNullOrWhiteSpace(p.Id)).ToList(), file?.Version ?? 0);
+            return (file?.Presets.Where(p => !string.IsNullOrWhiteSpace(p.Id)).Select(p => p.WithDefaults()).ToList(), file?.Version ?? 0);
         }
         catch (Exception)
         {

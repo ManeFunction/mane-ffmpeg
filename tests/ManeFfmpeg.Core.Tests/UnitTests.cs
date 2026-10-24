@@ -97,6 +97,15 @@ public class PresetArgumentsTests
             PresetArguments.Tokenize("-metadata \"title=My \\\"cut\\\"\" -x 'a b' c\\\\d"));
         Assert.Throws<FormatException>(() => PresetArguments.Tokenize("-vf 'scale"));
     }
+
+    [Fact]
+    public void Stray_values_are_refused_because_ffmpeg_would_write_them_as_outputs()
+    {
+        var ex = Assert.Throws<FormatException>(() => PresetArguments.Parse("-c:v libx264 -f mpegts tcp://127.0.0.1:9"));
+        Assert.Contains("tcp://127.0.0.1:9", ex.Message);
+        Assert.Throws<FormatException>(() => PresetArguments.Parse("-c copy /tmp/side.mkv"));
+        Assert.Equal(["-c:v", "libx264", "-bf", "-1"], PresetArguments.Parse("-c:v libx264 -bf -1").OutputTokens);
+    }
 }
 
 public class TimelineEditorTests
@@ -259,6 +268,23 @@ public class PresetStoreTests
 
             // A second load doesn't migrate again (an edited preset stays as the user left it).
             Assert.Equal(store.Presets.Select(p => p.Arguments), new PresetStore(path).Presets.Select(p => p.Arguments));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Missing_fields_get_defaults()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, """{ "version": 2, "presets": [ { "id": "mine", "name": "mine", "arguments": "-c:v libx264" } ] }""");
+        try
+        {
+            var preset = Assert.Single(new PresetStore(path).Presets);
+            Assert.Equal(Preset.DefaultAudioFallback, preset.AudioFallbackArguments);
+            Assert.Equal("", preset.Extension);
         }
         finally
         {

@@ -17,6 +17,13 @@ public sealed record Preset
 
     public const string DefaultAudioFallback = "-c:a aac -b:a 256k";
 
+    /// <summary>The preset with defaults for fields a hand-written or damaged file left empty.</summary>
+    public Preset WithDefaults() => this with
+    {
+        Extension = Extension ?? "",
+        AudioFallbackArguments = string.IsNullOrWhiteSpace(AudioFallbackArguments) ? DefaultAudioFallback : AudioFallbackArguments,
+    };
+
     /// <summary>
     /// Archival HEVC: CRF 23 in 10-bit with x265 tuned to keep detail (aq-mode 3, psy-rdoq, no SAO), so moving
     /// objects don't smear. About 1.4x the size of <see cref="Harsh"/> with clearly better detail in motion.
