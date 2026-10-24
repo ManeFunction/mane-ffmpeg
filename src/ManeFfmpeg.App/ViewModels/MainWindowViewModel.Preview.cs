@@ -37,7 +37,7 @@ public sealed partial class MainWindowViewModel
     public partial string? PreviewMessage { get; private set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsSourceMode), nameof(PositionText), nameof(PreviewTitle))]
+    [NotifyPropertyChangedFor(nameof(IsSourceMode), nameof(Position), nameof(PositionText), nameof(PreviewTitle))]
     public partial PreviewMode Mode { get; private set; }
 
     [ObservableProperty]
@@ -45,7 +45,7 @@ public sealed partial class MainWindowViewModel
     public partial SourceItemViewModel? PreviewedSource { get; private set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(PositionText))]
+    [NotifyPropertyChangedFor(nameof(Position), nameof(PositionText))]
     public partial TimeSpan SourcePosition { get; private set; }
 
     [ObservableProperty]
@@ -67,17 +67,7 @@ public sealed partial class MainWindowViewModel
     [ObservableProperty]
     public partial bool IsCompact { get; set; }
 
-    partial void OnIsCompactChanged(bool value)
-    {
-        if (Player is null)
-            return;
-        if (value)
-            Player.SetString("vid", "no");
-        else if (Mode == PreviewMode.Timeline)
-            SelectTracks(TimelineEdl.VideoTitle, TimelineEdl.AudioTitle, null);
-        else
-            SelectTracks(null, null, PreviewedSource?.Info?.Audio(PreviewedSource.AudioStreamIndex)?.Index);
-    }
+    partial void OnIsCompactChanged(bool value) => ApplyTrackSelection();
 
     [RelayCommand]
     private void ToggleCompact() => IsCompact = !IsCompact;
@@ -86,9 +76,13 @@ public sealed partial class MainWindowViewModel
 
     public string PreviewTitle => Mode == PreviewMode.Source && PreviewedSource is { } s ? $"Source: {s.Name}" : "Timeline";
 
-    public string PositionText => Mode == PreviewMode.Source
-        ? $"{TimeFormat.Display(SourcePosition)} / {TimeFormat.Display(SourceLength)}"
-        : $"{TimeFormat.Display(Timeline.Playhead)} / {TimeFormat.Display(State.Timeline.Duration)}";
+    /// <summary>Where the preview is: in the previewed source, or the playhead on the timeline.</summary>
+    public TimeSpan Position => Mode == PreviewMode.Source ? SourcePosition : Timeline.Playhead;
+
+    /// <summary>How long the previewed source or the timeline is.</summary>
+    public TimeSpan Length => Mode == PreviewMode.Source ? SourceLength : State.Timeline.Duration;
+
+    public string PositionText => $"{TimeFormat.Display(Position)} / {TimeFormat.Display(Length)}";
 
     public string MarksText => $"In {(MarkIn is { } i ? TimeFormat.Display(i) : "—")} · Out {(MarkOut is { } o ? TimeFormat.Display(o) : "—")}";
 
@@ -159,10 +153,19 @@ public sealed partial class MainWindowViewModel
             return;
         Player.SetDouble("audio-delay", 0);
         Player.SetString("start", "none");
+        ApplyTrackSelection();
+    }
+
+    /// <summary>
+    /// Plays the timeline EDL's titled tracks, or a previewed source's video and chosen audio stream;
+    /// no video at all in compact mode.
+    /// </summary>
+    private void ApplyTrackSelection()
+    {
         if (Mode == PreviewMode.Timeline)
             SelectTracks(TimelineEdl.VideoTitle, TimelineEdl.AudioTitle, null);
-        else if (PreviewedSource?.Info?.Audio(PreviewedSource.AudioStreamIndex) is { } audio)
-            SelectTracks(null, null, audio.Index);
+        else
+            SelectTracks(null, null, PreviewedSource?.Info?.Audio(PreviewedSource.AudioStreamIndex)?.Index);
     }
 
     /// <summary>Picks tracks by EDL title (timeline) or by stream index (source preview).</summary>
@@ -193,6 +196,7 @@ public sealed partial class MainWindowViewModel
 
     internal void OnPlayheadMoved()
     {
+        OnPropertyChanged(nameof(Position));
         OnPropertyChanged(nameof(PositionText));
         if (!_settingPlayheadFromPlayer && !IsPlaying)
             OnSelectionChanged();
@@ -331,48 +335,38 @@ public sealed partial class MainWindowViewModel
     {
         if (Player is null)
             return;
-        if (IsCompact && Mode == PreviewMode.Timeline)
+        if (IsCompact)
         {
-            // No video is decoded in compact mode, so step by one frame of the clip under the playhead.
-            var frame = State.Timeline.Locate(Timeline.Playhead) is { } at && FrameDuration(State.Timeline.Clips[at.Index]) is { } d
-                ? d
-                : TimeSpan.FromSeconds(1 / 30.0);
-            SeekTo(Timeline.Clamp(Timeline.Playhead + (direction == "-1" ? -frame : frame)), false);
+            // No video is decoded in compact mode, so step by one frame of what is being previewed.
+            var video = Mode == PreviewMode.Source
+                ? PreviewedSource?.Info?.Video
+                : State.Timeline.Locate(Timeline.Playhead) is { } at ? Media.GetValueOrDefault(State.Timeline.Clips[at.Index].SourceId)?.Video : null;
+            var frame = TimeFormat.FrameDuration(video?.FrameRate ?? default);
+            SeekPreview(Position + (direction == "-1" ? -frame : frame));
             return;
         }
         _lastSeekAt = DateTime.MinValue;
         Player.CommandAsync(direction == "-1" ? "frame-back-step" : "frame-step");
     }
 
-    [RelayCommand]
-    private void Jump(string seconds)
+    /// <summary>Seeks whatever is previewed, within its length.</summary>
+    private void SeekPreview(TimeSpan time)
     {
-        var delta = TimeSpan.FromSeconds(double.Parse(seconds, CultureInfo.InvariantCulture));
+        time = time < TimeSpan.Zero ? TimeSpan.Zero : time > Length ? Length : time;
         if (Mode == PreviewMode.Source)
-        {
-            Player?.CommandAsync("seek", delta.TotalSeconds.ToString(CultureInfo.InvariantCulture), "relative+exact");
-            return;
-        }
-        SeekTo(Timeline.Clamp(Timeline.Playhead + delta), false);
+            Player?.CommandAsync("seek", TimeFormat.Seconds(time), "absolute+exact");
+        else
+            SeekTo(time, false);
     }
 
     [RelayCommand]
-    private void GoToStart()
-    {
-        if (Mode == PreviewMode.Source)
-            Player?.CommandAsync("seek", "0", "absolute+exact");
-        else
-            SeekTo(TimeSpan.Zero, false);
-    }
+    private void Jump(string seconds) => SeekPreview(Position + TimeSpan.FromSeconds(double.Parse(seconds, CultureInfo.InvariantCulture)));
 
     [RelayCommand]
-    private void GoToEnd()
-    {
-        if (Mode == PreviewMode.Source)
-            Player?.CommandAsync("seek", "100", "absolute-percent+exact");
-        else
-            SeekTo(State.Timeline.Duration, false);
-    }
+    private void GoToStart() => SeekPreview(TimeSpan.Zero);
+
+    [RelayCommand]
+    private void GoToEnd() => SeekPreview(Length);
 
     /// <summary>Moves the playhead to the previous/next cut.</summary>
     [RelayCommand]
