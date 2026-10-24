@@ -2,6 +2,7 @@
 #pragma warning disable CS0618 // Bitmap.Save(string) is fine for debug snapshots
 using System.Globalization;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -137,6 +138,21 @@ internal static class DebugAutomation
                             double.Parse(parts[2], CultureInfo.InvariantCulture), parts.Length > 3 && parts[3] == "shift");
                         break;
                     }
+                    case "focus":
+                        // focus <x:Name of a control in the window>
+                        (window.FindControl<Avalonia.Controls.Control>(arg) ?? throw new InvalidOperationException($"no control {arg}")).Focus();
+                        break;
+                    case "keypress":
+                    {
+                        // Like a real key press: KeyDown then KeyUp, both sent to the focused element.
+                        var key = Enum.Parse<Key>(arg);
+                        var target = window.FocusManager?.GetFocusedElement() as Avalonia.Interactivity.Interactive ?? window;
+                        Console.WriteLine($"[keypress] target={target.GetType().Name}");
+                        target.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = key, Source = target });
+                        await Task.Delay(120);
+                        target.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyUpEvent, Key = key, Source = target });
+                        break;
+                    }
                     case "key":
                         window.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Enum.Parse<Key>(arg), Source = window });
                         break;
@@ -234,7 +250,7 @@ internal static class DebugAutomation
     private static void PrintState(MainWindow window)
     {
         var vm = window.ViewModel;
-        Console.WriteLine($"[state] title={vm.Title} playing={vm.IsPlaying} playhead={vm.Timeline.Playhead} zoom={vm.Timeline.Zoom:0.##} " +
+        Console.WriteLine($"[state] title={vm.Title} snap={vm.SnapToKeyframes} playing={vm.IsPlaying} playhead={vm.Timeline.Playhead} zoom={vm.Timeline.Zoom:0.##} " +
                           $"preview='{vm.PreviewMessage}' status='{vm.StatusMessage}' mpv={vm.Player is not null} " +
                           $"time-pos={vm.Player?.GetString("time-pos")} vid={vm.Player?.GetString("vid")} aid={vm.Player?.GetString("aid")} " +
                           $"path={vm.Player?.GetString("path")?[..Math.Min(80, vm.Player?.GetString("path")?.Length ?? 0)]}");

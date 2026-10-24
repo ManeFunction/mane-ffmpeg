@@ -186,7 +186,7 @@
                                 <Button Classes="icon" Command="{Binding StepFrameCommand}" CommandParameter="-1" ToolTip.Tip="Previous frame (←)">
                                     <PathIcon Data="{StaticResource IconStepBack}" />
                                 </Button>
-                                <Button Classes="icon" Command="{Binding PlayPauseCommand}" ToolTip.Tip="Play / pause (Space)" Width="44">
+                                <Button x:Name="PlayButton" Classes="icon" Command="{Binding PlayPauseCommand}" ToolTip.Tip="Play / pause (Space)" Width="44">
                                     <Panel>
                                         <PathIcon Data="{StaticResource IconPlay}" IsVisible="{Binding !IsPlaying}" />
                                         <PathIcon Data="{StaticResource IconPause}" IsVisible="{Binding IsPlaying}" />
@@ -228,7 +228,7 @@
                             <Button Classes="tool" Content="Delete" Command="{Binding DeleteSelectionCommand}" />
                             <Button Classes="tool" Content="Undo" Command="{Binding UndoCommand}" />
                             <Button Classes="tool" Content="Redo" Command="{Binding RedoCommand}" />
-                            <CheckBox Content="Snap to keyframes" IsChecked="{Binding SnapToKeyframes}" Margin="10,0,0,0" FontSize="12"
+                            <CheckBox x:Name="SnapCheckBox" Content="Snap to keyframes" IsChecked="{Binding SnapToKeyframes}" Margin="10,0,0,0" FontSize="12"
                                       ToolTip.Tip="Show keyframes and split on them — needed for exact stream-copy cuts" />
                         </StackPanel>
                         <TextBlock Grid.Column="1" Text="{Binding StatusMessage}" Classes="dim" VerticalAlignment="Center"

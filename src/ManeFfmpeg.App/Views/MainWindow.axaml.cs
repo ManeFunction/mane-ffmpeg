@@ -18,6 +18,10 @@ public partial class MainWindow : Window, IMainWindowView
 
     private bool _closeConfirmed;
 
+    // Keys consumed as shortcuts on key-down; their key-up is swallowed too, so a focused button or
+    // checkbox doesn't also react to it (Space would otherwise start playback and click "pause" on release).
+    private readonly HashSet<Key> _shortcutKeysDown = [];
+
     public MainWindow() : this(new MainWindowViewModel())
     {
     }
@@ -32,6 +36,8 @@ public partial class MainWindow : Window, IMainWindowView
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DropEvent, OnDrop);
         AddHandler(KeyDownEvent, OnWindowKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(KeyUpEvent, OnWindowKeyUp, RoutingStrategies.Tunnel);
+        Deactivated += (_, _) => _shortcutKeysDown.Clear();
         Closing += OnClosing;
         Closed += (_, _) =>
         {
@@ -149,6 +155,12 @@ public partial class MainWindow : Window, IMainWindowView
             return;
         if ((e.KeyModifiers & (KeyModifiers.Meta | KeyModifiers.Control)) != 0)
             return;
+        // Holding a toggle key auto-repeats key-down; only the first press counts.
+        if (e.Key is Key.Space or Key.K && _shortcutKeysDown.Contains(e.Key))
+        {
+            e.Handled = true;
+            return;
+        }
         var vm = ViewModel;
         var shift = (e.KeyModifiers & KeyModifiers.Shift) != 0;
         var alt = (e.KeyModifiers & KeyModifiers.Alt) != 0;
@@ -237,6 +249,14 @@ public partial class MainWindow : Window, IMainWindowView
                 break;
         }
         e.Handled = handled;
+        if (handled)
+            _shortcutKeysDown.Add(e.Key);
+    }
+
+    private void OnWindowKeyUp(object? sender, KeyEventArgs e)
+    {
+        if (_shortcutKeysDown.Remove(e.Key))
+            e.Handled = true;
     }
 
     // ---- Drag and drop ----------------------------------------------------------------------------
