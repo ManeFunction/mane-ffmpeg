@@ -51,6 +51,8 @@ public sealed partial class TimelineViewModel(MainWindowViewModel owner) : ViewM
 
     public MediaInfo? Info(string sourceId) => owner.Media.GetValueOrDefault(sourceId);
 
+    public CutGrid? GridOf(string sourceId) => owner.GridOf(sourceId);
+
     public int ColorIndex(string sourceId) => owner.Sources.FirstOrDefault(s => s.Id == sourceId)?.ColorIndex ?? 0;
 
     public bool IsMissing(string sourceId) => owner.Sources.FirstOrDefault(s => s.Id == sourceId)?.IsProblem ?? true;

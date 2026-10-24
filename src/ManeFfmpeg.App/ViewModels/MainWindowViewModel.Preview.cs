@@ -417,13 +417,10 @@ public sealed partial class MainWindowViewModel
     }
 
     [RelayCommand]
-    private void SetMarkIn() => MarkIn = SnapSourcePosition();
+    private void SetMarkIn() => MarkIn = PreviewedSource is { } s && GridOf(s.Id) is { } grid ? grid.SnapInPoint(SourcePosition) : SourcePosition;
 
     [RelayCommand]
-    private void SetMarkOut() => MarkOut = SnapSourcePosition();
-
-    private TimeSpan SnapSourcePosition() =>
-        PreviewedSource?.Info?.Video is { } v ? TimeFormat.SnapToFrame(SourcePosition, v.FrameRate, v.StartOffset) : SourcePosition;
+    private void SetMarkOut() => MarkOut = PreviewedSource is { } s && GridOf(s.Id) is { } grid ? grid.SnapOutPoint(SourcePosition) : SourcePosition;
 
     [RelayCommand]
     private void AddMarkedRange()

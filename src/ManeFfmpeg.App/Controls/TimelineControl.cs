@@ -450,15 +450,12 @@ public sealed class TimelineControl : Control
                 break;
             case Drag.TrimIn:
             {
-                var newIn = SnapSource(vm, _clip!, _clip!.In + TimeSpan.FromSeconds(dx / vm.Zoom));
-                vm.PreviewTimeline(TimelineEditor.TrimIn(_gestureStart!, _clipId!, newIn));
+                vm.PreviewTimeline(TimelineEditor.TrimIn(_gestureStart!, _clipId!, _clip!.In + TimeSpan.FromSeconds(dx / vm.Zoom), vm.GridOf));
                 break;
             }
             case Drag.TrimOut:
             {
-                var length = vm.Info(_clip!.SourceId)?.Duration ?? _clip.Out;
-                var newOut = SnapSource(vm, _clip, _clip.Out + TimeSpan.FromSeconds(dx / vm.Zoom));
-                vm.PreviewTimeline(TimelineEditor.TrimOut(_gestureStart!, _clipId!, newOut, length));
+                vm.PreviewTimeline(TimelineEditor.TrimOut(_gestureStart!, _clipId!, _clip!.Out + TimeSpan.FromSeconds(dx / vm.Zoom), vm.GridOf));
                 break;
             }
             case Drag.PendingSlip when Math.Abs(dx) > DragThreshold:
@@ -577,8 +574,4 @@ public sealed class TimelineControl : Control
         }
         Cursor = Cursor.Default;
     }
-
-    /// <summary>Snaps a source time to its frame grid (trims land on whole frames).</summary>
-    private static TimeSpan SnapSource(TimelineViewModel vm, Clip clip, TimeSpan time) =>
-        vm.Info(clip.SourceId)?.Video is { } v ? TimeFormat.SnapToFrame(time, v.FrameRate, v.StartOffset) : time;
 }

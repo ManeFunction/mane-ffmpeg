@@ -7,7 +7,7 @@ namespace ManeFfmpeg.App.ViewModels;
 
 public sealed partial class MainWindowViewModel
 {
-    /// <summary>Show keyframes and snap splits to them; turned on automatically for stream-copy presets.</summary>
+    /// <summary>Show keyframes and snap in points (splits, trims, marks) to them; on automatically for stream-copy presets.</summary>
     [ObservableProperty]
     public partial bool SnapToKeyframes { get; set; }
 
@@ -65,8 +65,8 @@ public sealed partial class MainWindowViewModel
         get => PrimaryClip is { } c ? TimeFormat.Display(c.In) : "";
         set
         {
-            if (PrimaryClip is { } c && TimeFormat.TryParse(value, out var t) && SourceDuration(c) is { } d)
-                Commit(State with { Timeline = TimelineEditor.SetRange(State.Timeline, c.Id, t, c.Out, d) });
+            if (PrimaryClip is { } c && TimeFormat.TryParse(value, out var t))
+                Commit(State with { Timeline = TimelineEditor.SetRange(State.Timeline, c.Id, t, c.Out, GridOf) });
             OnSelectionChanged();
         }
     }
@@ -76,8 +76,8 @@ public sealed partial class MainWindowViewModel
         get => PrimaryClip is { } c ? TimeFormat.Display(c.Out) : "";
         set
         {
-            if (PrimaryClip is { } c && TimeFormat.TryParse(value, out var t) && SourceDuration(c) is { } d)
-                Commit(State with { Timeline = TimelineEditor.SetRange(State.Timeline, c.Id, c.In, t, d) });
+            if (PrimaryClip is { } c && TimeFormat.TryParse(value, out var t))
+                Commit(State with { Timeline = TimelineEditor.SetRange(State.Timeline, c.Id, c.In, t, GridOf) });
             OnSelectionChanged();
         }
     }
@@ -112,7 +112,11 @@ public sealed partial class MainWindowViewModel
         OnPropertyChanged(nameof(AudioOffsetHint));
     }
 
-    private TimeSpan? SourceDuration(Clip clip) => _media.TryGetValue(clip.SourceId, out var info) ? info.Duration : null;
+    /// <summary>Where cuts may land in a source: on frames, and in points on keyframes while snapping to them.</summary>
+    internal CutGrid? GridOf(string sourceId) =>
+        State.Source(sourceId) is { } source && _media.TryGetValue(sourceId, out var info)
+            ? CutGrid.For(info, SnapToKeyframes ? _app.Keyframes?.TryGet(source.Path)?.Times : null)
+            : null;
 
     private TimeSpan? FrameDuration(Clip clip) =>
         _media.TryGetValue(clip.SourceId, out var info) && info.Video is { } v ? TimeFormat.FrameDuration(v.FrameRate) : null;
@@ -122,19 +126,9 @@ public sealed partial class MainWindowViewModel
     [RelayCommand]
     private void Split()
     {
-        var timeline = State.Timeline;
-        if (timeline.Locate(Timeline.Playhead) is not { } at)
+        if (!HasClips)
             return;
-        var clip = timeline.Clips[at.Index];
-        var source = State.Source(clip.SourceId);
-        var sourceTime = clip.In + (Timeline.Playhead - at.ClipStart);
-        if (source is not null && _media.TryGetValue(source.Id, out var info) && info.Video is { } video)
-        {
-            sourceTime = SnapToKeyframes && _app.Keyframes?.TryGet(source.Path) is { } keyframes
-                ? Nearest(keyframes.Times, sourceTime)
-                : TimeFormat.SnapToFrame(sourceTime, video.FrameRate, video.StartOffset);
-        }
-        var (next, rightId) = TimelineEditor.Split(timeline, at.Index, sourceTime);
+        var (next, rightId) = TimelineEditor.Split(State.Timeline, Timeline.Playhead, GridOf);
         if (rightId is null)
         {
             StatusMessage = "Move the playhead inside a clip (away from its edges) to split.";
@@ -147,9 +141,6 @@ public sealed partial class MainWindowViewModel
         OnSelectionChanged();
         StatusMessage = null;
     }
-
-    private static TimeSpan Nearest(IReadOnlyList<TimeSpan> times, TimeSpan target) =>
-        times.MinBy(t => Math.Abs((t - target).Ticks));
 
     [RelayCommand]
     private void DeleteSelection()

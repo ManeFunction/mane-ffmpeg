@@ -20,19 +20,20 @@ public static class TimelineEditor
         timeline with { Clips = timeline.Clips.Insert(Math.Clamp(index, 0, timeline.Clips.Count), clip) };
 
     /// <summary>
-    /// Splits the clip under <paramref name="at"/> (timeline time) at source time <paramref name="sourceTime"/>,
-    /// which the caller has already snapped to a frame or keyframe. Returns the id of the right half, or null.
+    /// Splits the clip playing at timeline time <paramref name="at"/>, at the nearest in point of its source's grid
+    /// (the cut starts the right half). Returns the id of the right half, or null when the cut is too close to an edge.
     /// </summary>
-    public static (Timeline Timeline, string? RightId) Split(Timeline timeline, int clipIndex, TimeSpan sourceTime)
+    public static (Timeline Timeline, string? RightId) Split(Timeline timeline, TimeSpan at, Func<string, CutGrid?> grids)
     {
-        if (clipIndex < 0 || clipIndex >= timeline.Clips.Count)
+        if (timeline.Locate(at) is not { } hit)
             return (timeline, null);
-        var clip = timeline.Clips[clipIndex];
-        if (sourceTime - clip.In < MinClipDuration || clip.Out - sourceTime < MinClipDuration)
+        var clip = timeline.Clips[hit.Index];
+        var cut = Grid(clip, grids).SnapInPoint(clip.In + (at - hit.ClipStart));
+        if (cut - clip.In < MinClipDuration || clip.Out - cut < MinClipDuration)
             return (timeline, null);
-        var left = clip with { Out = sourceTime };
-        var right = clip with { Id = NewId(), In = sourceTime };
-        var clips = timeline.Clips.SetItem(clipIndex, left).Insert(clipIndex + 1, right);
+        var left = clip with { Out = cut };
+        var right = clip with { Id = NewId(), In = cut };
+        var clips = timeline.Clips.SetItem(hit.Index, left).Insert(hit.Index + 1, right);
         return (timeline with { Clips = clips }, right.Id);
     }
 
@@ -55,25 +56,26 @@ public static class TimelineEditor
         return result.SequenceEqual(timeline.Clips) ? timeline : timeline with { Clips = result };
     }
 
-    /// <summary>Moves a clip's in point (ripple); <paramref name="newIn"/> is clamped to the source and min duration.</summary>
-    public static Timeline TrimIn(Timeline timeline, string clipId, TimeSpan newIn)
+    /// <summary>Moves a clip's in point (ripple), snapped to its source's grid and clamped to the source and min duration.</summary>
+    public static Timeline TrimIn(Timeline timeline, string clipId, TimeSpan newIn, Func<string, CutGrid?> grids)
     {
         var index = timeline.IndexOf(clipId);
         if (index < 0)
             return timeline;
         var clip = timeline.Clips[index];
-        newIn = Clamp(newIn, TimeSpan.Zero, clip.Out - MinClipDuration);
+        newIn = Clamp(Grid(clip, grids).SnapInPoint(newIn), TimeSpan.Zero, clip.Out - MinClipDuration);
         return newIn == clip.In ? timeline : timeline with { Clips = timeline.Clips.SetItem(index, clip with { In = newIn }) };
     }
 
-    /// <summary>Moves a clip's out point (ripple), clamped to <paramref name="sourceDuration"/>.</summary>
-    public static Timeline TrimOut(Timeline timeline, string clipId, TimeSpan newOut, TimeSpan sourceDuration)
+    /// <summary>Moves a clip's out point (ripple), snapped to its source's grid and clamped to the source's end.</summary>
+    public static Timeline TrimOut(Timeline timeline, string clipId, TimeSpan newOut, Func<string, CutGrid?> grids)
     {
         var index = timeline.IndexOf(clipId);
         if (index < 0)
             return timeline;
         var clip = timeline.Clips[index];
-        newOut = Clamp(newOut, clip.In + MinClipDuration, sourceDuration);
+        var grid = Grid(clip, grids);
+        newOut = Clamp(grid.SnapOutPoint(newOut), clip.In + MinClipDuration, grid.Duration);
         return newOut == clip.Out ? timeline : timeline with { Clips = timeline.Clips.SetItem(index, clip with { Out = newOut }) };
     }
 
@@ -93,15 +95,16 @@ public static class TimelineEditor
     public static Timeline RemoveSource(Timeline timeline, string sourceId) =>
         timeline with { Clips = timeline.Clips.RemoveAll(c => c.SourceId == sourceId) };
 
-    /// <summary>Replaces a clip's in/out in one step (inspector edits).</summary>
-    public static Timeline SetRange(Timeline timeline, string clipId, TimeSpan newIn, TimeSpan newOut, TimeSpan sourceDuration)
+    /// <summary>Replaces a clip's in/out in one step (inspector edits), snapped and clamped like trims.</summary>
+    public static Timeline SetRange(Timeline timeline, string clipId, TimeSpan newIn, TimeSpan newOut, Func<string, CutGrid?> grids)
     {
         var index = timeline.IndexOf(clipId);
         if (index < 0)
             return timeline;
         var clip = timeline.Clips[index];
-        newIn = Clamp(newIn, TimeSpan.Zero, sourceDuration - MinClipDuration);
-        newOut = Clamp(newOut, newIn + MinClipDuration, sourceDuration);
+        var grid = Grid(clip, grids);
+        newIn = Clamp(grid.SnapInPoint(newIn), TimeSpan.Zero, grid.Duration - MinClipDuration);
+        newOut = Clamp(grid.SnapOutPoint(newOut), newIn + MinClipDuration, grid.Duration);
         return newIn == clip.In && newOut == clip.Out
             ? timeline
             : timeline with { Clips = timeline.Clips.SetItem(index, clip with { In = newIn, Out = newOut }) };
@@ -123,6 +126,8 @@ public static class TimelineEditor
         }
         return changed ? timeline with { Clips = builder.ToImmutable() } : timeline;
     }
+
+    private static CutGrid Grid(Clip clip, Func<string, CutGrid?> grids) => grids(clip.SourceId) ?? CutGrid.Unknown(clip);
 
     private static TimeSpan Clamp(TimeSpan value, TimeSpan min, TimeSpan max) =>
         value < min ? min : value > max ? max : value;

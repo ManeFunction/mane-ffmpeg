@@ -118,10 +118,14 @@ public class TimelineEditorTests
 
     private static Timeline T(params Clip[] clips) => new([.. clips]);
 
+    private static readonly CutGrid Frames30 = new(TimeSpan.FromSeconds(20), new Rational(30, 1));
+
+    private static Func<string, CutGrid?> Grid(CutGrid? grid) => _ => grid;
+
     [Fact]
     public void Split_keeps_offset_on_both_halves()
     {
-        var (t, right) = TimelineEditor.Split(T(C("a", 0, 10, 120)), 0, TimeSpan.FromSeconds(4));
+        var (t, right) = TimelineEditor.Split(T(C("a", 0, 10, 120)), TimeSpan.FromSeconds(4), Grid(null));
         Assert.NotNull(right);
         Assert.Equal(2, t.Clips.Count);
         Assert.Equal(TimeSpan.FromSeconds(4), t.Clips[0].Out);
@@ -133,9 +137,33 @@ public class TimelineEditorTests
     public void Split_at_edge_does_nothing()
     {
         var original = T(C("a", 0, 10));
-        var (t, right) = TimelineEditor.Split(original, 0, TimeSpan.FromMilliseconds(10));
+        var (t, right) = TimelineEditor.Split(original, TimeSpan.FromMilliseconds(10), Grid(null));
         Assert.Null(right);
         Assert.Same(original, t);
+    }
+
+    [Fact]
+    public void Split_maps_the_playhead_into_the_source_and_snaps()
+    {
+        // Playhead 3.51 s is 1.51 s into the second clip, which starts at source 10 s.
+        var timeline = T(C("a", 0, 2), C("b", 10, 15));
+        var (byFrame, _) = TimelineEditor.Split(timeline, TimeSpan.FromSeconds(3.51), Grid(Frames30));
+        Assert.Equal(TimeFormat.FrameStart(345, new Rational(30, 1)), byFrame.Clips[2].In);
+
+        var keyframes = Frames30 with { Keyframes = [TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(12)] };
+        var (byKeyframe, _) = TimelineEditor.Split(timeline, TimeSpan.FromSeconds(3.51), Grid(keyframes));
+        Assert.Equal(TimeSpan.FromSeconds(12), byKeyframe.Clips[1].Out);
+        Assert.Equal(TimeSpan.FromSeconds(12), byKeyframe.Clips[2].In);
+    }
+
+    [Fact]
+    public void Inspector_ranges_snap_like_trims()
+    {
+        var keyframes = Frames30 with { Keyframes = [TimeSpan.Zero, TimeSpan.FromSeconds(3)] };
+        var t = TimelineEditor.SetRange(T(C("a", 2, 5)), "a", TimeSpan.FromSeconds(2.6), TimeSpan.FromSeconds(7.01), Grid(keyframes));
+        Assert.Equal(TimeSpan.FromSeconds(3), t.Clips[0].In);
+        Assert.Equal(TimeFormat.FrameStart(210, new Rational(30, 1)), t.Clips[0].Out);
+        Assert.Equal(TimeSpan.FromSeconds(3), TimelineEditor.TrimIn(T(C("a", 2, 5)), "a", TimeSpan.FromSeconds(2.9), Grid(keyframes)).Clips[0].In);
     }
 
     [Theory]
@@ -155,10 +183,14 @@ public class TimelineEditorTests
     public void Trim_is_clamped_to_source_and_minimum_length()
     {
         var t = T(C("a", 2, 5));
-        Assert.Equal(TimeSpan.Zero, TimelineEditor.TrimIn(t, "a", TimeSpan.FromSeconds(-3)).Clips[0].In);
+        Assert.Equal(TimeSpan.Zero, TimelineEditor.TrimIn(t, "a", TimeSpan.FromSeconds(-3), Grid(null)).Clips[0].In);
         Assert.Equal(TimeSpan.FromSeconds(5) - TimelineEditor.MinClipDuration,
-            TimelineEditor.TrimIn(t, "a", TimeSpan.FromSeconds(9)).Clips[0].In);
-        Assert.Equal(TimeSpan.FromSeconds(8), TimelineEditor.TrimOut(t, "a", TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(8)).Clips[0].Out);
+            TimelineEditor.TrimIn(t, "a", TimeSpan.FromSeconds(9), Grid(null)).Clips[0].In);
+        Assert.Equal(TimeSpan.FromSeconds(8), TimelineEditor.TrimOut(t, "a", TimeSpan.FromSeconds(20), Grid(new CutGrid(TimeSpan.FromSeconds(8)))).Clips[0].Out);
+        // Unanalyzed source: no snapping, and the clip can't grow past its out point.
+        Assert.Equal(TimeSpan.FromSeconds(5), TimelineEditor.TrimOut(t, "a", TimeSpan.FromSeconds(9), Grid(null)).Clips[0].Out);
+        Assert.Equal(TimeFormat.FrameStart(127, new Rational(30, 1)),
+            TimelineEditor.TrimOut(t, "a", TimeSpan.FromSeconds(4.23), Grid(Frames30)).Clips[0].Out);
     }
 
     [Fact]
