@@ -171,6 +171,13 @@ internal static class DebugAutomation
                     case "theme":
                         App.ApplyTheme(Enum.Parse<Core.Persistence.ThemeChoice>(arg, ignoreCase: true));
                         break;
+                    case "bounds":
+                    {
+                        var t = window.TimelineView.TranslatePoint(default, window) ?? default;
+                        var v = window.Video.TranslatePoint(default, window) ?? default;
+                        Console.WriteLine($"[bounds] {arg} timeline y={t.Y:0.#} h={window.TimelineView.Bounds.Height:0.#} video y={v.Y:0.#} h={window.Video.Bounds.Height:0.#} exporting={vm.IsExporting}");
+                        break;
+                    }
                     case "snap":
                         vm.SnapToKeyframes = arg == "on";
                         break;

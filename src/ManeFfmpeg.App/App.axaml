@@ -72,7 +72,7 @@
             <Setter Property="Opacity" Value="0.6" />
             <Setter Property="FontSize" Value="12" />
         </Style>
-        <Style Selector="Button.tool">
+        <Style Selector="Button.tool, ToggleButton.tool">
             <Setter Property="Padding" Value="10,4" />
             <Setter Property="MinHeight" Value="28" />
             <Setter Property="FontSize" Value="12" />

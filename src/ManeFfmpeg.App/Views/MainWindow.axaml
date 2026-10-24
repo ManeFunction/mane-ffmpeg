@@ -50,17 +50,19 @@
                             Command="{Binding CancelExportCommand}" IsVisible="{Binding IsExporting}" />
                 </Grid>
 
-                <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding IsExporting}">
-                    <ProgressBar Value="{Binding ExportProgress}" Minimum="0" Maximum="100" Height="8" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="1" Text="{Binding ExportProgressText}" Margin="12,0,0,0" VerticalAlignment="Center"
-                               FontFeatures="tnum" />
-                </Grid>
-
-                <Grid ColumnDefinitions="*,Auto,Auto">
-                    <SelectableTextBlock Text="{Binding ExportStatus}" VerticalAlignment="Center" TextWrapping="Wrap"
-                                         Foreground="{StaticResource OkBrush}" IsVisible="{Binding !ExportFailed}" />
-                    <SelectableTextBlock Text="{Binding ExportStatus}" VerticalAlignment="Center" TextWrapping="Wrap"
-                                         Foreground="{StaticResource ErrorBrush}" IsVisible="{Binding ExportFailed}" />
+                <!-- Progress and the last result share one row, so starting an export doesn't shift the layout -->
+                <Grid ColumnDefinitions="*,Auto,Auto" MinHeight="28">
+                    <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsExporting}">
+                        <ProgressBar Value="{Binding ExportProgress}" Minimum="0" Maximum="100" Height="8" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1" Text="{Binding ExportProgressText}" Margin="12,0,0,0" VerticalAlignment="Center"
+                                   FontFeatures="tnum" />
+                    </Grid>
+                    <Panel IsVisible="{Binding IsIdle}">
+                        <SelectableTextBlock Text="{Binding ExportStatus}" VerticalAlignment="Center" TextWrapping="Wrap"
+                                             Foreground="{StaticResource OkBrush}" IsVisible="{Binding !ExportFailed}" />
+                        <SelectableTextBlock Text="{Binding ExportStatus}" VerticalAlignment="Center" TextWrapping="Wrap"
+                                             Foreground="{StaticResource ErrorBrush}" IsVisible="{Binding ExportFailed}" />
+                    </Panel>
                     <Button Grid.Column="1" Classes="tool" Content="Show in folder" Command="{Binding RevealOutputCommand}"
                             IsVisible="{Binding CanReveal}" Margin="8,0,0,0" />
                     <ToggleButton Grid.Column="2" Classes="tool" Content="ffmpeg command" IsChecked="{Binding ShowCommand}"
