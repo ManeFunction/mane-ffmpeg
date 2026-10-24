@@ -21,7 +21,8 @@ Built with C#, .NET 10 and Avalonia 12.
   - Double-click a video in the list to preview it on its own, mark In/Out (I/O) and add the range (Enter).
 - **Presets**
   - Raw ffmpeg output options, editable in *Presets → Edit Presets…*. Built in:
-    - **for storage**: `-c:v libx265 -crf 28 -preset slow -c:a copy` → `.mp4`
+    - **for storage** (default): `-c:v libx265 -crf 23 -preset slow -pix_fmt yuv420p10le -x265-params aq-mode=3:psy-rdoq=1.0:no-sao=1 -c:a copy` → `.mp4`. 10-bit HEVC tuned to keep detail, so moving objects don't smear.
+    - **harsh**: `-c:v libx265 -crf 28 -preset slow -c:a copy` → `.mp4`. Smaller files, softer in motion.
     - **plane copy**: `-c:v copy -c:a copy` → same container as the source
   - Add, duplicate, delete, or restore the built-ins.
 - **Export**

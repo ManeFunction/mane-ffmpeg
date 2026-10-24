@@ -82,7 +82,10 @@ public sealed partial class MainWindowViewModel
         Presets.Clear();
         foreach (var preset in _app.Presets.Presets)
             Presets.Add(preset);
-        SelectedPreset = Presets.FirstOrDefault(p => p.Id == selectedId) ?? Presets.FirstOrDefault();
+        // "for storage" is the default for new projects.
+        SelectedPreset = Presets.FirstOrDefault(p => p.Id == selectedId)
+                         ?? Presets.FirstOrDefault(p => p.Id == Preset.ForStorage.Id)
+                         ?? Presets.FirstOrDefault();
     }
 
     partial void OnSelectedPresetChanged(Preset? value)

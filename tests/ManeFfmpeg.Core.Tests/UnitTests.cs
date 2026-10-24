@@ -226,6 +226,47 @@ public class ProjectFileTests
     }
 }
 
+public class PresetStoreTests
+{
+    [Fact]
+    public void New_store_has_built_ins_with_for_storage_first()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");
+        var store = new PresetStore(path);
+        Assert.Equal(["for storage", "harsh", "plane copy"], store.Presets.Select(p => p.Name));
+        Assert.Contains("yuv420p10le", store.Presets[0].Arguments);
+        Assert.Equal("-c:v libx265 -crf 28 -preset slow -c:a copy", store.Presets[1].Arguments);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Version_1_file_gets_new_for_storage_unless_edited_and_gains_harsh(bool edited)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");
+        var storageArgs = edited ? "-c:v libx265 -crf 20 -c:a copy" : Preset.ForStorageV1Arguments;
+        File.WriteAllText(path, $$"""
+            { "version": 1, "presets": [
+              { "id": "builtin-for-storage", "name": "for storage", "arguments": "{{storageArgs}}", "extension": "mp4", "audioFallbackArguments": "-c:a aac -b:a 256k" },
+              { "id": "mine", "name": "mine", "arguments": "-c:v libx264", "extension": "mkv", "audioFallbackArguments": "-c:a aac -b:a 256k" } ] }
+            """);
+        try
+        {
+            var store = new PresetStore(path);
+            Assert.Equal(["for storage", "harsh", "mine"], store.Presets.Select(p => p.Name));
+            Assert.Equal(edited ? storageArgs : Preset.ForStorage.Arguments, store.Presets[0].Arguments);
+            Assert.Contains("\"version\": 2", File.ReadAllText(path));
+
+            // A second load doesn't migrate again (an edited preset stays as the user left it).
+            Assert.Equal(store.Presets.Select(p => p.Arguments), new PresetStore(path).Presets.Select(p => p.Arguments));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+}
+
 public class ProgressParserTests
 {
     [Fact]

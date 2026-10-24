@@ -99,6 +99,7 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
         Assert.Contains("hvc1", plan.Steps[0].Arguments);
         var info = await media.ProbeAsync(output);
         Assert.Equal("hevc", info.Video!.Codec);
+        Assert.Equal("yuv420p10le", info.Video.PixelFormat);
         Assert.InRange(info.Duration.TotalSeconds, 3.95, 4.05);
     }
 
