@@ -66,7 +66,7 @@
                     <Button Grid.Column="1" Classes="tool" Content="Show in folder" Command="{Binding Export.RevealOutputCommand}"
                             IsVisible="{Binding Export.CanReveal}" Margin="8,0,0,0" />
                     <ToggleButton Grid.Column="2" Classes="tool" Content="ffmpeg command" IsChecked="{Binding Export.ShowCommand}"
-                                  Margin="8,0,0,0" FontSize="12" Padding="10,4" />
+                                  Margin="8,0,0,0" />
                 </Grid>
 
                 <TextBox IsVisible="{Binding Export.ShowCommand}" Text="{Binding Export.CommandPreview, Mode=OneWay}" IsReadOnly="True"
@@ -248,8 +248,8 @@
                                    TextTrimming="CharacterEllipsis" Margin="12,0" />
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
                             <TextBlock Text="{Binding TimelineDurationText}" VerticalAlignment="Center" Classes="dim" FontFeatures="tnum" Margin="0,0,8,0" />
-                            <ToggleButton x:Name="CompactToggle" Classes="tool" Content="Compact" IsChecked="{Binding Preview.IsCompact}" FontSize="12"
-                                          Padding="10,4" Margin="0,0,8,0" ToolTip.Tip="Hide the video preview (⇧⌘C)" />
+                            <ToggleButton x:Name="CompactToggle" Classes="tool" Content="Compact" IsChecked="{Binding Preview.IsCompact}"
+                                          Margin="0,0,8,0" ToolTip.Tip="Hide the video preview (⇧⌘C)" />
                             <Button Classes="tool" Content="−" Command="{Binding ZoomOutCommand}" ToolTip.Tip="Zoom out (−)" />
                             <Button Classes="tool" Content="Fit" Command="{Binding ZoomFitCommand}" ToolTip.Tip="Fit timeline" />
                             <Button Classes="tool" Content="+" Command="{Binding ZoomInCommand}" ToolTip.Tip="Zoom in (+)" />

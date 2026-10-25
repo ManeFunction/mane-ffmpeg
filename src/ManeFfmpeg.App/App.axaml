@@ -72,9 +72,22 @@
             <Setter Property="Opacity" Value="0.6" />
             <Setter Property="FontSize" Value="12" />
         </Style>
+        <!-- Labels centered to the pixel: with Inter, a control's height minus its letters' cap height (9 px at
+             12 pt, 11 px at 14 pt) must be even, and the padding puts the line box where the caps land in the
+             middle. Fluent's defaults leave labels 0.5 to 1.5 px high. -->
+        <Style Selector="Button">
+            <Setter Property="Padding" Value="8,6" />
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="Padding" Value="12,6,0,6" />
+            <Setter Property="MinHeight" Value="31" />
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="MinHeight" Value="31" />
+        </Style>
         <Style Selector="Button.tool, ToggleButton.tool">
-            <Setter Property="Padding" Value="10,4" />
-            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Padding" Value="10,6,10,4" />
+            <Setter Property="MinHeight" Value="29" />
             <Setter Property="FontSize" Value="12" />
         </Style>
         <Style Selector="Button.icon">
