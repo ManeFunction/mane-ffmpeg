@@ -133,6 +133,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         OnPropertyChanged(nameof(ToolsError));
         _catalog.Reanalyze();
+        // libmpv may have just been installed.
+        Preview.StartPlayer();
     });
 
     // ---- Sources ----------------------------------------------------------------------------------

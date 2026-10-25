@@ -27,6 +27,7 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
     private bool _scrubbing;
     private bool _resumeAfterScrub;
     private bool _settingPlayheadFromPlayer;
+    private bool _disposed;
 
     private ProjectState State => _owner.State;
     private TimelineViewModel Timeline => _owner.Timeline;
@@ -103,11 +104,17 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
         owner.Catalog.Changed += _ => ScheduleTimelineReload();
         _reloadTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, OnReloadTimer);
 
-        if (!_app.MpvAvailable)
-        {
+        if (_app.MpvAvailable)
+            StartPlayer();
+        else
             PreviewMessage = $"Preview needs libmpv. {MpvLibrary.LoadError}\n{MpvLibrary.InstallHint}";
+    }
+
+    /// <summary>Creates the player once libmpv is loaded: when the window opens, or after libmpv was installed.</summary>
+    internal void StartPlayer()
+    {
+        if (_preview is not null || _disposed || !_app.MpvAvailable)
             return;
-        }
         try
         {
             var preview = PreviewPlayer.Create(_app.Settings.Current.HardwareDecoding);
@@ -121,9 +128,14 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
             preview.EndReached += () => IsPlaying = false;
             preview.LoadFailed += error => PreviewMessage = $"Preview couldn't play this: {error}";
             preview.Volume = Volume;
+            // Started late, the window may already be compact and have clips.
+            if (IsCompact)
+                preview.Compact = true;
             _preview = preview;
             Player = preview.Mpv;
             PreviewMessage = "Add videos to start: File → Add Videos, or drop files here.";
+            if (_owner.HasClips)
+                ScheduleTimelineReload();
         }
         catch (Exception ex)
         {
@@ -407,6 +419,7 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         _reloadTimer.Stop();
         // Unbinding the player first makes the video view drop its renderer, which must go before the player.
         Player = null;

@@ -7,6 +7,7 @@ using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using ManeFfmpeg.App.Controls;
+using ManeFfmpeg.App.ViewModels;
 using ManeFfmpeg.App.Views;
 using ManeFfmpeg.Core.Model;
 
@@ -289,6 +290,30 @@ internal static class DebugAutomation
                     case "settings-snapshot":
                         await SnapshotWindowAsync(new SettingsWindow(), arg);
                         break;
+                    case "setup-snapshot":
+                    {
+                        // setup-snapshot nobrew|<fake brew> <png>: the install dialog offering everything. With a fake brew
+                        // script it clicks Install and also snapshots while brew runs (<png>.running.png).
+                        var parts = arg.Split(' ', 2);
+                        var brew = parts[0] == "nobrew" ? null : parts[0];
+                        var setup = new SetupViewModel(SetupViewModel.AllComponents(), () => brew, _ => Task.CompletedTask);
+                        var dialog = new SetupWindow(setup);
+                        dialog.Show(window);
+                        await Task.Delay(800);
+                        if (brew is not null)
+                        {
+                            _ = setup.ContinueCommand.ExecuteAsync(null);
+                            await Task.Delay(1500);
+                            SaveSnapshot(dialog, parts[1] + ".running.png");
+                            while (setup.IsInstalling)
+                                await Task.Delay(100);
+                            await Task.Delay(500);
+                        }
+                        SaveSnapshot(dialog, parts[1]);
+                        Console.WriteLine($"[setup] step={setup.Step} status='{setup.Status}'");
+                        dialog.Close();
+                        break;
+                    }
                     case "snapshot":
                         await Task.Delay(300);
                         Snapshot(window, arg);
@@ -357,11 +382,16 @@ internal static class DebugAutomation
     {
         dialog.Show();
         await Task.Delay(800);
+        SaveSnapshot(dialog, path);
+        dialog.Close();
+    }
+
+    private static void SaveSnapshot(Avalonia.Controls.Window dialog, string path)
+    {
         var size = new PixelSize((int)dialog.Bounds.Width, (int)dialog.Bounds.Height);
         using var bitmap = new RenderTargetBitmap(size, new Vector(96, 96));
         bitmap.Render(dialog);
         bitmap.Save(path);
-        dialog.Close();
         Console.WriteLine($"[snapshot] {path}");
     }
 

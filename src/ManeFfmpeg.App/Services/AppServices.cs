@@ -26,7 +26,10 @@ public sealed class AppServices : IMediaAnalyzers
 
     private readonly TaskCompletionSource _toolsLocated = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    /// <summary>Raised on the thread that called <see cref="LocateToolsAsync"/> once tools are (re)located.</summary>
+    /// <summary>
+    /// Raised on the thread that called <see cref="LocateToolsAsync"/> once tools are (re)located. Listeners also check
+    /// for libmpv then, so call <see cref="LoadMpv"/> first when it may have been installed.
+    /// </summary>
     public event EventHandler? ToolsChanged;
 
     /// <summary>

@@ -6,6 +6,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using ManeFfmpeg.App.Services;
+using ManeFfmpeg.App.ViewModels;
 using ManeFfmpeg.App.Views;
 using ManeFfmpeg.Core.Persistence;
 
@@ -47,6 +48,9 @@ public partial class App : Application
     {
         await AppServices.Instance.LocateToolsAsync();
         AppLog.Write(AppServices.Instance.Tools is { } tools ? $"ffmpeg: {tools.VersionText} ({tools.Ffmpeg})" : $"ffmpeg: {AppServices.Instance.ToolsError}");
+        // Before opening files, so they can be read with what gets installed.
+        if (SetupViewModel.ShouldAskAtStartup)
+            await new SetupWindow().ShowDialog(first);
         // macOS turns file arguments into "open document" events (OnActivated) as well; open them only once.
         var files = OperatingSystem.IsMacOS() ? [] : args.Where(File.Exists).ToList();
         if (files.Count > 0)

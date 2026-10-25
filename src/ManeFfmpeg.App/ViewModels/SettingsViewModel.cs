@@ -52,10 +52,15 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool IsBusy { get; private set; }
 
+    /// <summary>Something can be installed with Homebrew (see <see cref="SetupViewModel"/>).</summary>
+    [ObservableProperty]
+    public partial bool CanInstall { get; private set; }
+
     partial void OnThemeChanged(ThemeChoice value) => App.ApplyTheme(value);
 
-    private void RefreshStatus()
+    public void RefreshStatus()
     {
+        CanInstall = SetupViewModel.IsNeeded;
         FfmpegStatus = _app.Tools is { } tools
             ? $"{tools.VersionText}\n{tools.Ffmpeg}\n{tools.Ffprobe}"
             : _app.ToolsError ?? "Not found";

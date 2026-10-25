@@ -48,6 +48,8 @@ Built with C#, .NET 10 and Avalonia 12.
 
 The app finds ffmpeg in your PATH, `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin` and similar places. Apps started from Finder don't get your shell PATH, so this matters. You can also set the paths in **Settings**.
 
+On macOS, when ffmpeg or libmpv is missing, the app offers to install it with Homebrew at startup, or later from **Settings → Install Missing Components…**. If Homebrew itself is missing, its official installer opens in Terminal first, because it asks for your password. `brew install` then runs inside the dialog with its output shown. On macOS versions Homebrew no longer supports, it builds from source, which can take an hour or more.
+
 Without libmpv, editing and exporting still work. The preview pane then shows an install hint.
 
 ## Build and run

@@ -439,6 +439,25 @@ public class PresetStoreTests
     }
 
     [Fact]
+    public void Settings_saved_before_a_setting_existed_get_its_default()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"settings-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, """{ "hardwareDecoding": false, "theme": "Light" }""");
+        try
+        {
+            var settings = new SettingsStore(path).Current;
+            Assert.False(settings.HardwareDecoding);
+            Assert.Equal(ThemeChoice.Light, settings.Theme);
+            Assert.True(settings.Notifications);
+            Assert.True(settings.AskToInstallAtStartup);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void Missing_fields_get_defaults()
     {
         var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");

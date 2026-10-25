@@ -16,4 +16,10 @@ public partial class SettingsWindow : Window
     }
 
     private void OnCloseClicked(object? sender, RoutedEventArgs e) => Close();
+
+    private async void OnInstallClicked(object? sender, RoutedEventArgs e)
+    {
+        await new SetupWindow().ShowDialog(this);
+        ((SettingsViewModel)DataContext!).RefreshStatus();
+    }
 }

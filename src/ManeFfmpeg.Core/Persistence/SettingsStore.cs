@@ -10,17 +10,23 @@ public enum ThemeChoice
     Dark,
 }
 
+/// <summary>
+/// Settable rather than init-only: the source-generated deserializer fills init-only properties through one object
+/// initializer, so a key missing from an older settings.json would come back as false/null instead of these defaults.
+/// </summary>
 public sealed record AppSettings
 {
-    public string? FfmpegPath { get; init; }
-    public string? FfprobePath { get; init; }
-    public string? LibMpvPath { get; init; }
-    public bool HardwareDecoding { get; init; } = true;
-    public bool Notifications { get; init; } = true;
-    public ThemeChoice Theme { get; init; } = ThemeChoice.Dark;
-    public List<string> RecentProjects { get; init; } = [];
-    public string? LastMediaFolder { get; init; }
-    public string? LastProjectFolder { get; init; }
+    public string? FfmpegPath { get; set; }
+    public string? FfprobePath { get; set; }
+    public string? LibMpvPath { get; set; }
+    public bool HardwareDecoding { get; set; } = true;
+    public bool Notifications { get; set; } = true;
+    public ThemeChoice Theme { get; set; } = ThemeChoice.Dark;
+    /// <summary>Offer to install missing ffmpeg/libmpv with Homebrew when the app starts (macOS).</summary>
+    public bool AskToInstallAtStartup { get; set; } = true;
+    public List<string> RecentProjects { get; set; } = [];
+    public string? LastMediaFolder { get; set; }
+    public string? LastProjectFolder { get; set; }
 }
 
 /// <summary>App-wide settings in settings.json.</summary>
