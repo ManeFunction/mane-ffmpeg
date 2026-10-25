@@ -120,8 +120,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnToolsChanged(object? sender, EventArgs e) => Dispatcher.UIThread.Post(() =>
     {
         OnPropertyChanged(nameof(ToolsError));
-        foreach (var item in Sources.Where(s => s.Status != SourceStatus.Ready))
-            _ = ProbeAsync(item);
+        // Sources that failed get another try; ready ones reload their analyses, which new tools don't have yet.
+        foreach (var item in Sources)
+        {
+            if (item.Status != SourceStatus.Ready)
+                _ = ProbeAsync(item);
+            else if (_media.TryGetValue(item.Id, out var info))
+                _ = LoadAnalysisAsync(item.Source, info);
+        }
     });
 
     // ---- Sources ----------------------------------------------------------------------------------

@@ -31,15 +31,20 @@ public sealed class AppServices
     {
         var s = Settings.Current;
         var tools = await FfmpegLocator.LocateAsync(s.FfmpegPath, s.FfprobePath);
+        var changed = tools != Tools;
         Tools = tools;
         ToolsError = tools is null
             ? OperatingSystem.IsMacOS()
                 ? "ffmpeg wasn't found. Install it (brew install ffmpeg) or set its path in Settings."
                 : "ffmpeg wasn't found. Install it with your package manager or set its path in Settings."
             : tools.IsTooOld ? $"{tools.VersionText} is older than 5.0; some features may fail." : null;
-        Keyframes = tools is null ? null : new KeyframeService(tools);
-        Waveforms = tools is null ? null : new WaveformService(tools);
-        _probes.Clear();
+        // Applying settings locates the tools again; the same tools keep what they've already analyzed.
+        if (changed)
+        {
+            Keyframes = tools is null ? null : new KeyframeService(tools);
+            Waveforms = tools is null ? null : new WaveformService(tools);
+            _probes.Clear();
+        }
         ToolsChanged?.Invoke(this, EventArgs.Empty);
     }
 
