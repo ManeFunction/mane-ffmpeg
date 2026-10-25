@@ -5,8 +5,9 @@ using Avalonia.Input;
 using Avalonia.Media;
 using ManeFfmpeg.App.Services;
 using ManeFfmpeg.App.ViewModels;
-using ManeFfmpeg.Core.Editing;
 using ManeFfmpeg.Core.Model;
+
+using static ManeFfmpeg.App.Controls.TimelineLayout;
 
 namespace ManeFfmpeg.App.Controls;
 
@@ -18,17 +19,6 @@ public sealed class TimelineControl : Control
 {
     public static readonly StyledProperty<TimelineViewModel?> TimelineProperty =
         AvaloniaProperty.Register<TimelineControl, TimelineViewModel?>(nameof(Timeline));
-
-    private const double Header = 44;
-    private const double RulerHeight = 26;
-    // Gap between the ruler and V1, repeated below A1.
-    private const double TrackMargin = 8;
-    private const double VideoTop = RulerHeight + TrackMargin;
-    private const double VideoHeight = 62;
-    private const double AudioTop = VideoTop + VideoHeight + 6;
-    private const double AudioHeight = VideoHeight / 2;
-    private const double EdgeGrab = 6;
-    private const double DragThreshold = 4;
 
     private static readonly Typeface Font = new("Inter");
     private static readonly IBrush Background = new SolidColorBrush(Color.Parse("#17181C"));
@@ -54,16 +44,6 @@ public sealed class TimelineControl : Control
     private static readonly Cursor ResizeCursor = new(StandardCursorType.SizeWestEast);
     private static readonly Cursor SlipCursor = new(StandardCursorType.SizeWestEast);
     private static readonly Cursor HandCursor = new(StandardCursorType.Hand);
-
-    private enum Drag { None, Scrub, PendingClip, Reorder, TrimIn, TrimOut, PendingSlip, Slip }
-
-    private Drag _drag;
-    private Point _press;
-    private string? _clipId;
-    private Clip? _clip;
-    private Timeline? _gestureStart;
-    private int _insertIndex = -1;
-    private KeyModifiers _pressModifiers;
 
     public TimelineControl()
     {
@@ -111,13 +91,11 @@ public sealed class TimelineControl : Control
         }
     }
 
-    protected override Size MeasureOverride(Size availableSize) =>
-        new(0, AudioTop + AudioHeight + TrackMargin);
+    protected override Size MeasureOverride(Size availableSize) => new(0, TimelineLayout.Height);
 
-    private double X(TimelineViewModel vm, TimeSpan t) => Header + (t.TotalSeconds - vm.Scroll) * vm.Zoom;
+    private static double X(TimelineViewModel vm, TimeSpan t) => TimelineLayout.X(vm.Zoom, vm.Scroll, t);
 
-    private static TimeSpan T(TimelineViewModel vm, double x) =>
-        TimeSpan.FromSeconds(vm.Scroll + (x - Header) / Math.Max(vm.Zoom, 1e-9));
+    private static TimeSpan T(TimelineViewModel vm, double x) => TimelineLayout.Time(vm.Zoom, vm.Scroll, x);
 
     // ---- Drawing ----------------------------------------------------------------------------------
 
@@ -152,9 +130,9 @@ public sealed class TimelineControl : Control
                 start += clip.Duration;
             }
 
-            if (_drag == Drag.Reorder && _insertIndex >= 0)
+            if (vm.Gestures is { IsReordering: true, InsertIndex: >= 0 } gestures)
             {
-                var x = X(vm, vm.Timeline.StartOf(_insertIndex));
+                var x = X(vm, vm.Timeline.StartOf(gestures.InsertIndex));
                 context.DrawLine(DropPen, new Point(x, VideoTop - 4), new Point(x, AudioTop + AudioHeight + 4));
             }
 
@@ -218,7 +196,7 @@ public sealed class TimelineControl : Control
         var selected = vm.Selection.Contains(clip.Id);
         var videoRect = new Rect(x0 + 1, VideoTop + 1, Math.Max(1, x1 - x0 - 2), VideoHeight - 2);
         var audioRect = new Rect(x0 + 1, AudioTop + 1, Math.Max(1, x1 - x0 - 2), AudioHeight - 2);
-        var dragged = _drag == Drag.Reorder && selected;
+        var dragged = vm.Gestures.IsReordering && selected;
         var alpha = dragged ? (byte)110 : (byte)230;
 
         // Video row
@@ -338,44 +316,9 @@ public sealed class TimelineControl : Control
     private static void DrawText(DrawingContext context, string text, Point at, IBrush brush, double size, FontWeight weight = FontWeight.Normal) =>
         context.DrawText(Text(text, brush, size, weight), at);
 
-    // ---- Hit testing ------------------------------------------------------------------------------
-
-    private (int Index, Clip Clip, TimeSpan Start, double X0, double X1)? HitClip(TimelineViewModel vm, double x)
-    {
-        var start = TimeSpan.Zero;
-        var clips = vm.Timeline.Clips;
-        for (var i = 0; i < clips.Count; i++)
-        {
-            var x0 = X(vm, start);
-            var x1 = X(vm, start + clips[i].Duration);
-            if (x >= x0 && x <= x1)
-                return (i, clips[i], start, x0, x1);
-            start += clips[i].Duration;
-        }
-        return null;
-    }
-
-    private static bool InVideoRow(Point p) => p.Y >= VideoTop && p.Y < VideoTop + VideoHeight;
-
-    private static bool InAudioRow(Point p) => p.Y >= AudioTop && p.Y < AudioTop + AudioHeight;
-
-    private int InsertIndexAt(TimelineViewModel vm, double x)
-    {
-        var best = 0;
-        var bestDistance = double.MaxValue;
-        for (var k = 0; k <= vm.Timeline.Clips.Count; k++)
-        {
-            var d = Math.Abs(X(vm, vm.Timeline.StartOf(k)) - x);
-            if (d < bestDistance)
-            {
-                bestDistance = d;
-                best = k;
-            }
-        }
-        return best;
-    }
-
     // ---- Input ------------------------------------------------------------------------------------
+
+    private static TimelineHit HitTest(TimelineViewModel vm, Point p) => TimelineLayout.HitTest(vm.Timeline, vm.Zoom, vm.Scroll, p.X, p.Y);
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
@@ -386,38 +329,9 @@ public sealed class TimelineControl : Control
         var p = e.GetPosition(this);
         if (p.X < Header)
             return;
-        _press = p;
-        _pressModifiers = e.KeyModifiers;
         e.Pointer.Capture(this);
         e.Handled = true;
-
-        var hit = p.Y >= VideoTop ? HitClip(vm, p.X) : null;
-        if (hit is not { } h || !(InVideoRow(p) || InAudioRow(p)))
-        {
-            _drag = Drag.Scrub;
-            if (p.Y >= VideoTop)
-                vm.ClearSelection();
-            vm.Seek(T(vm, p.X), scrubbing: true);
-            return;
-        }
-
-        _clipId = h.Clip.Id;
-        _clip = h.Clip;
-        _gestureStart = vm.Timeline;
-        if (InVideoRow(p) && p.X - h.X0 <= EdgeGrab && h.X1 - h.X0 > EdgeGrab * 3)
-        {
-            _drag = Drag.TrimIn;
-            vm.BeginGesture();
-        }
-        else if (InVideoRow(p) && h.X1 - p.X <= EdgeGrab && h.X1 - h.X0 > EdgeGrab * 3)
-        {
-            _drag = Drag.TrimOut;
-            vm.BeginGesture();
-        }
-        else
-        {
-            _drag = InVideoRow(p) ? Drag.PendingClip : Drag.PendingSlip;
-        }
+        vm.Gestures.Press(HitTest(vm, p), (e.KeyModifiers & EditMenu.CommandModifier) != 0, (e.KeyModifiers & KeyModifiers.Shift) != 0);
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
@@ -426,110 +340,36 @@ public sealed class TimelineControl : Control
         if (Timeline is not { Zoom: > 0 } vm)
             return;
         var p = e.GetPosition(this);
-        if (_drag == Drag.None)
+        if (!vm.Gestures.IsActive)
         {
-            UpdateCursor(vm, p);
+            Cursor = p.X < Header ? Cursor.Default : HitTest(vm, p).Zone switch
+            {
+                TimelineZone.TrimIn or TimelineZone.TrimOut => ResizeCursor,
+                TimelineZone.Audio => SlipCursor,
+                TimelineZone.Clip => HandCursor,
+                _ => Cursor.Default,
+            };
             return;
         }
-        var dx = p.X - _press.X;
-        switch (_drag)
-        {
-            case Drag.Scrub:
-                vm.Seek(T(vm, p.X), scrubbing: true);
-                break;
-            case Drag.PendingClip when Math.Abs(dx) > DragThreshold:
-                if (!vm.Selection.Contains(_clipId!))
-                    vm.Select(_clipId!, toggle: false, range: false);
-                _drag = Drag.Reorder;
-                _insertIndex = InsertIndexAt(vm, p.X);
-                InvalidateVisual();
-                break;
-            case Drag.Reorder:
-                _insertIndex = InsertIndexAt(vm, p.X);
-                InvalidateVisual();
-                break;
-            case Drag.TrimIn:
-            {
-                vm.PreviewTimeline(TimelineEditor.TrimIn(_gestureStart!, _clipId!, _clip!.In + TimeSpan.FromSeconds(dx / vm.Zoom), vm.GridOf));
-                break;
-            }
-            case Drag.TrimOut:
-            {
-                vm.PreviewTimeline(TimelineEditor.TrimOut(_gestureStart!, _clipId!, _clip!.Out + TimeSpan.FromSeconds(dx / vm.Zoom), vm.GridOf));
-                break;
-            }
-            case Drag.PendingSlip when Math.Abs(dx) > DragThreshold:
-                if (!vm.Selection.Contains(_clipId!))
-                    vm.Select(_clipId!, toggle: false, range: false);
-                vm.BeginGesture();
-                _drag = Drag.Slip;
-                break;
-            case Drag.Slip:
-            {
-                var fine = (e.KeyModifiers & KeyModifiers.Shift) != 0 ? 0.1 : 1;
-                var ms = Math.Round(dx / vm.Zoom * 1000 * fine);
-                var delta = TimeSpan.FromMilliseconds(ms);
-                vm.PreviewTimeline(TimelineEditor.NudgeAudioOffset(_gestureStart!, vm.Selection, delta));
-                vm.PreviewAudioDrag(delta);
-                break;
-            }
-        }
+        vm.Gestures.Move(T(vm, p.X), fine: (e.KeyModifiers & KeyModifiers.Shift) != 0);
+        if (vm.Gestures.IsReordering)
+            InvalidateVisual();
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
-        if (Timeline is not { } vm || _drag == Drag.None)
+        if (Timeline is not { } vm || !vm.Gestures.IsActive)
             return;
-        var p = e.GetPosition(this);
-        var command = (_pressModifiers & EditMenu.CommandModifier) != 0;
-        var shift = (_pressModifiers & KeyModifiers.Shift) != 0;
-        switch (_drag)
-        {
-            case Drag.Scrub:
-                vm.EndScrub();
-                break;
-            case Drag.PendingClip:
-            case Drag.PendingSlip:
-                vm.Select(_clipId!, toggle: command, range: shift);
-                if (!command && !shift)
-                    vm.Seek(T(vm, p.X), scrubbing: false);
-                break;
-            case Drag.Reorder:
-                vm.MoveSelection(_insertIndex);
-                break;
-            case Drag.TrimIn:
-            case Drag.TrimOut:
-                vm.EndGesture();
-                break;
-            case Drag.Slip:
-                vm.EndGesture();
-                vm.PreviewAudioDrag(TimeSpan.Zero);
-                break;
-        }
-        Reset(e.Pointer);
+        vm.Gestures.Release(T(vm, e.GetPosition(this).X));
+        e.Pointer.Capture(null);
+        InvalidateVisual();
     }
 
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     {
         base.OnPointerCaptureLost(e);
-        if (_drag is Drag.TrimIn or Drag.TrimOut or Drag.Slip)
-            Timeline?.EndGesture();
-        if (_drag == Drag.Scrub)
-            Timeline?.EndScrub();
-        _drag = Drag.None;
-        _insertIndex = -1;
-        InvalidateVisual();
-    }
-
-    private void Reset(IPointer pointer)
-    {
-        _drag = Drag.None;
-        _insertIndex = -1;
-        _clip = null;
-        _clipId = null;
-        _gestureStart = null;
-        pointer.Capture(null);
+        Timeline?.Gestures.Abort();
         InvalidateVisual();
     }
 
@@ -552,26 +392,4 @@ public sealed class TimelineControl : Control
         e.Handled = true;
     }
 
-    private void UpdateCursor(TimelineViewModel vm, Point p)
-    {
-        if (p.Y >= VideoTop && HitClip(vm, p.X) is { } h)
-        {
-            if (InVideoRow(p) && h.X1 - h.X0 > EdgeGrab * 3 && (p.X - h.X0 <= EdgeGrab || h.X1 - p.X <= EdgeGrab))
-            {
-                Cursor = ResizeCursor;
-                return;
-            }
-            if (InAudioRow(p))
-            {
-                Cursor = SlipCursor;
-                return;
-            }
-            if (InVideoRow(p))
-            {
-                Cursor = HandCursor;
-                return;
-            }
-        }
-        Cursor = Cursor.Default;
-    }
 }

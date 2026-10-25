@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using ManeFfmpeg.App.Controls;
 using ManeFfmpeg.App.Views;
 using ManeFfmpeg.Core.Model;
 
@@ -332,8 +333,8 @@ internal static class DebugAutomation
     {
         var control = window.TimelineView;
         var vm = window.ViewModel.Timeline;
-        var y = row switch { "ruler" => 14.0, "video" => 65.0, _ => 117.0 };
-        Point At(double t) => new(44 + (t - vm.Scroll) * vm.Zoom, y);
+        var y = row switch { "ruler" => TimelineLayout.RulerCenter, "video" => TimelineLayout.VideoCenter, _ => TimelineLayout.AudioCenter };
+        Point At(double t) => new(TimelineLayout.X(vm.Zoom, vm.Scroll, TimeSpan.FromSeconds(t)), y);
         var origin = control.TranslatePoint(new Point(0, 0), window) ?? default;
         var pointer = new Pointer(Pointer.GetNextFreeId(), PointerType.Mouse, true);
         var mods = shift ? KeyModifiers.Shift : KeyModifiers.None;

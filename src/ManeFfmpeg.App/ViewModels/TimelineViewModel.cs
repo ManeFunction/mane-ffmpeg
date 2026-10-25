@@ -7,8 +7,16 @@ using ManeFfmpeg.Core.Model;
 namespace ManeFfmpeg.App.ViewModels;
 
 /// <summary>What the timeline control draws (zoom, scroll, playhead, selection) and the edits it performs.</summary>
-public sealed partial class TimelineViewModel(MainWindowViewModel owner) : ViewModelBase
+public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureHost
 {
+    private readonly MainWindowViewModel owner;
+
+    public TimelineViewModel(MainWindowViewModel owner)
+    {
+        this.owner = owner;
+        Gestures = new TimelineGestures(this);
+    }
+
     public const double MinZoom = 0.02;
     public const double MaxZoom = 1200;
 
@@ -17,6 +25,11 @@ public sealed partial class TimelineViewModel(MainWindowViewModel owner) : ViewM
     public Timeline Timeline => owner.State.Timeline;
 
     public HashSet<string> Selection { get; } = [];
+
+    IReadOnlySet<string> ITimelineGestureHost.Selection => Selection;
+
+    /// <summary>Presses, drags and releases on the timeline, in timeline terms.</summary>
+    public TimelineGestures Gestures { get; }
 
     /// <summary>Pixels per second. 0 until the first fit.</summary>
     [ObservableProperty]
@@ -138,8 +151,6 @@ public sealed partial class TimelineViewModel(MainWindowViewModel owner) : ViewM
     public void PreviewTimeline(Timeline timeline) => owner.History.ReplaceCurrent(State with { Timeline = timeline });
 
     public void EndGesture() => owner.History.EndGesture();
-
-    public void CancelGesture() => owner.History.CancelGesture();
 
     public void MoveSelection(int insertIndex) =>
         owner.CommitTimeline(t => TimelineEditor.Move(t, Selection, insertIndex));

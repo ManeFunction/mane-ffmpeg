@@ -4,6 +4,7 @@
     <Project Path="src/ManeFfmpeg.Core/ManeFfmpeg.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/ManeFfmpeg.App.Tests/ManeFfmpeg.App.Tests.csproj" />
     <Project Path="tests/ManeFfmpeg.Core.Tests/ManeFfmpeg.Core.Tests.csproj" />
   </Folder>
 </Solution>
