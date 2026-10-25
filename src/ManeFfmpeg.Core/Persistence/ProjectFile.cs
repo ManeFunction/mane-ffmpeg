@@ -59,7 +59,20 @@ public static class ProjectFile
         return JsonSerializer.Serialize(dto, ProjectJsonContext.Readable.ProjectDto);
     }
 
+    /// <summary>Reads a project; anything wrong with the file is a <see cref="ProjectFileException"/>.</summary>
     public static Project Deserialize(string json, string projectPath)
+    {
+        try
+        {
+            return Read(json, projectPath);
+        }
+        catch (Exception ex) when (ex is not ProjectFileException)
+        {
+            throw new ProjectFileException($"The project file is damaged: {ex.Message}");
+        }
+    }
+
+    private static Project Read(string json, string projectPath)
     {
         ProjectDto? dto;
         try
@@ -76,7 +89,8 @@ public static class ProjectFile
             throw new ProjectFileException($"This project was saved by a newer version (format {dto.Version}). Please update the app.");
 
         var dir = Path.GetDirectoryName(Path.GetFullPath(projectPath))!;
-        var sources = dto.Sources.Select(s => new SourceMedia
+        // Hand-edited or damaged files may leave out lists or entries; skip what can't be used.
+        var sources = (dto.Sources ?? []).OfType<SourceDto>().Where(s => s is { Id.Length: > 0, Path.Length: > 0 }).Select(s => new SourceMedia
         {
             Id = s.Id,
             Path = ResolvePath(s, dir),
@@ -85,8 +99,8 @@ public static class ProjectFile
             AudioStreamIndex = Math.Max(0, s.AudioStream),
         }).ToImmutableList();
         var known = sources.Select(s => s.Id).ToHashSet();
-        var clips = dto.Clips
-            .Where(c => known.Contains(c.Source) && c.Out > c.In)
+        var clips = (dto.Clips ?? []).OfType<ClipDto>()
+            .Where(c => c is { Id.Length: > 0 } && known.Contains(c.Source) && c.Out > c.In)
             .Select(c => new Clip { Id = c.Id, SourceId = c.Source, In = c.In, Out = c.Out, AudioOffset = c.AudioOffset })
             .ToImmutableList();
 
@@ -116,8 +130,8 @@ public static class ProjectFile
     {
         public string Format { get; set; } = "";
         public int Version { get; set; }
-        public List<SourceDto> Sources { get; set; } = [];
-        public List<ClipDto> Clips { get; set; } = [];
+        public List<SourceDto?>? Sources { get; set; } = [];
+        public List<ClipDto?>? Clips { get; set; } = [];
         public ExportSettings? Export { get; set; }
         public ProjectLayout? Layout { get; set; }
     }

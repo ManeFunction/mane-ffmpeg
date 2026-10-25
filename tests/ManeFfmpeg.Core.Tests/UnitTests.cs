@@ -270,6 +270,32 @@ public class TimelineEditorTests
 
 public class ProjectFileTests
 {
+    private const string Header = "\"format\": \"mane-ffmpeg-project\", \"version\": 1";
+
+    [Fact]
+    public void Missing_lists_and_entries_load_as_empty()
+    {
+        var empty = ProjectFile.Deserialize($"{{ {Header}, \"sources\": null, \"clips\": null }}", "/p/x.mfvp");
+        Assert.Empty(empty.State.Sources);
+        Assert.Empty(empty.State.Timeline.Clips);
+
+        var partial = ProjectFile.Deserialize($$"""
+            { {{Header}},
+              "sources": [null, { "id": "s", "path": "/m/a.mp4" }, { "id": null, "path": "/m/b.mp4" }],
+              "clips": [null, { "id": "c", "source": "s", "in": "00:00:01", "out": "00:00:02" }, { "id": "d", "source": null }] }
+            """, "/p/x.mfvp");
+        Assert.Equal("s", Assert.Single(partial.State.Sources).Id);
+        Assert.Equal("c", Assert.Single(partial.State.Timeline.Clips).Id);
+    }
+
+    [Fact]
+    public void Any_unreadable_file_is_a_project_file_error()
+    {
+        Assert.Throws<ProjectFileException>(() => ProjectFile.Deserialize($"{{ {Header}, \"clips\": [{{ \"in\": \"soon\" }}] }}", "/p/x.mfvp"));
+        Assert.Throws<ProjectFileException>(() => ProjectFile.Deserialize(
+            $"{{ {Header}, \"sources\": [{{ \"id\": \"s\", \"path\": \"/gone.mp4\", \"relativePath\": \"a\\u0000b\" }}] }}", "/p/x.mfvp"));
+    }
+
     [Fact]
     public void Round_trips_edits_and_layout_with_relative_paths()
     {
