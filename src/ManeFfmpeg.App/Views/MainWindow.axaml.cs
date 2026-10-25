@@ -89,7 +89,10 @@ public partial class MainWindow : Window, IMainWindowView
                 recent.Items.Add(new NativeMenuItem("No recent projects") { IsEnabled = false });
         }
         FillRecent();
-        AppServices.Instance.Settings.Changed += (_, _) => FillRecent();
+        // The settings outlive this window: unsubscribe when it closes, or closed windows stay alive.
+        EventHandler recentChanged = (_, _) => FillRecent();
+        AppServices.Instance.Settings.Changed += recentChanged;
+        Closed += (_, _) => AppServices.Instance.Settings.Changed -= recentChanged;
 
         var file = new NativeMenu
         {
