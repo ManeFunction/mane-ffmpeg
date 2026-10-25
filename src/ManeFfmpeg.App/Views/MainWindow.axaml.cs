@@ -368,6 +368,7 @@ public partial class MainWindow : Window, IMainWindowView
             if (resize)
                 _expandedHeight = height;
             TopGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+            TopGrid.ColumnDefinitions[1].Width = new GridLength(0);
             TopGrid.ColumnDefinitions[2].Width = new GridLength(0);
             PreviewSplitter.IsVisible = false;
             PreviewPanel.IsVisible = false;
@@ -384,6 +385,7 @@ public partial class MainWindow : Window, IMainWindowView
         else
         {
             TopGrid.ColumnDefinitions[0].Width = _expandedLeftWidth;
+            TopGrid.ColumnDefinitions[1].Width = new GridLength(6);
             TopGrid.ColumnDefinitions[2].Width = new GridLength(1, GridUnitType.Star);
             PreviewSplitter.IsVisible = true;
             PreviewPanel.IsVisible = true;
