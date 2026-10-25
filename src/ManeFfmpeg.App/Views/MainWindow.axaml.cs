@@ -349,7 +349,8 @@ public partial class MainWindow : Window, IMainWindowView
 
     /// <summary>
     /// Hides the preview, puts the video list and clip inspector side by side and shrinks the window to fit;
-    /// turning it off restores the previous layout and height.
+    /// turning it off restores the previous layout and height. The window changes height at its top edge,
+    /// so the timeline and export controls along the bottom stay where they are on screen.
     /// </summary>
     private void ApplyCompact(bool compact)
     {
@@ -360,11 +361,12 @@ public partial class MainWindow : Window, IMainWindowView
 
         var resize = WindowState == WindowState.Normal;
         var topHeight = TopGrid.Bounds.Height;
+        var height = Height;
         if (compact)
         {
             _expandedLeftWidth = TopGrid.ColumnDefinitions[0].Width;
             if (resize)
-                _expandedHeight = Height;
+                _expandedHeight = height;
             TopGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
             TopGrid.ColumnDefinitions[2].Width = new GridLength(0);
             PreviewSplitter.IsVisible = false;
@@ -377,7 +379,7 @@ public partial class MainWindow : Window, IMainWindowView
             InspectorPanel.Margin = new Thickness(8, 0, 0, 0);
             MinHeight = CompactMinHeight;
             if (resize && topHeight > CompactTopHeight)
-                Height = Math.Max(CompactMinHeight, Height - topHeight + CompactTopHeight);
+                ResizeKeepingBottom(height, Math.Max(CompactMinHeight, height - topHeight + CompactTopHeight));
         }
         else
         {
@@ -393,8 +395,29 @@ public partial class MainWindow : Window, IMainWindowView
             InspectorPanel.Margin = new Thickness(0, 8, 0, 0);
             MinHeight = NormalMinHeight;
             if (resize)
-                Height = Math.Max(NormalMinHeight, _expandedHeight ?? Height + 420);
+                ResizeKeepingBottom(height, Math.Max(NormalMinHeight, _expandedHeight ?? height + 420));
         }
+    }
+
+    // Changes the height from `from` to `to`, moving the top edge instead of the bottom one, in the same frame.
+    private void ResizeKeepingBottom(double from, double to)
+    {
+        var top = TopForHeight(from, to);
+        var moved = MacWindowFrame.TryChange(this, (top - Position.Y) / DesktopScaling, to - from);
+        Height = to;
+        if (!moved)
+        {
+            // The resize waits for a layout pass: run it now, so the move follows straight after.
+            UpdateLayout();
+            Position = new PixelPoint(Position.X, top);
+        }
+    }
+
+    // Where the top edge goes when the height changes with the bottom edge kept, but never above the screen's working area.
+    private int TopForHeight(double from, double to)
+    {
+        var top = Position.Y + (int)Math.Round((from - to) * DesktopScaling);
+        return Screens.ScreenFromWindow(this) is { } screen ? Math.Max(top, screen.WorkingArea.Y) : top;
     }
 
     // ---- Layout -----------------------------------------------------------------------------------
@@ -424,17 +447,23 @@ public partial class MainWindow : Window, IMainWindowView
         }
     }
 
-    public ProjectLayout CaptureLayout() => new()
+    public ProjectLayout CaptureLayout()
     {
-        Window = new WindowBounds(Position.X, Position.Y, Width,
-            ViewModel.Preview.IsCompact ? _expandedHeight ?? Height : Height, WindowState == WindowState.Maximized),
-        LeftPaneWidth = ViewModel.Preview.IsCompact ? _expandedLeftWidth.Value : TopGrid.ColumnDefinitions[0].ActualWidth,
-        Compact = ViewModel.Preview.IsCompact,
-        TimelineZoom = ViewModel.Timeline.Zoom,
-        TimelineScroll = ViewModel.Timeline.Scroll,
-        Playhead = ViewModel.Timeline.Playhead,
-        Volume = ViewModel.Preview.Volume,
-    };
+        var compact = ViewModel.Preview.IsCompact;
+        // A compact window is saved with its full-size bounds, which reach up from its bottom edge.
+        var height = compact ? _expandedHeight ?? Height : Height;
+        var top = compact && WindowState == WindowState.Normal ? TopForHeight(Height, height) : Position.Y;
+        return new()
+        {
+            Window = new WindowBounds(Position.X, top, Width, height, WindowState == WindowState.Maximized),
+            LeftPaneWidth = compact ? _expandedLeftWidth.Value : TopGrid.ColumnDefinitions[0].ActualWidth,
+            Compact = compact,
+            TimelineZoom = ViewModel.Timeline.Zoom,
+            TimelineScroll = ViewModel.Timeline.Scroll,
+            Playhead = ViewModel.Timeline.Playhead,
+            Volume = ViewModel.Preview.Volume,
+        };
+    }
 
     // ---- IMainWindowView --------------------------------------------------------------------------
 

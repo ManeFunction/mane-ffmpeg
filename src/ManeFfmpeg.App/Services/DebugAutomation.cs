@@ -167,7 +167,7 @@ internal static class DebugAutomation
                         vm.Preview.IsCompact = arg == "on";
                         break;
                     case "size":
-                        Console.WriteLine($"[size] {window.Width:0}x{window.Height:0} min={window.MinHeight}");
+                        Console.WriteLine($"[size] {window.Width:0}x{window.Height:0} at {window.Position.X},{window.Position.Y} min={window.MinHeight}");
                         break;
                     case "theme":
                         App.ApplyTheme(Enum.Parse<Core.Persistence.ThemeChoice>(arg, ignoreCase: true));
