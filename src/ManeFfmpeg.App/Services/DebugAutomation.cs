@@ -52,7 +52,7 @@ internal static class DebugAutomation
                             var done = arg switch
                             {
                                 "ready" => vm.Sources.Count > 0 && vm.Sources.All(s => s.Status != Core.Media.SourceStatus.Analyzing),
-                                "idle" => !vm.IsExporting,
+                                "idle" => !vm.Export.IsExporting,
                                 _ => true,
                             };
                             if (done)
@@ -70,15 +70,15 @@ internal static class DebugAutomation
                         await SaveToAsync(window, arg);
                         break;
                     case "play":
-                        if (!vm.IsPlaying)
-                            vm.PlayPauseCommand.Execute(null);
+                        if (!vm.Preview.IsPlaying)
+                            vm.Preview.PlayPauseCommand.Execute(null);
                         break;
                     case "pause":
-                        if (vm.IsPlaying)
-                            vm.PlayPauseCommand.Execute(null);
+                        if (vm.Preview.IsPlaying)
+                            vm.Preview.PlayPauseCommand.Execute(null);
                         break;
                     case "seek":
-                        vm.SeekTo(TimeSpan.FromSeconds(double.Parse(arg, CultureInfo.InvariantCulture)), false);
+                        vm.Preview.SeekTo(TimeSpan.FromSeconds(double.Parse(arg, CultureInfo.InvariantCulture)), false);
                         break;
                     case "split":
                         vm.SplitCommand.Execute(null);
@@ -106,19 +106,19 @@ internal static class DebugAutomation
                         vm.RedoCommand.Execute(null);
                         break;
                     case "preset":
-                        vm.SelectedPreset = vm.Presets.First(p => p.Name == arg);
+                        vm.Export.SelectedPreset = vm.Export.Presets.First(p => p.Name == arg);
                         break;
                     case "output":
-                        vm.OutputPath = arg;
+                        vm.Export.OutputPath = arg;
                         break;
                     case "command":
-                        vm.ShowCommand = true;
+                        vm.Export.ShowCommand = true;
                         await Task.Delay(1500);
-                        Console.WriteLine(vm.CommandPreview);
+                        Console.WriteLine(vm.Export.CommandPreview);
                         break;
                     case "export":
-                        await vm.ExportCommand.ExecuteAsync(null);
-                        Console.WriteLine($"[export] {vm.ExportStatus}\n{vm.ExportLog}");
+                        await vm.Export.ExportCommand.ExecuteAsync(null);
+                        Console.WriteLine($"[export] {vm.Export.ExportStatus}\n{vm.Export.ExportLog}");
                         break;
                     case "newwindow":
                         WindowManager.Instance.OpenNew(window);
@@ -129,7 +129,7 @@ internal static class DebugAutomation
                         vm = window.ViewModel;
                         break;
                     case "export-async":
-                        _ = vm.ExportCommand.ExecuteAsync(null);
+                        _ = vm.Export.ExportCommand.ExecuteAsync(null);
                         break;
                     case "drag":
                     {
@@ -158,13 +158,13 @@ internal static class DebugAutomation
                         window.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Enum.Parse<Key>(arg), Source = window });
                         break;
                     case "preview-source":
-                        vm.PreviewSourceCommand.Execute(vm.Sources[int.Parse(arg, CultureInfo.InvariantCulture)]);
+                        vm.Preview.PreviewSourceCommand.Execute(vm.Sources[int.Parse(arg, CultureInfo.InvariantCulture)]);
                         break;
                     case "source-seek":
-                        vm.Player?.Command("seek", arg, "absolute+exact");
+                        vm.Preview.Player?.Command("seek", arg, "absolute+exact");
                         break;
                     case "compact":
-                        vm.IsCompact = arg == "on";
+                        vm.Preview.IsCompact = arg == "on";
                         break;
                     case "size":
                         Console.WriteLine($"[size] {window.Width:0}x{window.Height:0} min={window.MinHeight}");
@@ -176,7 +176,7 @@ internal static class DebugAutomation
                     {
                         var t = window.TimelineView.TranslatePoint(default, window) ?? default;
                         var v = window.Video.TranslatePoint(default, window) ?? default;
-                        Console.WriteLine($"[bounds] {arg} timeline y={t.Y:0.#} h={window.TimelineView.Bounds.Height:0.#} video y={v.Y:0.#} h={window.Video.Bounds.Height:0.#} exporting={vm.IsExporting}");
+                        Console.WriteLine($"[bounds] {arg} timeline y={t.Y:0.#} h={window.TimelineView.Bounds.Height:0.#} video y={v.Y:0.#} h={window.Video.Bounds.Height:0.#} exporting={vm.Export.IsExporting}");
                         break;
                     }
                     case "snap":
@@ -368,10 +368,10 @@ internal static class DebugAutomation
     private static void PrintState(MainWindow window)
     {
         var vm = window.ViewModel;
-        Console.WriteLine($"[state] title={vm.Title} snap={vm.SnapToKeyframes} playing={vm.IsPlaying} playhead={vm.Timeline.Playhead} zoom={vm.Timeline.Zoom:0.##} " +
-                          $"preview='{vm.PreviewMessage}' status='{vm.StatusMessage}' mpv={vm.Player is not null} " +
-                          $"time-pos={vm.Player?.GetString("time-pos")} vid={vm.Player?.GetString("vid")} aid={vm.Player?.GetString("aid")} " +
-                          $"path={vm.Player?.GetString("path")?[..Math.Min(80, vm.Player?.GetString("path")?.Length ?? 0)]}");
+        Console.WriteLine($"[state] title={vm.Title} snap={vm.SnapToKeyframes} playing={vm.Preview.IsPlaying} playhead={vm.Timeline.Playhead} zoom={vm.Timeline.Zoom:0.##} " +
+                          $"preview='{vm.Preview.PreviewMessage}' status='{vm.StatusMessage}' mpv={vm.Preview.Player is not null} " +
+                          $"time-pos={vm.Preview.Player?.GetString("time-pos")} vid={vm.Preview.Player?.GetString("vid")} aid={vm.Preview.Player?.GetString("aid")} " +
+                          $"path={vm.Preview.Player?.GetString("path")?[..Math.Min(80, vm.Preview.Player?.GetString("path")?.Length ?? 0)]}");
         Console.WriteLine($"[state] video counters={window.Video.Counters} center={window.Video.CenterPixel()}");
         foreach (var s in vm.Sources)
             Console.WriteLine($"[state]   source {s.Name} {s.Status} {s.Details}");

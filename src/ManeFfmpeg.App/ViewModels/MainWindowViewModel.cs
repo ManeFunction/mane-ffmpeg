@@ -26,7 +26,7 @@ public interface IMainWindowView
     void RevealInFileManager(string path);
 }
 
-/// <summary>One open project: its edit history, sources, preview player and export.</summary>
+/// <summary>One open project: its edit history, sources and clip inspector, with the preview and export as children.</summary>
 public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 {
     private readonly AppServices _app = AppServices.Instance;
@@ -42,8 +42,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         Timeline = new TimelineViewModel(this);
         _app.ToolsChanged += OnToolsChanged;
         Sources.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasNoSources));
-        InitExport();
-        InitPreview();
+        Export = new ExportViewModel(this);
+        Preview = new PreviewViewModel(this);
     }
 
     public IMainWindowView? View { get; set; }
@@ -53,6 +53,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     public ProjectState State => History.Current;
 
     public TimelineViewModel Timeline { get; }
+
+    public PreviewViewModel Preview { get; }
+
+    public ExportViewModel Export { get; }
+
+    /// <summary>The project state changed (an edit, undo or redo, or loading); raised after the bin is in step.</summary>
+    public event EventHandler? StateChanged;
 
     public ObservableCollection<SourceItemViewModel> Sources { get; } = [];
 
@@ -74,7 +81,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     public string ProjectName => FilePath is null ? "Untitled" : Path.GetFileNameWithoutExtension(FilePath);
 
-    public bool IsDirty => !State.Equals(_savedState) || CurrentExportSettings() != _savedExport;
+    public bool IsDirty => !State.Equals(_savedState) || Export.CurrentExportSettings() != _savedExport;
 
     public string Title => $"{(IsDirty ? "• " : "")}{ProjectName} — Mane FFmpeg";
 
@@ -92,7 +99,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     public void CommitTimeline(Func<Timeline, Timeline> edit) => Commit(State with { Timeline = edit(State.Timeline) });
 
     /// <summary>Commits, re-fitting the zoom if the whole timeline was visible before (so appended clips show up).</summary>
-    private void CommitKeepingFit(ProjectState next)
+    internal void CommitKeepingFit(ProjectState next)
     {
         var wasFit = Timeline.Zoom <= 0 || State.Timeline.Duration.TotalSeconds * Timeline.Zoom <= Timeline.ViewportWidth + 1;
         Commit(next);
@@ -113,8 +120,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         UndoCommand.NotifyCanExecuteChanged();
         RedoCommand.NotifyCanExecuteChanged();
         OnSelectionChanged();
-        ScheduleTimelineReload();
-        InvalidatePlanPreview();
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     internal void RefreshDirty()
@@ -165,8 +171,6 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
             item.Error = _catalog.Error(sourceId);
         }
         Timeline.Invalidate();
-        ScheduleTimelineReload();
-        InvalidatePlanPreview();
     }
 
     private void OnAudioStreamChosen(SourceItemViewModel item, int index) =>
@@ -274,19 +278,19 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     public async Task LoadProjectAsync(string path)
     {
         var project = await ProjectFile.LoadAsync(path);
-        var preset = await ResolvePresetAsync(project.Export);
+        var preset = await Export.ResolvePresetAsync(project.Export);
         Sources.Clear();
         FilePath = path;
         Layout = project.Layout;
-        ApplyExportSettings(project.Export, preset);
-        _savedExport = CurrentExportSettings();
+        Export.ApplyExportSettings(project.Export, preset);
+        _savedExport = Export.CurrentExportSettings();
         _savedState = project.State;
         History.Reset(project.State);
         Timeline.Selection.Clear();
         Timeline.Zoom = project.Layout.TimelineZoom;
         Timeline.Scroll = project.Layout.TimelineScroll;
         Timeline.Playhead = project.Layout.Playhead;
-        Volume = project.Layout.Volume;
+        Preview.Volume = project.Layout.Volume;
         RefreshDirty();
     }
 
@@ -324,7 +328,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         }
         try
         {
-            var export = CurrentExportSettings();
+            var export = Export.CurrentExportSettings();
             var project = new Project { State = State, Export = export, Layout = View.CaptureLayout() };
             await ProjectFile.SaveAsync(project, path);
             FilePath = path;
@@ -361,7 +365,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     public void Dispose()
     {
         _app.ToolsChanged -= OnToolsChanged;
-        DisposeExport();
-        DisposePreview();
+        Export.Dispose();
+        Preview.Dispose();
     }
 }

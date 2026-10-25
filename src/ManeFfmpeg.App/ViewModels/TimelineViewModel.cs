@@ -58,7 +58,7 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
     partial void OnPlayheadChanged(TimeSpan value)
     {
         Invalidate();
-        owner.OnPlayheadMoved();
+        owner.Preview?.OnPlayheadMoved();
     }
 
     public MediaInfo? Info(string sourceId) => owner.Catalog.Info(sourceId);
@@ -76,9 +76,9 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
 
     public KeyframeIndex? Keyframes(SourceMedia source) => owner.Catalog.Keyframes(source);
 
-    public void Seek(TimeSpan time, bool scrubbing) => owner.SeekTo(Clamp(time), scrubbing);
+    public void Seek(TimeSpan time, bool scrubbing) => owner.Preview.SeekTo(Clamp(time), scrubbing);
 
-    public void EndScrub() => owner.EndScrub();
+    public void EndScrub() => owner.Preview.EndScrub();
 
     public TimeSpan Clamp(TimeSpan time)
     {
@@ -155,7 +155,7 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
         owner.CommitTimeline(t => TimelineEditor.Move(t, Selection, insertIndex));
 
     /// <summary>Live audio feedback while an offset is being dragged.</summary>
-    public void PreviewAudioDrag(TimeSpan delta) => owner.PreviewAudioDelay(delta);
+    public void PreviewAudioDrag(TimeSpan delta) => owner.Preview.PreviewAudioDelay(delta);
 
     // ---- Zoom -----------------------------------------------------------------------------------
 

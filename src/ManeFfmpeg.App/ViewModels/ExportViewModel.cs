@@ -3,6 +3,7 @@ using System.Globalization;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ManeFfmpeg.App.Services;
 using ManeFfmpeg.Core.Ffmpeg;
 using ManeFfmpeg.Core.Media;
 using ManeFfmpeg.Core.Model;
@@ -11,14 +12,22 @@ using ManeFfmpeg.Core.Persistence;
 
 namespace ManeFfmpeg.App.ViewModels;
 
-public sealed partial class MainWindowViewModel
+/// <summary>One project's export: preset, output file, the ffmpeg command preview and the running export.</summary>
+public sealed partial class ExportViewModel : ViewModelBase, IDisposable
 {
+    private readonly MainWindowViewModel _owner;
+    private readonly AppServices _app = AppServices.Instance;
+
+    private readonly DispatcherTimer _planTimer;
     private CancellationTokenSource? _exportCts;
-    private DispatcherTimer _planTimer = null!;
     private string? _lastOutputPath;
 
     /// <summary>An existing output file the user agreed to replace (in the save dialog or when asked).</summary>
     private string? _confirmedOutputPath;
+
+    private ProjectState State => _owner.State;
+    private SourceCatalog Catalog => _owner.Catalog;
+    private IMainWindowView? View => _owner.View;
 
     public ObservableCollection<Preset> Presets { get; } = [];
 
@@ -66,15 +75,25 @@ public sealed partial class MainWindowViewModel
 
     public string OutputExtensionHint => SelectedPreset is { Extension.Length: > 0 } p ? $".{p.Extension}" : "same as source";
 
-    private void InitExport()
+    public ExportViewModel(MainWindowViewModel owner)
     {
-        _planTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(400), DispatcherPriority.Background, (_, _) =>
-        {
-            _planTimer.Stop();
-            _ = UpdatePlanPreviewAsync();
-        });
+        _owner = owner;
+        _planTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(400), DispatcherPriority.Background, OnPlanTimer);
         ReloadPresets();
         _app.Presets.Changed += OnPresetsChanged;
+        owner.StateChanged += (_, _) => InvalidatePlanPreview();
+        owner.Catalog.Changed += _ => InvalidatePlanPreview();
+        owner.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainWindowViewModel.FilePath))
+                OnPropertyChanged(nameof(OutputDisplay));
+        };
+    }
+
+    private void OnPlanTimer(object? sender, EventArgs e)
+    {
+        _planTimer.Stop();
+        _ = UpdatePlanPreviewAsync();
     }
 
     private void OnPresetsChanged(object? sender, EventArgs e) => ReloadPresets();
@@ -94,15 +113,15 @@ public sealed partial class MainWindowViewModel
     partial void OnSelectedPresetChanged(Preset? value)
     {
         if (value is not null && PresetAnalysis.Of(value).Arguments is { } args)
-            SnapToKeyframes = args.VideoCopy;
+            _owner.SnapToKeyframes = args.VideoCopy;
         OnPropertyChanged(nameof(OutputDisplay));
-        RefreshDirty();
+        _owner.RefreshDirty();
         InvalidatePlanPreview();
     }
 
     partial void OnOutputPathChanged(string? value)
     {
-        RefreshDirty();
+        _owner.RefreshDirty();
         InvalidatePlanPreview();
     }
 
@@ -112,14 +131,14 @@ public sealed partial class MainWindowViewModel
             InvalidatePlanPreview();
     }
 
-    private ExportSettings CurrentExportSettings() =>
+    internal ExportSettings CurrentExportSettings() =>
         new() { PresetId = SelectedPreset?.Id, PresetSnapshot = SelectedPreset, OutputPath = OutputPath };
 
     /// <summary>
     /// The project's preset. One this machine doesn't have comes from the project file and its arguments go
     /// straight to ffmpeg, so it's only added when the user agrees, and never in place of an existing preset.
     /// </summary>
-    private async Task<Preset?> ResolvePresetAsync(ExportSettings settings)
+    internal async Task<Preset?> ResolvePresetAsync(ExportSettings settings)
     {
         if (_app.Presets.Find(settings.PresetId) is { } known)
             return known;
@@ -135,7 +154,7 @@ public sealed partial class MainWindowViewModel
         return _app.Presets.Find(snapshot.Id);
     }
 
-    private void ApplyExportSettings(ExportSettings settings, Preset? preset)
+    internal void ApplyExportSettings(ExportSettings settings, Preset? preset)
     {
         SelectedPreset = preset ?? DefaultPreset();
         OutputPath = settings.OutputPath is { } path && Path.IsPathFullyQualified(path) ? path : null;
@@ -146,7 +165,7 @@ public sealed partial class MainWindowViewModel
         if (State.Sources.FirstOrDefault() is not { } first)
             return null;
         var dir = Path.GetDirectoryName(first.Path)!;
-        var baseName = FilePath is not null ? ProjectName : Path.GetFileNameWithoutExtension(first.Path) + "-edit";
+        var baseName = _owner.FilePath is not null ? _owner.ProjectName : Path.GetFileNameWithoutExtension(first.Path) + "-edit";
         var ext = SelectedPreset is { Extension.Length: > 0 } p ? "." + p.Extension : Path.GetExtension(first.Path);
         var candidate = Path.Combine(dir, baseName + ext);
         for (var n = 2; File.Exists(candidate) || State.Sources.Any(s => s.Path == candidate); n++)
@@ -154,7 +173,7 @@ public sealed partial class MainWindowViewModel
         return candidate;
     }
 
-    private void InvalidatePlanPreview()
+    internal void InvalidatePlanPreview()
     {
         OnPropertyChanged(nameof(OutputDisplay));
         if (!ShowCommand)
@@ -195,12 +214,12 @@ public sealed partial class MainWindowViewModel
         {
             foreach (var source in State.Sources.Where(s => State.Timeline.Clips.Any(c => c.SourceId == s.Id)))
             {
-                if (_catalog.Info(source.Id) is null)
+                if (Catalog.Info(source.Id) is null)
                     continue;
-                if (_catalog.Keyframes(source) is not { } index)
+                if (Catalog.Keyframes(source) is not { } index)
                 {
                     ExportProgressText = $"Finding keyframes in {source.DisplayName}…";
-                    index = await _catalog.KeyframesAsync(source);
+                    index = await Catalog.KeyframesAsync(source);
                 }
                 keyframes[source.Id] = index;
             }
@@ -208,7 +227,7 @@ public sealed partial class MainWindowViewModel
         return ExportPlanner.Plan(new ExportJob
         {
             State = State,
-            Media = _catalog.Media,
+            Media = Catalog.Media,
             Preset = preset,
             OutputPath = output,
             WorkDirectory = workDir,
@@ -347,7 +366,7 @@ public sealed partial class MainWindowViewModel
             View?.RevealInFileManager(_lastOutputPath);
     }
 
-    private void DisposeExport()
+    public void Dispose()
     {
         _app.Presets.Changed -= OnPresetsChanged;
         _planTimer.Stop();

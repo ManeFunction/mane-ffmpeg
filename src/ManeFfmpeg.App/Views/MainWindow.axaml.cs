@@ -47,10 +47,10 @@ public partial class MainWindow : Window, IMainWindowView
         AddHandler(KeyUpEvent, OnWindowKeyUp, RoutingStrategies.Tunnel);
         Deactivated += (_, _) => _shortcutKeysDown.Clear();
         Closing += OnClosing;
-        viewModel.PropertyChanged += (_, e) =>
+        viewModel.Preview.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(MainWindowViewModel.IsCompact))
-                ApplyCompact(viewModel.IsCompact);
+            if (e.PropertyName == nameof(PreviewViewModel.IsCompact))
+                ApplyCompact(viewModel.Preview.IsCompact);
         };
         Closed += (_, _) => ViewModel.Dispose();
     }
@@ -102,8 +102,8 @@ public partial class MainWindow : Window, IMainWindowView
             Item("Save Project", vm.SaveCommand, Key.S, Cmd),
             Item("Save Project As…", vm.SaveAsCommand, Key.S, Cmd | KeyModifiers.Shift),
             new NativeMenuItemSeparator(),
-            Item("Export", vm.ExportCommand, Key.E, Cmd),
-            Item("Cancel Export", vm.CancelExportCommand),
+            Item("Export", vm.Export.ExportCommand, Key.E, Cmd),
+            Item("Cancel Export", vm.Export.CancelExportCommand),
         };
         var closeItem = new NativeMenuItem("Close Window") { Gesture = new KeyGesture(Key.W, Cmd) };
         closeItem.Click += (_, _) => Close();
@@ -135,13 +135,13 @@ public partial class MainWindow : Window, IMainWindowView
         })
             edit.Items.Add(item);
 
-        _compactMenuItem = Item("Compact Mode (Hide Preview)", vm.ToggleCompactCommand, Key.C, Cmd | KeyModifiers.Shift);
+        _compactMenuItem = Item("Compact Mode (Hide Preview)", vm.Preview.ToggleCompactCommand, Key.C, Cmd | KeyModifiers.Shift);
         _compactMenuItem.ToggleType = MenuItemToggleType.CheckBox;
         var view = new NativeMenu
         {
             _compactMenuItem,
             new NativeMenuItemSeparator(),
-            Item("Play / Pause", vm.PlayPauseCommand),
+            Item("Play / Pause", vm.Preview.PlayPauseCommand),
             Item("Zoom In", vm.ZoomInCommand, Key.OemPlus, Cmd),
             Item("Zoom Out", vm.ZoomOutCommand, Key.OemMinus, Cmd),
             Item("Fit Timeline", vm.ZoomFitCommand, Key.D0, Cmd),
@@ -184,7 +184,7 @@ public partial class MainWindow : Window, IMainWindowView
         {
             case Key.Space:
             case Key.K:
-                vm.PlayPauseCommand.Execute(null);
+                vm.Preview.PlayPauseCommand.Execute(null);
                 break;
             case Key.Left when alt:
                 if (shift)
@@ -200,33 +200,33 @@ public partial class MainWindow : Window, IMainWindowView
                 break;
             case Key.Left:
                 if (shift)
-                    vm.JumpCommand.Execute("-1");
+                    vm.Preview.JumpCommand.Execute("-1");
                 else
-                    vm.StepFrameCommand.Execute("-1");
+                    vm.Preview.StepFrameCommand.Execute("-1");
                 break;
             case Key.Right:
                 if (shift)
-                    vm.JumpCommand.Execute("1");
+                    vm.Preview.JumpCommand.Execute("1");
                 else
-                    vm.StepFrameCommand.Execute("1");
+                    vm.Preview.StepFrameCommand.Execute("1");
                 break;
             case Key.J:
-                vm.JumpCommand.Execute("-5");
+                vm.Preview.JumpCommand.Execute("-5");
                 break;
             case Key.L:
-                vm.JumpCommand.Execute("5");
+                vm.Preview.JumpCommand.Execute("5");
                 break;
             case Key.Up:
-                vm.JumpToCutCommand.Execute("-1");
+                vm.Preview.JumpToCutCommand.Execute("-1");
                 break;
             case Key.Down:
-                vm.JumpToCutCommand.Execute("1");
+                vm.Preview.JumpToCutCommand.Execute("1");
                 break;
             case Key.Home:
-                vm.GoToStartCommand.Execute(null);
+                vm.Preview.GoToStartCommand.Execute(null);
                 break;
             case Key.End:
-                vm.GoToEndCommand.Execute(null);
+                vm.Preview.GoToEndCommand.Execute(null);
                 break;
             case Key.S:
             case Key.B:
@@ -236,18 +236,18 @@ public partial class MainWindow : Window, IMainWindowView
             case Key.Back:
                 vm.DeleteSelectionCommand.Execute(null);
                 break;
-            case Key.I when vm.IsSourceMode:
-                vm.SetMarkInCommand.Execute(null);
+            case Key.I when vm.Preview.IsSourceMode:
+                vm.Preview.SetMarkInCommand.Execute(null);
                 break;
-            case Key.O when vm.IsSourceMode:
-                vm.SetMarkOutCommand.Execute(null);
+            case Key.O when vm.Preview.IsSourceMode:
+                vm.Preview.SetMarkOutCommand.Execute(null);
                 break;
-            case Key.Enter when vm.IsSourceMode:
-                vm.AddMarkedRangeCommand.Execute(null);
+            case Key.Enter when vm.Preview.IsSourceMode:
+                vm.Preview.AddMarkedRangeCommand.Execute(null);
                 break;
             case Key.Escape:
-                if (vm.IsSourceMode)
-                    vm.BackToTimelineCommand.Execute(null);
+                if (vm.Preview.IsSourceMode)
+                    vm.Preview.BackToTimelineCommand.Execute(null);
                 else
                     vm.Timeline.ClearSelection();
                 break;
@@ -294,7 +294,7 @@ public partial class MainWindow : Window, IMainWindowView
 
     private static SourceItemViewModel? ItemOf(object? sender) => (sender as Control)?.DataContext as SourceItemViewModel;
 
-    private void OnPreviewSourceClicked(object? sender, RoutedEventArgs e) => ViewModel.PreviewSourceCommand.Execute(ItemOf(sender));
+    private void OnPreviewSourceClicked(object? sender, RoutedEventArgs e) => ViewModel.Preview.PreviewSourceCommand.Execute(ItemOf(sender));
 
     private void OnAppendSourceClicked(object? sender, RoutedEventArgs e) => ViewModel.AppendSourceCommand.Execute(ItemOf(sender));
 
@@ -305,7 +305,7 @@ public partial class MainWindow : Window, IMainWindowView
     protected override void OnLoaded(RoutedEventArgs e)
     {
         base.OnLoaded(e);
-        SourcesList.DoubleTapped += (_, _) => ViewModel.PreviewSourceCommand.Execute(SourcesList.SelectedItem as SourceItemViewModel);
+        SourcesList.DoubleTapped += (_, _) => ViewModel.Preview.PreviewSourceCommand.Execute(SourcesList.SelectedItem as SourceItemViewModel);
     }
 
     // ---- Closing ----------------------------------------------------------------------------------
@@ -315,12 +315,12 @@ public partial class MainWindow : Window, IMainWindowView
         if (_closeConfirmed)
             return;
         e.Cancel = true;
-        if (ViewModel.IsExporting)
+        if (ViewModel.Export.IsExporting)
         {
             var stop = await AskAsync("An export is still running", "Stop the export and close this window?", "Stop and close", "Keep working");
             if (stop != 0)
                 return;
-            ViewModel.CancelExportCommand.Execute(null);
+            ViewModel.Export.CancelExportCommand.Execute(null);
         }
         if (ViewModel.IsDirty && ViewModel.HasClips)
         {
@@ -413,24 +413,24 @@ public partial class MainWindow : Window, IMainWindowView
         {
             // Bounds above are the full-size ones; shrink once the full layout has been measured.
             _expandedHeight = Height;
-            Avalonia.Threading.Dispatcher.UIThread.Post(() => ViewModel.IsCompact = true, Avalonia.Threading.DispatcherPriority.Loaded);
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => ViewModel.Preview.IsCompact = true, Avalonia.Threading.DispatcherPriority.Loaded);
         }
         else
         {
-            ViewModel.IsCompact = false;
+            ViewModel.Preview.IsCompact = false;
         }
     }
 
     public ProjectLayout CaptureLayout() => new()
     {
         Window = new WindowBounds(Position.X, Position.Y, Width,
-            ViewModel.IsCompact ? _expandedHeight ?? Height : Height, WindowState == WindowState.Maximized),
-        LeftPaneWidth = ViewModel.IsCompact ? _expandedLeftWidth.Value : TopGrid.ColumnDefinitions[0].ActualWidth,
-        Compact = ViewModel.IsCompact,
+            ViewModel.Preview.IsCompact ? _expandedHeight ?? Height : Height, WindowState == WindowState.Maximized),
+        LeftPaneWidth = ViewModel.Preview.IsCompact ? _expandedLeftWidth.Value : TopGrid.ColumnDefinitions[0].ActualWidth,
+        Compact = ViewModel.Preview.IsCompact,
         TimelineZoom = ViewModel.Timeline.Zoom,
         TimelineScroll = ViewModel.Timeline.Scroll,
         Playhead = ViewModel.Timeline.Playhead,
-        Volume = ViewModel.Volume,
+        Volume = ViewModel.Preview.Volume,
     };
 
     // ---- IMainWindowView --------------------------------------------------------------------------

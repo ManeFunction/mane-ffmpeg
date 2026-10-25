@@ -2,6 +2,7 @@ using System.Globalization;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ManeFfmpeg.App.Services;
 using ManeFfmpeg.Core.Editing;
 using ManeFfmpeg.Core.Media;
 using ManeFfmpeg.Core.Model;
@@ -15,14 +16,22 @@ public enum PreviewMode
     Source,
 }
 
-public sealed partial class MainWindowViewModel
+/// <summary>One project's preview: the player, transport, source preview with marks, and compact mode.</summary>
+public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
 {
-    private DispatcherTimer _reloadTimer = null!;
+    private readonly MainWindowViewModel _owner;
+    private readonly AppServices _app = AppServices.Instance;
+
+    private readonly DispatcherTimer _reloadTimer;
     private PreviewPlayer? _preview;
     private string? _silencePath;
     private bool _scrubbing;
     private bool _resumeAfterScrub;
     private bool _settingPlayheadFromPlayer;
+
+    private ProjectState State => _owner.State;
+    private TimelineViewModel Timeline => _owner.Timeline;
+    private SourceCatalog Catalog => _owner.Catalog;
 
     /// <summary>The mpv instance the video view draws; unbound before the preview is disposed.</summary>
     [ObservableProperty]
@@ -88,13 +97,12 @@ public sealed partial class MainWindowViewModel
 
     public string MarksText => $"In {(MarkIn is { } i ? TimeFormat.Display(i) : "—")} · Out {(MarkOut is { } o ? TimeFormat.Display(o) : "—")}";
 
-    private void InitPreview()
+    public PreviewViewModel(MainWindowViewModel owner)
     {
-        _reloadTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, (_, _) =>
-        {
-            _reloadTimer.Stop();
-            ReloadTimeline();
-        });
+        _owner = owner;
+        owner.StateChanged += (_, _) => ScheduleTimelineReload();
+        owner.Catalog.Changed += _ => ScheduleTimelineReload();
+        _reloadTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, OnReloadTimer);
 
         if (!_app.MpvAvailable)
         {
@@ -150,7 +158,13 @@ public sealed partial class MainWindowViewModel
         OnPropertyChanged(nameof(Position));
         OnPropertyChanged(nameof(PositionText));
         if (!_settingPlayheadFromPlayer && !IsPlaying)
-            OnSelectionChanged();
+            _owner.OnSelectionChanged();
+    }
+
+    private void OnReloadTimer(object? sender, EventArgs e)
+    {
+        _reloadTimer.Stop();
+        ReloadTimeline();
     }
 
     private void ScheduleTimelineReload()
@@ -166,7 +180,7 @@ public sealed partial class MainWindowViewModel
     {
         if (_preview is null || Mode != PreviewMode.Timeline)
             return;
-        if (!HasClips)
+        if (!_owner.HasClips)
         {
             _preview.Unload();
             PreviewMessage = "Add videos to start: File → Add Videos, or drop files here.";
@@ -177,10 +191,10 @@ public sealed partial class MainWindowViewModel
             _ = PrepareSilenceAsync();
             return;
         }
-        var url = TimelineEdl.Build(State, Media, _silencePath);
+        var url = TimelineEdl.Build(State, _owner.Media, _silencePath);
         if (url is null)
         {
-            PreviewMessage = Sources.Any(s => s.IsProblem) ? "Some videos are missing; relink them in the media list." : "Analyzing videos…";
+            PreviewMessage = _owner.Sources.Any(s => s.IsProblem) ? "Some videos are missing; relink them in the media list." : "Analyzing videos…";
             return;
         }
         PreviewMessage = null;
@@ -241,7 +255,7 @@ public sealed partial class MainWindowViewModel
             return;
         if (!IsPlaying && Mode == PreviewMode.Timeline)
         {
-            if (!HasClips)
+            if (!_owner.HasClips)
                 return;
             if (!_preview.IsTimelineLoaded)
                 ReloadTimeline();
@@ -261,7 +275,7 @@ public sealed partial class MainWindowViewModel
             // No video is decoded in compact mode, so step by one frame of what is being previewed.
             var video = Mode == PreviewMode.Source
                 ? PreviewedSource?.Info?.Video
-                : State.Timeline.Locate(Timeline.Playhead) is { } at ? _catalog.Info(State.Timeline.Clips[at.Index].SourceId)?.Video : null;
+                : State.Timeline.Locate(Timeline.Playhead) is { } at ? Catalog.Info(State.Timeline.Clips[at.Index].SourceId)?.Video : null;
             var frame = TimeFormat.FrameDuration(video?.FrameRate ?? default);
             SeekPreview(Position + (direction == "-1" ? -frame : frame));
             return;
@@ -314,7 +328,7 @@ public sealed partial class MainWindowViewModel
         SourcePosition = TimeSpan.Zero;
         SourceLength = item.Info?.Duration ?? TimeSpan.Zero;
         PreviewMessage = null;
-        _preview.LoadSource(item.Path, _catalog.Audio(item.Source)?.Index);
+        _preview.LoadSource(item.Path, Catalog.Audio(item.Source)?.Index);
     }
 
     [RelayCommand]
@@ -329,10 +343,10 @@ public sealed partial class MainWindowViewModel
     }
 
     [RelayCommand]
-    private void SetMarkIn() => MarkIn = PreviewedSource is { } s && GridOf(s.Id) is { } grid ? grid.SnapInPoint(SourcePosition) : SourcePosition;
+    private void SetMarkIn() => MarkIn = PreviewedSource is { } s && _owner.GridOf(s.Id) is { } grid ? grid.SnapInPoint(SourcePosition) : SourcePosition;
 
     [RelayCommand]
-    private void SetMarkOut() => MarkOut = PreviewedSource is { } s && GridOf(s.Id) is { } grid ? grid.SnapOutPoint(SourcePosition) : SourcePosition;
+    private void SetMarkOut() => MarkOut = PreviewedSource is { } s && _owner.GridOf(s.Id) is { } grid ? grid.SnapOutPoint(SourcePosition) : SourcePosition;
 
     [RelayCommand]
     private void AddMarkedRange()
@@ -345,15 +359,15 @@ public sealed partial class MainWindowViewModel
             (start, end) = (end, start);
         if (end - start < TimelineEditor.MinClipDuration)
         {
-            StatusMessage = "Set In (I) and Out (O) marks further apart.";
+            _owner.StatusMessage = "Set In (I) and Out (O) marks further apart.";
             return;
         }
-        CommitKeepingFit(State with { Timeline = TimelineEditor.Append(State.Timeline, Clip.Create(item.Id, start, end)) });
-        StatusMessage = $"Added {TimeFormat.Display(end - start)} from {item.Name} to the end of the timeline.";
+        _owner.CommitKeepingFit(State with { Timeline = TimelineEditor.Append(State.Timeline, Clip.Create(item.Id, start, end)) });
+        _owner.StatusMessage = $"Added {TimeFormat.Display(end - start)} from {item.Name} to the end of the timeline.";
         MarkIn = MarkOut = null;
     }
 
-    private void DisposePreview()
+    public void Dispose()
     {
         _reloadTimer.Stop();
         // Unbinding the player first makes the video view drop its renderer, which must go before the player.
