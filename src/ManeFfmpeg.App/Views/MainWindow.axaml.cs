@@ -137,7 +137,7 @@ public partial class MainWindow : Window, IMainWindowView
         })
             edit.Items.Add(item);
 
-        _compactMenuItem = Item("Compact Mode (Hide Preview)", vm.Preview.ToggleCompactCommand, Key.C, Cmd | KeyModifiers.Shift);
+        _compactMenuItem = Item("Compact Mode",vm.Preview.ToggleCompactCommand, Key.C, Cmd | KeyModifiers.Shift);
         _compactMenuItem.ToggleType = MenuItemToggleType.CheckBox;
         var view = new NativeMenu
         {

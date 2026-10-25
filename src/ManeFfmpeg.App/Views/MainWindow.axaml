@@ -175,10 +175,14 @@
                 <!-- Preview -->
                 <Border x:Name="PreviewPanel" Grid.Column="2" Classes="panel" Padding="0" ClipToBounds="True">
                     <DockPanel>
-                        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="10,6">
+                        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="10,6,6,6">
                             <TextBlock Text="{Binding Preview.PreviewTitle}" Classes="title" VerticalAlignment="Center" />
                             <Button Grid.Column="1" Classes="tool" Content="← Back to timeline" Command="{Binding Preview.BackToTimelineCommand}"
                                     IsVisible="{Binding Preview.IsSourceMode}" />
+                            <Button x:Name="ClosePreviewButton" Grid.Column="2" Classes="close" Command="{Binding Preview.ToggleCompactCommand}"
+                                    Margin="8,0,0,0" ToolTip.Tip="Hide the video preview (⇧⌘C)">
+                                <PathIcon Data="{StaticResource IconClose}" />
+                            </Button>
                         </Grid>
 
                         <!-- Transport -->
@@ -248,8 +252,8 @@
                                    TextTrimming="CharacterEllipsis" Margin="12,0" />
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
                             <TextBlock Text="{Binding TimelineDurationText}" VerticalAlignment="Center" Classes="dim" FontFeatures="tnum" Margin="0,0,8,0" />
-                            <ToggleButton x:Name="CompactToggle" Classes="tool" Content="Compact" IsChecked="{Binding Preview.IsCompact}"
-                                          Margin="0,0,8,0" ToolTip.Tip="Hide the video preview (⇧⌘C)" />
+                            <Button Classes="tool" Content="{Binding Preview.PreviewToggleText}" Command="{Binding Preview.ToggleCompactCommand}"
+                                    Margin="0,0,8,0" ToolTip.Tip="Show or hide the video preview (⇧⌘C)" />
                             <Button Classes="tool" Content="−" Command="{Binding ZoomOutCommand}" ToolTip.Tip="Zoom out (−)" />
                             <Button Classes="tool" Content="Fit" Command="{Binding ZoomFitCommand}" ToolTip.Tip="Fit timeline" />
                             <Button Classes="tool" Content="+" Command="{Binding ZoomInCommand}" ToolTip.Tip="Zoom in (+)" />

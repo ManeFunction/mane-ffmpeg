@@ -144,6 +144,13 @@ internal static class DebugAutomation
                         // focus <x:Name of a control in the window>
                         (window.FindControl<Avalonia.Controls.Control>(arg) ?? throw new InvalidOperationException($"no control {arg}")).Focus();
                         break;
+                    case "click":
+                    {
+                        // click <x:Name of a button in the window>: runs its command, as a click would
+                        var button = window.FindControl<Button>(arg) ?? throw new InvalidOperationException($"no button {arg}");
+                        button.Command?.Execute(button.CommandParameter);
+                        break;
+                    }
                     case "keypress":
                     {
                         // Like a real key press: KeyDown then KeyUp, both sent to the focused element.

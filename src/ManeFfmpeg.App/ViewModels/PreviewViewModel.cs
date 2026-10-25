@@ -72,6 +72,7 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
 
     /// <summary>Compact mode: the video preview is hidden and mpv plays audio only.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PreviewToggleText))]
     public partial bool IsCompact { get; set; }
 
     partial void OnIsCompactChanged(bool value)
@@ -82,6 +83,8 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
 
     [RelayCommand]
     private void ToggleCompact() => IsCompact = !IsCompact;
+
+    public string PreviewToggleText => IsCompact ? "Show preview" : "Hide preview";
 
     public bool IsSourceMode => Mode == PreviewMode.Source;
 
