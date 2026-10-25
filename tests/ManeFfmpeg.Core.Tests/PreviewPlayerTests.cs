@@ -28,10 +28,13 @@ public class PreviewPlayerTests(FfmpegFixture media) : IClassFixture<FfmpegFixtu
 {
     private static bool Near(double? seconds, double expected) => seconds is { } s && Math.Abs(s - expected) < 0.05;
 
-    private async Task<string> TimelineUrl(params (double In, double Out)[] clips)
+    private Task<string> TimelineUrl(params (double In, double Out)[] clips) => TimelineUrl(media.Sync30, clips);
+
+    /// <summary>A timeline of <paramref name="path"/>, described with the probe of the sync file (so it may be missing).</summary>
+    private async Task<string> TimelineUrl(string path, params (double In, double Out)[] clips)
     {
         var info = await media.ProbeAsync(media.Sync30);
-        var state = new ProjectState([new SourceMedia { Id = "s", Path = media.Sync30 }],
+        var state = new ProjectState([new SourceMedia { Id = "s", Path = path }],
             new Timeline([.. clips.Select(c => Clip.Create("s", TimeSpan.FromSeconds(c.In), TimeSpan.FromSeconds(c.Out)))]));
         return TimelineEdl.Build(state, new Dictionary<string, MediaInfo> { ["s"] = info }, "/nonexistent/silence.mka")!;
     }
@@ -52,6 +55,39 @@ public class PreviewPlayerTests(FfmpegFixture media) : IClassFixture<FfmpegFixtu
         player.Compact = true;
         await Wait.Until(() => player.Mpv.GetString("vid") == "no", "video off in compact mode");
         Assert.Equal(TimelineEdl.AudioTitle, player.Mpv.GetString("current-tracks/audio/title"));
+    }
+
+    [MpvFact]
+    public async Task Compact_mode_switched_before_the_timeline_loads_still_lets_it_play()
+    {
+        using var player = PreviewPlayer.Create(hardwareDecoding: false, headless: true);
+        // While a project is still being analyzed nothing is loaded yet.
+        player.Compact = true;
+        player.LoadTimeline(await TimelineUrl((1, 3), (5, 8)), TimeSpan.FromSeconds(1));
+        await Wait.Until(() => player.Mpv.GetString("current-tracks/audio/title") == TimelineEdl.AudioTitle, "the timeline audio track");
+        Assert.Equal("no", player.Mpv.GetString("vid"));
+
+        player.Compact = false;
+        await Wait.Until(() => player.Mpv.GetString("current-tracks/video/title") == TimelineEdl.VideoTitle, "the timeline video track");
+    }
+
+    [MpvFact]
+    public async Task A_timeline_that_fails_to_load_is_tried_again_next_time()
+    {
+        using var player = PreviewPlayer.Create(hardwareDecoding: false, headless: true);
+        var failures = 0;
+        player.LoadFailed += _ => Interlocked.Increment(ref failures);
+        var missing = await TimelineUrl(Path.Combine(media.Directory, "missing.mp4"), (1, 3));
+
+        player.LoadTimeline(missing, TimeSpan.Zero);
+        await Wait.Until(() => failures == 1, "the load failing");
+        Assert.False(player.IsTimelineLoaded);
+
+        player.LoadTimeline(missing, TimeSpan.Zero);
+        await Wait.Until(() => failures == 2, "the second try failing");
+        player.LoadTimeline(await TimelineUrl((1, 3)), TimeSpan.Zero);
+        await Wait.Until(() => player.Mpv.GetString("current-tracks/audio/title") == TimelineEdl.AudioTitle, "the playable timeline");
+        Assert.True(player.IsTimelineLoaded);
     }
 
     /// <summary>Holds posted callbacks until <see cref="RunAll"/>, like a busy UI thread.</summary>

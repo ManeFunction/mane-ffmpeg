@@ -119,6 +119,7 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
             };
             preview.PausedChanged += paused => IsPlaying = !paused;
             preview.EndReached += () => IsPlaying = false;
+            preview.LoadFailed += error => PreviewMessage = $"Preview couldn't play this: {error}";
             preview.Volume = Volume;
             _preview = preview;
             Player = preview.Mpv;

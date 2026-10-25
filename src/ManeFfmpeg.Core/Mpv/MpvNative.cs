@@ -25,6 +25,8 @@ internal static unsafe partial class MpvNative
     public const int EventIdPlaybackRestart = 21;
     public const int EventIdPropertyChange = 22;
 
+    public const int EndFileReasonError = 4;
+
     public const int RenderParamInvalid = 0;
     public const int RenderParamApiType = 1;
     public const int RenderParamSwSize = 17;
@@ -51,10 +53,17 @@ internal static unsafe partial class MpvNative
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    public struct EventStartFile
+    {
+        public long PlaylistEntryId;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     public struct EventEndFile
     {
         public int Reason;
         public int Error;
+        public long PlaylistEntryId;
     }
 
     [StructLayout(LayoutKind.Sequential)]

@@ -8,8 +8,8 @@ namespace ManeFfmpeg.Core.Mpv;
 /// and keeps mpv's protocol to itself: which tracks to play (the EDL's titled tracks, or a source's chosen
 /// audio stream), keeping the position across reloads, audio-only compact mode, coalescing rapid seeks,
 /// ignoring position reports that still echo the old position while a seek is under way or come from the
-/// file being replaced, and live audio-delay feedback. Events arrive on the <see cref="SynchronizationContext"/>
-/// it was created on.
+/// file being replaced, forgetting a file that failed so the next load tries again, and live audio-delay
+/// feedback. Events arrive on the <see cref="SynchronizationContext"/> it was created on.
 /// </summary>
 public sealed class PreviewPlayer : IDisposable
 {
@@ -24,6 +24,7 @@ public sealed class PreviewPlayer : IDisposable
     private DateTime _lastSeekAt;
     private bool _loading;
     private string? _loaded;
+    private long? _entry;
     private bool _timeline;
     private int? _sourceAudioStream;
     private bool _compact;
@@ -33,7 +34,8 @@ public sealed class PreviewPlayer : IDisposable
         Mpv = mpv;
         _seekTimer = new Timer(_ => FlushSeek());
         mpv.PropertyChanged += (name, value) => Post(() => OnProperty(name, value));
-        mpv.FileLoaded += () => Post(OnFileLoaded);
+        mpv.FileLoaded += entry => Post(() => OnFileLoaded(entry));
+        mpv.FileFailed += (entry, error) => Post(() => OnFileFailed(entry, error));
         // mpv's warnings and errors (unplayable segments, failed commands) explain a blank or silent preview.
         mpv.LogMessage += (level, text) => AppLog.Write($"mpv {level}: {text}");
     }
@@ -56,6 +58,9 @@ public sealed class PreviewPlayer : IDisposable
     public event Action<bool>? PausedChanged;
 
     public event Action? EndReached;
+
+    /// <summary>What was loaded can't be played (mpv's error); it counts as unloaded, so loading it again retries.</summary>
+    public event Action<string>? LoadFailed;
 
     /// <summary>True when the timeline is what's loaded (rather than a source or nothing).</summary>
     public bool IsTimelineLoaded => _timeline && _loaded is not null;
@@ -106,6 +111,7 @@ public sealed class PreviewPlayer : IDisposable
         if (_loaded is null)
             return;
         _loaded = null;
+        _entry = null;
         Mpv.Command("stop");
     }
 
@@ -117,8 +123,12 @@ public sealed class PreviewPlayer : IDisposable
             _loading = true;
         }
         _loaded = target;
+        // mpv carries track choices over to the next file, where "no" for both would leave it nothing to play;
+        // every file starts from mpv's own choice, and the tracks are picked once it has loaded.
+        Mpv.SetString("vid", "auto");
+        Mpv.SetString("aid", "auto");
         Mpv.SetString("start", TimeFormat.Seconds(start));
-        Mpv.Command("loadfile", target, "replace");
+        _entry = Mpv.LoadFile(target);
     }
 
     /// <summary>Seeks exactly; seeks arriving faster than mpv can follow collapse into the latest one.</summary>
@@ -188,8 +198,11 @@ public sealed class PreviewPlayer : IDisposable
         }
     }
 
-    private void OnFileLoaded()
+    private void OnFileLoaded(long entry)
     {
+        // A file replaced before it finished loading: the current one's events are still to come.
+        if (entry != _entry)
+            return;
         // Events come in mpv's order, so every report from the replaced file arrived before this one.
         lock (_gate)
             _loading = false;
@@ -198,9 +211,32 @@ public sealed class PreviewPlayer : IDisposable
         ApplyTracks();
     }
 
+    private void OnFileFailed(long entry, string error)
+    {
+        if (entry != _entry)
+            return;
+        AppLog.Write($"Preview couldn't play the {(_timeline ? "timeline" : "source")}: {error}");
+        lock (_gate)
+        {
+            _pendingSeek = null;
+            _loading = false;
+        }
+        _loaded = null;
+        _entry = null;
+        Paused = true;
+        LoadFailed?.Invoke(error);
+    }
+
     /// <summary>The timeline's titled tracks, or a source's video and chosen audio stream; no video when compact.</summary>
     private void ApplyTracks()
     {
+        // Until the file has loaded there are no tracks to pick from, and picking none would carry over to it;
+        // OnFileLoaded picks them.
+        bool loading;
+        lock (_gate)
+            loading = _loading;
+        if (loading || _loaded is null)
+            return;
         var (videoTitle, audioTitle) = _timeline ? (TimelineEdl.VideoTitle, TimelineEdl.AudioTitle) : ((string?)null, (string?)null);
         var count = Mpv.GetInt("track-list/count") ?? 0;
         string? vid = null, aid = null;

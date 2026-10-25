@@ -15,6 +15,7 @@ public sealed unsafe class MpvPlayer : IDisposable
     private readonly Dictionary<ulong, string> _observed = [];
     private nint _handle;
     private volatile bool _stopping;
+    private long _startedEntry;
 
     private MpvPlayer(nint handle)
     {
@@ -27,7 +28,11 @@ public sealed unsafe class MpvPlayer : IDisposable
     /// <summary>Raised for observed properties: (name, value) with double, bool or string values (null = unavailable).</summary>
     public event Action<string, object?>? PropertyChanged;
 
-    public event Action? FileLoaded;
+    /// <summary>A file finished loading: its playlist entry id (see <see cref="LoadFile"/>).</summary>
+    public event Action<long>? FileLoaded;
+
+    /// <summary>A file failed to load or stopped on an error: its playlist entry id and mpv's error.</summary>
+    public event Action<long, string>? FileFailed;
 
     public event Action<string, string>? LogMessage;
 
@@ -79,10 +84,18 @@ public sealed unsafe class MpvPlayer : IDisposable
 
     public void CommandAsync(params string[] args) => Run(args, async: true);
 
-    private void Run(string[] args, bool async)
+    /// <summary>
+    /// Replaces whatever is playing with <paramref name="target"/>. Returns its playlist entry id, which tells
+    /// its <see cref="FileLoaded"/> and <see cref="FileFailed"/> apart from those of the file it replaces.
+    /// </summary>
+    public long? LoadFile(string target) =>
+        // "replace" leaves the new file alone in the playlist.
+        Run(["loadfile", target, "replace"], async: false) >= 0 ? GetInt("playlist/0/id") : null;
+
+    private int Run(string[] args, bool async)
     {
         if (_handle == 0)
-            return;
+            return -1;
         var ptrs = stackalloc nint[args.Length + 1];
         for (var i = 0; i < args.Length; i++)
             ptrs[i] = Marshal.StringToCoTaskMemUTF8(args[i]);
@@ -92,6 +105,7 @@ public sealed unsafe class MpvPlayer : IDisposable
             var result = async ? MpvNative.CommandAsync(_handle, 0, ptrs) : MpvNative.Command(_handle, ptrs);
             if (result < 0)
                 LogMessage?.Invoke("error", $"{args[0]}: {MpvNative.Error(result)}");
+            return result;
         }
         finally
         {
@@ -182,9 +196,20 @@ public sealed unsafe class MpvPlayer : IDisposable
                 PropertyChanged?.Invoke(name, value);
                 break;
             }
-            case MpvNative.EventIdFileLoaded:
-                FileLoaded?.Invoke();
+            case MpvNative.EventIdStartFile when ev->Data != 0:
+                _startedEntry = ((MpvNative.EventStartFile*)ev->Data)->PlaylistEntryId;
                 break;
+            case MpvNative.EventIdFileLoaded:
+                // Always follows the start of the same file.
+                FileLoaded?.Invoke(_startedEntry);
+                break;
+            case MpvNative.EventIdEndFile when ev->Data != 0:
+            {
+                var end = (MpvNative.EventEndFile*)ev->Data;
+                if (end->Reason == MpvNative.EndFileReasonError)
+                    FileFailed?.Invoke(end->PlaylistEntryId, MpvNative.Error(end->Error));
+                break;
+            }
             case MpvNative.EventIdLogMessage when ev->Data != 0:
             {
                 var msg = (MpvNative.EventLogMessage*)ev->Data;
