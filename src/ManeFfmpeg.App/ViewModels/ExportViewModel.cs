@@ -9,6 +9,7 @@ using ManeFfmpeg.Core.Media;
 using ManeFfmpeg.Core.Model;
 using ManeFfmpeg.Core.Notifications;
 using ManeFfmpeg.Core.Persistence;
+using ManeFfmpeg.Core.Power;
 
 namespace ManeFfmpeg.App.ViewModels;
 
@@ -283,6 +284,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         ExportProgressText = "Preparing…";
         _exportCts = new CancellationTokenSource();
         var workDir = Path.Combine(AppPaths.TempDirectory, "export-" + Guid.NewGuid().ToString("N")[..8]);
+        using var keepAwake = SleepInhibitor.Acquire($"Exporting {Path.GetFileName(output)}");
         try
         {
             var plan = await PlanAsync(output, workDir, status => ExportProgressText = status);

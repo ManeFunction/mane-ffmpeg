@@ -28,6 +28,7 @@ Built with C#, .NET 10 and Avalonia 12.
 - **Export**
   - The progress bar, ETA, speed and Cancel button all stay inside the window.
   - A system notification appears when an export finishes or fails.
+  - The computer doesn't go to sleep on its own while an export runs. The display can still turn off.
   - "ffmpeg command" shows the exact commands that will run.
 - **Projects**
   - `*.mfvp` files are readable JSON. They store edits, the export choice and the window layout, but no media.
@@ -45,6 +46,7 @@ Built with C#, .NET 10 and Avalonia 12.
 | ffmpeg + ffprobe (5.0+) | `brew install ffmpeg` | `sudo apt install ffmpeg` (or your distro's package) |
 | libmpv (0.33+) for preview | IINA.app installed (its libmpv is used), or `brew install mpv` | `sudo apt install libmpv2` · `dnf install mpv-libs` · `pacman -S mpv` |
 | Notifications | built in (`osascript`) | `notify-send` (libnotify) or `gdbus` |
+| Staying awake during exports | built in (IOKit power assertion) | `systemd-inhibit` (systemd) |
 
 The app finds ffmpeg in your PATH, `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin` and similar places. Apps started from Finder don't get your shell PATH, so this matters. You can also set the paths in **Settings**.
 
