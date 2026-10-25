@@ -182,6 +182,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         var files = paths.Select(Path.GetFullPath).Where(File.Exists).Distinct().ToList();
         if (files.Count == 0)
             return;
+        await _app.ToolsLocated;
         if (_app.Tools is null)
         {
             StatusMessage = _app.ToolsError;

@@ -24,8 +24,16 @@ public sealed class AppServices : IMediaAnalyzers
 
     public bool MpvAvailable => MpvLibrary.IsLoaded;
 
+    private readonly TaskCompletionSource _toolsLocated = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     /// <summary>Raised on the thread that called <see cref="LocateToolsAsync"/> once tools are (re)located.</summary>
     public event EventHandler? ToolsChanged;
+
+    /// <summary>
+    /// Completes once ffmpeg has been looked for at startup (found or not). Files opened before that (Open With,
+    /// a drop right after launch) wait for it instead of finding no tools.
+    /// </summary>
+    public Task ToolsLocated => _toolsLocated.Task;
 
     public async Task LocateToolsAsync()
     {
@@ -45,6 +53,7 @@ public sealed class AppServices : IMediaAnalyzers
             Waveforms = tools is null ? null : new WaveformService(tools);
             _probes.Clear();
         }
+        _toolsLocated.TrySetResult();
         ToolsChanged?.Invoke(this, EventArgs.Empty);
     }
 

@@ -60,6 +60,9 @@ public sealed class WindowManager
     /// <summary>Opens dropped or passed files: project files open as projects, videos are added to the requester.</summary>
     public async Task OpenFilesAsync(IReadOnlyList<string> paths, MainWindow? requester)
     {
+        // At launch, macOS can hand over files before ffmpeg has been found; projects would show their videos
+        // as unreadable until then.
+        await AppServices.Instance.ToolsLocated;
         foreach (var project in paths.Where(IsProject))
             await OpenProjectAsync(project, requester);
         var media = paths.Where(p => !IsProject(p) && File.Exists(p)).ToList();

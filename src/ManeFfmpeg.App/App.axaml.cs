@@ -47,7 +47,8 @@ public partial class App : Application
     {
         await AppServices.Instance.LocateToolsAsync();
         AppLog.Write(AppServices.Instance.Tools is { } tools ? $"ffmpeg: {tools.VersionText} ({tools.Ffmpeg})" : $"ffmpeg: {AppServices.Instance.ToolsError}");
-        var files = args.Where(File.Exists).ToList();
+        // macOS turns file arguments into "open document" events (OnActivated) as well; open them only once.
+        var files = OperatingSystem.IsMacOS() ? [] : args.Where(File.Exists).ToList();
         if (files.Count > 0)
             await WindowManager.Instance.OpenFilesAsync(files, first);
 #if DEBUG
