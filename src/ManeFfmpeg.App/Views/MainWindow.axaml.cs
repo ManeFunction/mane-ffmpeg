@@ -52,12 +52,7 @@ public partial class MainWindow : Window, IMainWindowView
             if (e.PropertyName == nameof(MainWindowViewModel.IsCompact))
                 ApplyCompact(viewModel.IsCompact);
         };
-        Closed += (_, _) =>
-        {
-            // The renderer must go before the player it draws.
-            Video.Detach();
-            ViewModel.Dispose();
-        };
+        Closed += (_, _) => ViewModel.Dispose();
     }
 
     public MainWindowViewModel ViewModel { get; }

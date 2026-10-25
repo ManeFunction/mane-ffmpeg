@@ -66,6 +66,8 @@ scripts/package-macos.sh                           # → build/macos-<rid>/Mane 
 scripts/package-linux.sh                           # → build/linux-<rid>/mane-ffmpeg-<version>-<rid>.tar.gz
 ```
 
+The preview player's tests run against a headless libmpv and are skipped when it can't be loaded. With IINA's copy on macOS, start the run with `DYLD_FALLBACK_LIBRARY_PATH=/Applications/IINA.app/Contents/Frameworks:$HOME/lib:/usr/local/lib:/usr/lib dotnet test`.
+
 The packaged apps are self-contained, so no .NET install is needed to run them. The macOS bundle registers the `.mfvp` file type, so double-clicking a project opens it.
 
 ## How exports work

@@ -129,8 +129,11 @@ public sealed class MpvVideoView : Control
         UpdateTargetSize();
     }
 
-    /// <summary>Stops rendering and frees the render context (must happen before the player is destroyed).</summary>
-    public void Detach()
+    /// <summary>
+    /// Stops rendering and frees the render context. Happens when the player is unbound, which its owner
+    /// does before destroying it.
+    /// </summary>
+    private void Detach()
     {
         if (_renderer is null)
             return;

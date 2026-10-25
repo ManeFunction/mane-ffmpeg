@@ -18,15 +18,13 @@ public enum PreviewMode
 public sealed partial class MainWindowViewModel
 {
     private DispatcherTimer _reloadTimer = null!;
-    private DispatcherTimer _seekTimer = null!;
-    private string? _loadedUrl;
+    private PreviewPlayer? _preview;
     private string? _silencePath;
-    private double? _pendingSeek;
-    private DateTime _lastSeekAt;
     private bool _scrubbing;
     private bool _resumeAfterScrub;
     private bool _settingPlayheadFromPlayer;
 
+    /// <summary>The mpv instance the video view draws; unbound before the preview is disposed.</summary>
     [ObservableProperty]
     public partial MpvPlayer? Player { get; private set; }
 
@@ -67,7 +65,11 @@ public sealed partial class MainWindowViewModel
     [ObservableProperty]
     public partial bool IsCompact { get; set; }
 
-    partial void OnIsCompactChanged(bool value) => ApplyTrackSelection();
+    partial void OnIsCompactChanged(bool value)
+    {
+        if (_preview is not null)
+            _preview.Compact = value;
+    }
 
     [RelayCommand]
     private void ToggleCompact() => IsCompact = !IsCompact;
@@ -93,7 +95,6 @@ public sealed partial class MainWindowViewModel
             _reloadTimer.Stop();
             ReloadTimeline();
         });
-        _seekTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(40), DispatcherPriority.Input, (_, _) => FlushSeek());
 
         if (!_app.MpvAvailable)
         {
@@ -102,11 +103,18 @@ public sealed partial class MainWindowViewModel
         }
         try
         {
-            var player = MpvPlayer.Create(_app.Settings.Current.HardwareDecoding);
-            player.PropertyChanged += (name, value) => Dispatcher.UIThread.Post(() => OnPlayerProperty(name, value));
-            player.FileLoaded += () => Dispatcher.UIThread.Post(OnFileLoaded);
-            player.SetDouble("volume", Volume);
-            Player = player;
+            var preview = PreviewPlayer.Create(_app.Settings.Current.HardwareDecoding);
+            preview.PositionChanged += OnPreviewPosition;
+            preview.DurationChanged += d =>
+            {
+                if (Mode == PreviewMode.Source)
+                    SourceLength = d;
+            };
+            preview.PausedChanged += paused => IsPlaying = !paused;
+            preview.EndReached += () => IsPlaying = false;
+            preview.Volume = Volume;
+            _preview = preview;
+            Player = preview.Mpv;
             PreviewMessage = "Add videos to start: File → Add Videos, or drop files here.";
         }
         catch (Exception ex)
@@ -115,83 +123,26 @@ public sealed partial class MainWindowViewModel
         }
     }
 
-    partial void OnVolumeChanged(double value) => Player?.SetDouble("volume", value);
-
-    private void OnPlayerProperty(string name, object? value)
+    partial void OnVolumeChanged(double value)
     {
-        switch (name)
+        if (_preview is not null)
+            _preview.Volume = value;
+    }
+
+    private void OnPreviewPosition(TimeSpan position)
+    {
+        if (Mode == PreviewMode.Source)
         {
-            case "time-pos" when value is double t:
-                if (Mode == PreviewMode.Source)
-                {
-                    SourcePosition = TimeFormat.FromSeconds(t);
-                }
-                else if (!_scrubbing && _pendingSeek is null && (DateTime.UtcNow - _lastSeekAt).TotalMilliseconds > 250)
-                {
-                    _settingPlayheadFromPlayer = true;
-                    Timeline.Playhead = Timeline.Clamp(TimeFormat.FromSeconds(t));
-                    _settingPlayheadFromPlayer = false;
-                    if (IsPlaying)
-                        Timeline.FollowPlayhead();
-                }
-                break;
-            case "pause" when value is bool paused:
-                IsPlaying = !paused;
-                break;
-            case "duration" when value is double d && Mode == PreviewMode.Source:
-                SourceLength = TimeFormat.FromSeconds(d);
-                break;
-            case "eof-reached" when value is true:
-                IsPlaying = false;
-                break;
-        }
-    }
-
-    private void OnFileLoaded()
-    {
-        if (Player is null)
+            SourcePosition = position;
             return;
-        Player.SetDouble("audio-delay", 0);
-        Player.SetString("start", "none");
-        ApplyTrackSelection();
-    }
-
-    /// <summary>
-    /// Plays the timeline EDL's titled tracks, or a previewed source's video and chosen audio stream;
-    /// no video at all in compact mode.
-    /// </summary>
-    private void ApplyTrackSelection()
-    {
-        if (Mode == PreviewMode.Timeline)
-            SelectTracks(TimelineEdl.VideoTitle, TimelineEdl.AudioTitle, null);
-        else
-            SelectTracks(null, null, PreviewedSource?.Info?.Audio(PreviewedSource.AudioStreamIndex)?.Index);
-    }
-
-    /// <summary>Picks tracks by EDL title (timeline) or by stream index (source preview).</summary>
-    private void SelectTracks(string? videoTitle, string? audioTitle, int? audioStreamIndex)
-    {
-        if (Player is null)
-            return;
-        var count = Player.GetInt("track-list/count") ?? 0;
-        string? vid = null, aid = null;
-        for (var i = 0; i < count; i++)
-        {
-            var type = Player.GetString($"track-list/{i}/type");
-            var title = Player.GetString($"track-list/{i}/title");
-            var id = Player.GetString($"track-list/{i}/id");
-            var ffIndex = Player.GetInt($"track-list/{i}/ff-index");
-            if (type == "video" && vid is null && (videoTitle is null || title == videoTitle))
-                vid = id;
-            if (type == "audio" && (audioTitle is null || title == audioTitle)
-                && (aid is null || (audioStreamIndex is { } wanted && ffIndex == wanted)))
-                aid = id;
         }
-        if (IsCompact)
-            Player.SetString("vid", "no");
-        else if (vid is not null)
-            Player.SetString("vid", vid);
-        Player.SetString("aid", aid ?? "no");
+        if (_scrubbing)
+            return;
+        _settingPlayheadFromPlayer = true;
+        Timeline.Playhead = Timeline.Clamp(position);
+        _settingPlayheadFromPlayer = false;
+        if (IsPlaying)
+            Timeline.FollowPlayhead();
     }
 
     internal void OnPlayheadMoved()
@@ -205,7 +156,7 @@ public sealed partial class MainWindowViewModel
     private void ScheduleTimelineReload()
     {
         OnPropertyChanged(nameof(PositionText));
-        if (Player is null || Mode != PreviewMode.Timeline)
+        if (_preview is null || Mode != PreviewMode.Timeline)
             return;
         _reloadTimer.Stop();
         _reloadTimer.Start();
@@ -213,13 +164,11 @@ public sealed partial class MainWindowViewModel
 
     private void ReloadTimeline()
     {
-        if (Player is null || Mode != PreviewMode.Timeline)
+        if (_preview is null || Mode != PreviewMode.Timeline)
             return;
         if (!HasClips)
         {
-            if (_loadedUrl is not null)
-                Player.Command("stop");
-            _loadedUrl = null;
+            _preview.Unload();
             PreviewMessage = "Add videos to start: File → Add Videos, or drop files here.";
             return;
         }
@@ -235,11 +184,7 @@ public sealed partial class MainWindowViewModel
             return;
         }
         PreviewMessage = null;
-        if (url == _loadedUrl)
-            return;
-        Player.SetString("start", TimeFormat.Seconds(Timeline.Playhead));
-        Player.Command("loadfile", url, "replace");
-        _loadedUrl = url;
+        _preview.LoadTimeline(url, Timeline.Playhead);
     }
 
     private async Task PrepareSilenceAsync()
@@ -269,11 +214,11 @@ public sealed partial class MainWindowViewModel
         {
             _scrubbing = true;
             _resumeAfterScrub = IsPlaying;
-            if (IsPlaying)
-                Player?.SetFlag("pause", true);
+            if (IsPlaying && _preview is not null)
+                _preview.Paused = true;
         }
         Timeline.Playhead = time;
-        RequestSeek(time);
+        _preview?.Seek(time);
     }
 
     public void EndScrub()
@@ -281,59 +226,35 @@ public sealed partial class MainWindowViewModel
         if (!_scrubbing)
             return;
         _scrubbing = false;
-        FlushSeek();
-        if (_resumeAfterScrub)
-            Player?.SetFlag("pause", false);
+        if (_resumeAfterScrub && _preview is not null)
+            _preview.Paused = false;
     }
 
-    private void RequestSeek(TimeSpan time)
-    {
-        _pendingSeek = time.TotalSeconds;
-        if (!_seekTimer.IsEnabled)
-        {
-            FlushSeek();
-            _seekTimer.Start();
-        }
-    }
-
-    private void FlushSeek()
-    {
-        if (_pendingSeek is not { } seconds || Player is null || (_loadedUrl is null && Mode == PreviewMode.Timeline))
-        {
-            _pendingSeek = null;
-            _seekTimer.Stop();
-            return;
-        }
-        _pendingSeek = null;
-        _lastSeekAt = DateTime.UtcNow;
-        Player.CommandAsync("seek", seconds.ToString("0.######", CultureInfo.InvariantCulture), "absolute+exact");
-    }
-
-    internal void PreviewAudioDelay(TimeSpan delta) => Player?.SetDouble("audio-delay", delta.TotalSeconds);
+    internal void PreviewAudioDelay(TimeSpan delta) => _preview?.PreviewAudioDelay(delta);
 
     // ---- Transport --------------------------------------------------------------------------------
 
     [RelayCommand]
     private void PlayPause()
     {
-        if (Player is null)
+        if (_preview is null)
             return;
         if (!IsPlaying && Mode == PreviewMode.Timeline)
         {
             if (!HasClips)
                 return;
-            if (_loadedUrl is null)
+            if (!_preview.IsTimelineLoaded)
                 ReloadTimeline();
             if (Timeline.Playhead >= State.Timeline.Duration - TimeSpan.FromMilliseconds(60))
                 SeekTo(TimeSpan.Zero, false);
         }
-        Player.SetFlag("pause", IsPlaying);
+        _preview.Paused = IsPlaying;
     }
 
     [RelayCommand]
     private void StepFrame(string direction)
     {
-        if (Player is null)
+        if (_preview is null)
             return;
         if (IsCompact)
         {
@@ -345,8 +266,7 @@ public sealed partial class MainWindowViewModel
             SeekPreview(Position + (direction == "-1" ? -frame : frame));
             return;
         }
-        _lastSeekAt = DateTime.MinValue;
-        Player.CommandAsync(direction == "-1" ? "frame-back-step" : "frame-step");
+        _preview.StepFrame(back: direction == "-1");
     }
 
     /// <summary>Seeks whatever is previewed, within its length.</summary>
@@ -354,7 +274,7 @@ public sealed partial class MainWindowViewModel
     {
         time = time < TimeSpan.Zero ? TimeSpan.Zero : time > Length ? Length : time;
         if (Mode == PreviewMode.Source)
-            Player?.CommandAsync("seek", TimeFormat.Seconds(time), "absolute+exact");
+            _preview?.Seek(time);
         else
             SeekTo(time, false);
     }
@@ -385,7 +305,7 @@ public sealed partial class MainWindowViewModel
     [RelayCommand]
     private void PreviewSource(SourceItemViewModel? item)
     {
-        if (item is null || Player is null || item.Status != SourceStatus.Ready)
+        if (item is null || _preview is null || item.Status != SourceStatus.Ready)
             return;
         IsCompact = false;
         Mode = PreviewMode.Source;
@@ -394,9 +314,7 @@ public sealed partial class MainWindowViewModel
         SourcePosition = TimeSpan.Zero;
         SourceLength = item.Info?.Duration ?? TimeSpan.Zero;
         PreviewMessage = null;
-        _loadedUrl = null;
-        Player.SetString("start", "0");
-        Player.Command("loadfile", item.Path, "replace");
+        _preview.LoadSource(item.Path, item.Info?.Audio(item.AudioStreamIndex)?.Index);
     }
 
     [RelayCommand]
@@ -406,7 +324,7 @@ public sealed partial class MainWindowViewModel
             return;
         Mode = PreviewMode.Timeline;
         PreviewedSource = null;
-        _loadedUrl = null;
+        _preview?.Unload();
         ReloadTimeline();
     }
 
@@ -438,9 +356,9 @@ public sealed partial class MainWindowViewModel
     private void DisposePreview()
     {
         _reloadTimer.Stop();
-        _seekTimer.Stop();
-        var player = Player;
+        // Unbinding the player first makes the video view drop its renderer, which must go before the player.
         Player = null;
-        player?.Dispose();
+        _preview?.Dispose();
+        _preview = null;
     }
 }

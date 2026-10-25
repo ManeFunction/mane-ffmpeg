@@ -36,7 +36,8 @@ public sealed unsafe class MpvPlayer : IDisposable
 
     public event Action<string, string>? LogMessage;
 
-    public static MpvPlayer Create(bool hardwareDecoding)
+    /// <param name="headless">No video or audio output, for tests; otherwise video goes to a render context.</param>
+    public static MpvPlayer Create(bool hardwareDecoding, bool headless = false)
     {
         var handle = MpvNative.Create();
         if (handle == 0)
@@ -44,14 +45,19 @@ public sealed unsafe class MpvPlayer : IDisposable
         var player = new MpvPlayer(handle);
         var options = new (string, string)[]
         {
-            ("config", "no"), ("terminal", "no"), ("vo", "libmpv"), ("idle", "yes"), ("keep-open", "always"),
+            ("config", "no"), ("terminal", "no"), ("vo", headless ? "null" : "libmpv"), ("idle", "yes"), ("keep-open", "always"),
             ("pause", "yes"), ("hr-seek", "yes"), ("hwdec", hardwareDecoding ? "auto-copy" : "no"),
             ("input-default-bindings", "no"), ("input-vo-keyboard", "no"), ("load-scripts", "no"), ("ytdl", "no"),
             ("osc", "no"), ("sub-auto", "no"), ("audio-file-auto", "no"), ("audio-client-name", "Mane FFmpeg"),
             ("load-unsafe-playlists", "yes"), ("audio-display", "no"),
+            // No built-in Lua scripts (stats, console, menus…): the preview needs none of them.
+            ("load-stats-overlay", "no"), ("load-console", "no"), ("load-auto-profiles", "no"), ("load-select", "no"),
+            ("load-positioning", "no"), ("load-commands", "no"), ("load-context-menu", "no"),
         };
         foreach (var (name, value) in options)
             MpvNative.SetOptionString(handle, name, value);
+        if (headless)
+            MpvNative.SetOptionString(handle, "ao", "null");
         var init = MpvNative.Initialize(handle);
         if (init < 0)
         {
