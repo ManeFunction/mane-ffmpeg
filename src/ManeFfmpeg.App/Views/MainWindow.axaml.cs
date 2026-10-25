@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using CommunityToolkit.Mvvm.Input;
 using ManeFfmpeg.App.Services;
 using ManeFfmpeg.App.ViewModels;
 using ManeFfmpeg.Core.Model;
@@ -107,8 +108,7 @@ public partial class MainWindow : Window, IMainWindowView
             Item("Export", vm.Export.ExportCommand, Key.E, Cmd),
             Item("Cancel Export", vm.Export.CancelExportCommand),
         };
-        var closeItem = new NativeMenuItem("Close Window") { Gesture = new KeyGesture(Key.W, Cmd) };
-        closeItem.Click += (_, _) => Close();
+        var closeItem = new NativeMenuItem("Close Window") { Gesture = new KeyGesture(Key.W, Cmd), Command = new RelayCommand(Close) };
         file.Items.Add(new NativeMenuItemSeparator());
         file.Items.Add(closeItem);
         if (!OperatingSystem.IsMacOS())
@@ -161,6 +161,7 @@ public partial class MainWindow : Window, IMainWindowView
             new NativeMenuItem("View") { Menu = view },
             new NativeMenuItem("Presets") { Menu = presets },
         });
+        EditMenu.BindShortcuts(this);
     }
 
     // ---- Keyboard ---------------------------------------------------------------------------------

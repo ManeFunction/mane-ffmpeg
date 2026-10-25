@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using CommunityToolkit.Mvvm.Input;
 
 namespace ManeFfmpeg.App.Services;
 
@@ -75,15 +76,31 @@ public static class EditMenu
     }
 
     /// <summary>Gives a dialog window an Edit menu of its own (shown in the macOS menu bar while it's active).</summary>
-    public static void Attach(Window window) =>
+    public static void Attach(Window window)
+    {
         NativeMenu.SetMenu(window, new NativeMenu { new NativeMenuItem("Edit") { Menu = Create(window) } });
+        BindShortcuts(window);
+    }
+
+    /// <summary>
+    /// Outside macOS the menu is drawn inside the window, and Avalonia shows the items' shortcuts there without
+    /// acting on them. Binds each item's shortcut to its command on the window, after the menu is built. Keys a
+    /// text field handles itself (Ctrl+C in a text box) never reach these bindings.
+    /// </summary>
+    public static void BindShortcuts(Window window)
+    {
+        if (OperatingSystem.IsMacOS() || NativeMenu.GetMenu(window) is not { } menu)
+            return;
+        foreach (var item in Items(menu))
+            if (item is { Gesture: { } gesture, Command: { } command })
+                window.KeyBindings.Add(new KeyBinding { Gesture = gesture, Command = command });
+    }
+
+    private static IEnumerable<NativeMenuItem> Items(NativeMenu menu) =>
+        menu.Items.OfType<NativeMenuItem>().SelectMany(item => item.Menu is { } sub ? Items(sub).Prepend(item) : [item]);
 
     private static object? Focused(Window window) => window.FocusManager?.GetFocusedElement();
 
-    private static NativeMenuItem Item(string header, KeyGesture gesture, Action action)
-    {
-        var item = new NativeMenuItem(header) { Gesture = gesture };
-        item.Click += (_, _) => action();
-        return item;
-    }
+    private static NativeMenuItem Item(string header, KeyGesture gesture, Action action) =>
+        new(header) { Gesture = gesture, Command = new RelayCommand(action) };
 }
