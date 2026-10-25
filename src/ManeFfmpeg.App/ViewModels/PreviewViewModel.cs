@@ -247,6 +247,17 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
             _preview.Paused = false;
     }
 
+    /// <summary>
+    /// Puts the playhead at <paramref name="time"/> after an edit moved what was under it, and plays the edited timeline
+    /// from there at once: the old one has the wrong part at that time, and would play on until a delayed reload.
+    /// </summary>
+    internal void MovePlayheadAfterEdit(TimeSpan time)
+    {
+        Timeline.Playhead = time;
+        _reloadTimer.Stop();
+        ReloadTimeline();
+    }
+
     internal void PreviewAudioDelay(TimeSpan delta) => _preview?.PreviewAudioDelay(delta);
 
     // ---- Transport --------------------------------------------------------------------------------

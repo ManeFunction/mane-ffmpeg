@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using CliWrap;
 using ManeFfmpeg.Core.Ffmpeg;
 using ManeFfmpeg.Core.Model;
@@ -51,6 +52,57 @@ public class PreviewPlayerTests(FfmpegFixture media) : IClassFixture<FfmpegFixtu
         player.Compact = true;
         await Wait.Until(() => player.Mpv.GetString("vid") == "no", "video off in compact mode");
         Assert.Equal(TimelineEdl.AudioTitle, player.Mpv.GetString("current-tracks/audio/title"));
+    }
+
+    /// <summary>Holds posted callbacks until <see cref="RunAll"/>, like a busy UI thread.</summary>
+    private sealed class QueuedContext : SynchronizationContext
+    {
+        private readonly ConcurrentQueue<(SendOrPostCallback Callback, object? State)> _queue = new();
+
+        public override void Post(SendOrPostCallback d, object? state) => _queue.Enqueue((d, state));
+
+        public void RunAll()
+        {
+            while (_queue.TryDequeue(out var item))
+                item.Callback(item.State);
+        }
+    }
+
+    [MpvFact]
+    public async Task Positions_still_queued_from_the_replaced_timeline_are_not_reported()
+    {
+        var context = new QueuedContext();
+        var previous = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(context);
+        PreviewPlayer created;
+        try
+        {
+            created = PreviewPlayer.Create(hardwareDecoding: false, headless: true);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previous);
+        }
+        using var player = created;
+        var reported = new List<double>();
+        player.PositionChanged += p => reported.Add(p.TotalSeconds);
+        player.LoadTimeline(await TimelineUrl((0, 10)), TimeSpan.FromSeconds(6));
+        player.Paused = false;
+        await Wait.Until(() => player.Mpv.GetDouble("time-pos") > 6.2, "the first timeline playing");
+        context.RunAll();
+        Assert.Contains(reported, p => p > 6);
+
+        // Positions from the first timeline queue up, then the second one replaces it before they are handled.
+        var queuedFrom = player.Mpv.GetDouble("time-pos");
+        await Wait.Until(() => player.Mpv.GetDouble("time-pos") > queuedFrom + 0.2, "positions queuing up");
+        player.LoadTimeline(await TimelineUrl((0, 4)), TimeSpan.FromSeconds(1));
+        reported.Clear();
+        await Wait.Until(() =>
+        {
+            context.RunAll();
+            return reported.Count > 0;
+        }, "a position from the second timeline");
+        Assert.All(reported, p => Assert.InRange(p, 0.9, 3));
     }
 
     [MpvFact]

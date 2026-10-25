@@ -145,7 +145,12 @@ public sealed partial class MainWindowViewModel
             StatusMessage = "Select clips to delete.";
             return;
         }
+        // Clips deleted before the playhead pull what's under it earlier; the playhead follows it.
+        var playhead = Timeline.Playhead;
+        var moved = TimelineEditor.TimeAfterDelete(State.Timeline, Timeline.Selection, playhead);
         CommitTimeline(t => TimelineEditor.Delete(t, Timeline.Selection));
+        if (moved != playhead)
+            Preview.MovePlayheadAfterEdit(moved);
     }
 
     [RelayCommand]

@@ -36,6 +36,20 @@ public static class TimelineEditor
         timeline with { Clips = timeline.Clips.RemoveAll(c => clipIds.Contains(c.Id)) };
 
     /// <summary>
+    /// Where timeline time <paramref name="at"/> lands once <see cref="Delete"/> removes the clips: on the same moment,
+    /// earlier by whatever is deleted before it; inside a deleted clip, where that clip was.
+    /// </summary>
+    public static TimeSpan TimeAfterDelete(Timeline timeline, IReadOnlySet<string> clipIds, TimeSpan at)
+    {
+        var bounds = timeline.Bounds;
+        var removed = TimeSpan.Zero;
+        for (var i = 0; i < timeline.Clips.Count && bounds[i] < at; i++)
+            if (clipIds.Contains(timeline.Clips[i].Id))
+                removed += (bounds[i + 1] < at ? bounds[i + 1] : at) - bounds[i];
+        return at - removed;
+    }
+
+    /// <summary>
     /// Moves the given clips (keeping their order) so they start at <paramref name="insertIndex"/>, an index into
     /// the current list (as if the moved clips were still in place).
     /// </summary>

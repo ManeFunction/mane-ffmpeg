@@ -7,8 +7,9 @@ namespace ManeFfmpeg.Core.Mpv;
 /// The editor's preview: plays the timeline (an EDL from <see cref="TimelineEdl"/>) or a single source file,
 /// and keeps mpv's protocol to itself: which tracks to play (the EDL's titled tracks, or a source's chosen
 /// audio stream), keeping the position across reloads, audio-only compact mode, coalescing rapid seeks,
-/// ignoring position reports that still echo the old position while a seek is under way, and live
-/// audio-delay feedback. Events arrive on the <see cref="SynchronizationContext"/> it was created on.
+/// ignoring position reports that still echo the old position while a seek is under way or come from the
+/// file being replaced, and live audio-delay feedback. Events arrive on the <see cref="SynchronizationContext"/>
+/// it was created on.
 /// </summary>
 public sealed class PreviewPlayer : IDisposable
 {
@@ -21,6 +22,7 @@ public sealed class PreviewPlayer : IDisposable
     private TimeSpan? _pendingSeek;
     private bool _seeking;
     private DateTime _lastSeekAt;
+    private bool _loading;
     private string? _loaded;
     private bool _timeline;
     private int? _sourceAudioStream;
@@ -46,7 +48,7 @@ public sealed class PreviewPlayer : IDisposable
     /// </summary>
     public MpvPlayer Mpv { get; }
 
-    /// <summary>The playback position, except reports that echo an old position during a seek.</summary>
+    /// <summary>The playback position, except reports that echo an old position during a seek or a load.</summary>
     public event Action<TimeSpan>? PositionChanged;
 
     public event Action<TimeSpan>? DurationChanged;
@@ -110,7 +112,10 @@ public sealed class PreviewPlayer : IDisposable
     private void Load(string target, TimeSpan start)
     {
         lock (_gate)
+        {
             _pendingSeek = null;
+            _loading = true;
+        }
         _loaded = target;
         Mpv.SetString("start", TimeFormat.Seconds(start));
         Mpv.Command("loadfile", target, "replace");
@@ -167,7 +172,7 @@ public sealed class PreviewPlayer : IDisposable
             case "time-pos" when value is double seconds:
                 bool echo;
                 lock (_gate)
-                    echo = _pendingSeek is not null || DateTime.UtcNow - _lastSeekAt <= SeekEcho;
+                    echo = _loading || _pendingSeek is not null || DateTime.UtcNow - _lastSeekAt <= SeekEcho;
                 if (!echo)
                     PositionChanged?.Invoke(TimeFormat.FromSeconds(seconds));
                 break;
@@ -185,6 +190,9 @@ public sealed class PreviewPlayer : IDisposable
 
     private void OnFileLoaded()
     {
+        // Events come in mpv's order, so every report from the replaced file arrived before this one.
+        lock (_gate)
+            _loading = false;
         Mpv.SetDouble("audio-delay", 0);
         Mpv.SetString("start", "none");
         ApplyTracks();

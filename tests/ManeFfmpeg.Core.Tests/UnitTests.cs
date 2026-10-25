@@ -205,6 +205,21 @@ public class TimelineEditorTests
         Assert.Equal(TimeSpan.FromSeconds(12), byKeyframe.Clips[2].In);
     }
 
+    [Theory]
+    [InlineData("b", 7, 4)]
+    [InlineData("c", 3, 3)]
+    [InlineData("b", 3.5, 2)]
+    [InlineData("b", 5, 2)]
+    [InlineData("a", 2, 0)]
+    [InlineData("ac", 9, 3)]
+    public void Deleting_keeps_the_time_on_the_same_moment(string deleted, double at, double expected)
+    {
+        // a, b and c start at 0, 2 and 5 s; the timeline ends at 9 s.
+        var t = T(C("a", 0, 2), C("b", 0, 3), C("c", 0, 4));
+        var ids = deleted.Select(id => id.ToString()).ToHashSet();
+        Assert.Equal(TimeSpan.FromSeconds(expected), TimelineEditor.TimeAfterDelete(t, ids, TimeSpan.FromSeconds(at)));
+    }
+
     [Fact]
     public void Inspector_ranges_snap_like_trims()
     {
