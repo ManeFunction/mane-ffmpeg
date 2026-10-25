@@ -8,7 +8,7 @@ using ManeFfmpeg.Core.Persistence;
 namespace ManeFfmpeg.App.Services;
 
 /// <summary>App-wide state shared by every window: settings, presets, located tools and media caches.</summary>
-public sealed class AppServices
+public sealed class AppServices : IMediaAnalyzers
 {
     private readonly ConcurrentDictionary<string, (long Size, DateTime Write, Task<MediaInfo> Task)> _probes = new();
 

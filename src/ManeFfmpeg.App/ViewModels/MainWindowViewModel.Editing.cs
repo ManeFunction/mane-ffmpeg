@@ -13,10 +13,7 @@ public sealed partial class MainWindowViewModel
 
     partial void OnSnapToKeyframesChanged(bool value)
     {
-        if (value)
-            foreach (var source in State.Sources)
-                if (_media.TryGetValue(source.Id, out var info))
-                    _ = LoadAnalysisAsync(source, info);
+        _catalog.WantKeyframes = value;
         Timeline.Invalidate();
     }
 
@@ -114,12 +111,12 @@ public sealed partial class MainWindowViewModel
 
     /// <summary>Where cuts may land in a source: on frames, and in points on keyframes while snapping to them.</summary>
     internal CutGrid? GridOf(string sourceId) =>
-        State.Source(sourceId) is { } source && _media.TryGetValue(sourceId, out var info)
-            ? CutGrid.For(info, SnapToKeyframes ? _app.Keyframes?.TryGet(source.Path, info)?.Times : null)
+        State.Source(sourceId) is { } source && _catalog.Info(sourceId) is { } info
+            ? CutGrid.For(info, SnapToKeyframes ? _catalog.Keyframes(source)?.Times : null)
             : null;
 
     private TimeSpan? FrameDuration(Clip clip) =>
-        _media.TryGetValue(clip.SourceId, out var info) && info.Video is { } v ? TimeFormat.FrameDuration(v.FrameRate) : null;
+        _catalog.Info(clip.SourceId)?.Video is { } v ? TimeFormat.FrameDuration(v.FrameRate) : null;
 
     // ---- Edits ------------------------------------------------------------------------------------
 

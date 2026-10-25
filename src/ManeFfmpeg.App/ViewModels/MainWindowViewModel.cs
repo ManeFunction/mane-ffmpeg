@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ManeFfmpeg.App.Services;
 using ManeFfmpeg.Core.Editing;
+using ManeFfmpeg.Core.Media;
 using ManeFfmpeg.Core.Model;
 using ManeFfmpeg.Core.Persistence;
 
@@ -29,7 +30,7 @@ public interface IMainWindowView
 public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 {
     private readonly AppServices _app = AppServices.Instance;
-    private readonly Dictionary<string, MediaInfo> _media = [];
+    private readonly SourceCatalog _catalog = new(AppServices.Instance);
     private ProjectState _savedState = ProjectState.Empty;
     private ExportSettings _savedExport = new();
 
@@ -37,6 +38,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         History = new UndoStack<ProjectState>(ProjectState.Empty);
         History.Changed += OnHistoryChanged;
+        _catalog.Changed += OnSourceAnalyzed;
         Timeline = new TimelineViewModel(this);
         _app.ToolsChanged += OnToolsChanged;
         Sources.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasNoSources));
@@ -54,7 +56,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     public ObservableCollection<SourceItemViewModel> Sources { get; } = [];
 
-    public IReadOnlyDictionary<string, MediaInfo> Media => _media;
+    /// <summary>What's known about each source: status, probe result, waveform, keyframes.</summary>
+    public SourceCatalog Catalog => _catalog;
+
+    /// <summary>Probe results of the ready sources, by source id.</summary>
+    public IReadOnlyDictionary<string, MediaInfo> Media => _catalog.Media;
 
     /// <summary>Layout read from the project file, applied by the window after loading.</summary>
     public ProjectLayout Layout { get; private set; } = new();
@@ -120,19 +126,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnToolsChanged(object? sender, EventArgs e) => Dispatcher.UIThread.Post(() =>
     {
         OnPropertyChanged(nameof(ToolsError));
-        // Sources that failed get another try; ready ones reload their analyses, which new tools don't have yet.
-        foreach (var item in Sources)
-        {
-            if (item.Status != SourceStatus.Ready)
-                _ = ProbeAsync(item);
-            else if (_media.TryGetValue(item.Id, out var info))
-                _ = LoadAnalysisAsync(item.Source, info);
-        }
+        _catalog.Reanalyze();
     });
 
     // ---- Sources ----------------------------------------------------------------------------------
 
-    /// <summary>Keeps the media bin in step with the project state (after edits, undo, load).</summary>
+    /// <summary>Keeps the media bin and the catalog in step with the project state (after edits, undo, load).</summary>
     private void SyncSources()
     {
         var ids = State.Sources.Select(s => s.Id).ToHashSet();
@@ -148,87 +147,30 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
                 item = new SourceItemViewModel(source, color);
                 item.AudioStreamChosen += OnAudioStreamChosen;
                 Sources.Add(item);
-                if (_media.TryGetValue(source.Id, out var known))
-                {
-                    item.Info = known;
-                    item.Status = SourceStatus.Ready;
-                    _ = LoadAnalysisAsync(source, known);
-                }
-                else
-                {
-                    _ = ProbeAsync(item);
-                }
             }
             else if (item.Source != source)
             {
-                var pathChanged = item.Path != source.Path;
                 item.Update(source);
-                if (pathChanged)
-                    _ = ProbeAsync(item);
             }
         }
+        _catalog.Sync(State.Sources);
     }
 
-    private async Task ProbeAsync(SourceItemViewModel item)
+    private void OnSourceAnalyzed(string sourceId)
     {
-        if (!File.Exists(item.Path))
+        if (Sources.FirstOrDefault(s => s.Id == sourceId) is { } item)
         {
-            item.Status = SourceStatus.Missing;
-            _media.Remove(item.Id);
-            Timeline.Invalidate();
-            return;
+            item.Info = _catalog.Info(sourceId);
+            item.Status = _catalog.Status(sourceId);
+            item.Error = _catalog.Error(sourceId);
         }
-        item.Status = SourceStatus.Analyzing;
-        try
-        {
-            var info = await _app.ProbeAsync(item.Path);
-            _media[item.Id] = info;
-            item.Info = info;
-            item.Status = info.Video is null ? SourceStatus.Failed : SourceStatus.Ready;
-            if (info.Video is null)
-                item.Error = "No video stream";
-            Timeline.Invalidate();
-            ScheduleTimelineReload();
-            InvalidatePlanPreview();
-            _ = LoadAnalysisAsync(item.Source, info);
-        }
-        catch (Exception ex)
-        {
-            item.Status = SourceStatus.Failed;
-            item.Error = ex.Message;
-            Timeline.Invalidate();
-        }
+        Timeline.Invalidate();
+        ScheduleTimelineReload();
+        InvalidatePlanPreview();
     }
 
-    /// <summary>Waveform (always) and keyframes (when stream copy needs them) in the background.</summary>
-    private async Task LoadAnalysisAsync(SourceMedia source, MediaInfo info)
-    {
-        try
-        {
-            var tasks = new List<Task>();
-            if (info.Audio(source.AudioStreamIndex) is { } audio && _app.Waveforms is { } waveforms)
-                tasks.Add(waveforms.GetAsync(source.Path, info, audio.Index));
-            if (SnapToKeyframes && _app.Keyframes is { } keyframes)
-                tasks.Add(keyframes.GetAsync(source.Path, info));
-            foreach (var task in tasks)
-            {
-                await task;
-                Timeline.Invalidate();
-            }
-        }
-        catch (Exception)
-        {
-            // Waveforms and keyframes are optional helpers.
-        }
-    }
-
-    private void OnAudioStreamChosen(SourceItemViewModel item, int index)
-    {
-        var sources = State.Sources.Replace(item.Source, item.Source with { AudioStreamIndex = index });
-        Commit(State with { Sources = sources });
-        if (_media.TryGetValue(item.Id, out var info))
-            _ = LoadAnalysisAsync(State.Source(item.Id)!, info);
-    }
+    private void OnAudioStreamChosen(SourceItemViewModel item, int index) =>
+        Commit(State with { Sources = State.Sources.Replace(item.Source, item.Source with { AudioStreamIndex = index }) });
 
     /// <summary>Adds files as sources and appends each as a whole clip.</summary>
     public async Task AddMediaAsync(IEnumerable<string> paths)
@@ -267,10 +209,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
             var existing = state.Sources.Find(s => s.Path == path);
             var source = existing ?? NewSource(path);
             if (existing is null)
-            {
-                _media[source.Id] = info;
                 state = state with { Sources = state.Sources.Add(source) };
-            }
             state = state with { Timeline = TimelineEditor.Append(state.Timeline, Clip.Create(source.Id, TimeSpan.Zero, info.Duration)) };
         }
         CommitKeepingFit(state);
@@ -326,7 +265,6 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         if (path is null)
             return;
         var file = new FileInfo(path);
-        _media.Remove(item.Id);
         var updated = item.Source with { Path = file.FullName, FileSize = file.Length, LastWriteUtc = file.LastWriteTimeUtc };
         Commit(State with { Sources = State.Sources.Replace(item.Source, updated) });
     }
@@ -337,7 +275,6 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         var project = await ProjectFile.LoadAsync(path);
         var preset = await ResolvePresetAsync(project.Export);
-        _media.Clear();
         Sources.Clear();
         FilePath = path;
         Layout = project.Layout;

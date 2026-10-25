@@ -228,7 +228,7 @@ public sealed class TimelineControl : Control
         {
             using (context.PushClip(audioRect))
             {
-                var audio = info.Audio(source.AudioStreamIndex);
+                var audio = vm.Audio(source);
                 if (audio is null)
                 {
                     DrawText(context, "no audio", new Point(Math.Max(audioRect.Left, Header) + 6, audioRect.Top + (audioRect.Height - 14) / 2), TextBrush, 11);

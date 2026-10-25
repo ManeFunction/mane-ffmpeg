@@ -191,17 +191,16 @@ public sealed partial class MainWindowViewModel
         if (SelectedPreset is not { } preset)
             throw new ExportPlanException("Choose a preset.");
         var keyframes = new Dictionary<string, KeyframeIndex>();
-        if (PresetAnalysis.Of(preset).VideoCopy && _app.Keyframes is { } service)
+        if (PresetAnalysis.Of(preset).VideoCopy)
         {
             foreach (var source in State.Sources.Where(s => State.Timeline.Clips.Any(c => c.SourceId == s.Id)))
             {
-                if (!_media.TryGetValue(source.Id, out var info))
+                if (_catalog.Info(source.Id) is null)
                     continue;
-                if (service.TryGet(source.Path, info) is not { } index)
+                if (_catalog.Keyframes(source) is not { } index)
                 {
                     ExportProgressText = $"Finding keyframes in {source.DisplayName}…";
-                    index = await service.GetAsync(source.Path, info);
-                    Timeline.Invalidate();
+                    index = await _catalog.KeyframesAsync(source);
                 }
                 keyframes[source.Id] = index;
             }
@@ -209,7 +208,7 @@ public sealed partial class MainWindowViewModel
         return ExportPlanner.Plan(new ExportJob
         {
             State = State,
-            Media = new Dictionary<string, MediaInfo>(_media),
+            Media = _catalog.Media,
             Preset = preset,
             OutputPath = output,
             WorkDirectory = workDir,

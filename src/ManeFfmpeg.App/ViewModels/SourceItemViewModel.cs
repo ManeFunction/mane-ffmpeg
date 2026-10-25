@@ -1,17 +1,10 @@
 using System.Globalization;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
+using ManeFfmpeg.Core.Media;
 using ManeFfmpeg.Core.Model;
 
 namespace ManeFfmpeg.App.ViewModels;
-
-public enum SourceStatus
-{
-    Analyzing,
-    Ready,
-    Missing,
-    Failed,
-}
 
 /// <summary>A row in the media bin.</summary>
 public sealed partial class SourceItemViewModel(SourceMedia source, int colorIndex) : ViewModelBase

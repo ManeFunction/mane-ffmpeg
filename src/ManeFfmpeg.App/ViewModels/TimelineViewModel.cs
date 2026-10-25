@@ -1,5 +1,4 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using ManeFfmpeg.App.Services;
 using ManeFfmpeg.Core.Editing;
 using ManeFfmpeg.Core.Media;
 using ManeFfmpeg.Core.Model;
@@ -62,7 +61,10 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
         owner.OnPlayheadMoved();
     }
 
-    public MediaInfo? Info(string sourceId) => owner.Media.GetValueOrDefault(sourceId);
+    public MediaInfo? Info(string sourceId) => owner.Catalog.Info(sourceId);
+
+    /// <summary>The source's chosen audio stream.</summary>
+    public AudioStreamInfo? Audio(SourceMedia source) => owner.Catalog.Audio(source);
 
     public CutGrid? GridOf(string sourceId) => owner.GridOf(sourceId);
 
@@ -70,13 +72,9 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
 
     public bool IsMissing(string sourceId) => owner.Sources.FirstOrDefault(s => s.Id == sourceId)?.IsProblem ?? true;
 
-    public Waveform? Waveform(SourceMedia source) =>
-        Info(source.Id) is { } info && info.Audio(source.AudioStreamIndex) is { } audio
-            ? AppServices.Instance.Waveforms?.TryGet(source.Path, info, audio.Index)
-            : null;
+    public Waveform? Waveform(SourceMedia source) => owner.Catalog.Waveform(source);
 
-    public KeyframeIndex? Keyframes(SourceMedia source) =>
-        Info(source.Id) is { } info ? AppServices.Instance.Keyframes?.TryGet(source.Path, info) : null;
+    public KeyframeIndex? Keyframes(SourceMedia source) => owner.Catalog.Keyframes(source);
 
     public void Seek(TimeSpan time, bool scrubbing) => owner.SeekTo(Clamp(time), scrubbing);
 

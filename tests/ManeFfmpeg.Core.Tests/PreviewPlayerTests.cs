@@ -25,17 +25,6 @@ public sealed class MpvFactAttribute : FactAttribute
 /// <summary>The preview player against a headless libmpv: tracks, position across reloads, compact mode, seeks.</summary>
 public class PreviewPlayerTests(FfmpegFixture media) : IClassFixture<FfmpegFixture>
 {
-    private static async Task Until(Func<bool> condition, string what)
-    {
-        for (var i = 0; i < 100; i++)
-        {
-            if (condition())
-                return;
-            await Task.Delay(50);
-        }
-        Assert.Fail($"Timed out waiting for {what}");
-    }
-
     private static bool Near(double? seconds, double expected) => seconds is { } s && Math.Abs(s - expected) < 0.05;
 
     private async Task<string> TimelineUrl(params (double In, double Out)[] clips)
@@ -51,16 +40,16 @@ public class PreviewPlayerTests(FfmpegFixture media) : IClassFixture<FfmpegFixtu
     {
         using var player = PreviewPlayer.Create(hardwareDecoding: false, headless: true);
         player.LoadTimeline(await TimelineUrl((1, 3), (5, 8)), TimeSpan.FromSeconds(2.5));
-        await Until(() => player.Mpv.GetString("current-tracks/audio/title") == TimelineEdl.AudioTitle, "the timeline audio track");
+        await Wait.Until(() => player.Mpv.GetString("current-tracks/audio/title") == TimelineEdl.AudioTitle, "the timeline audio track");
         Assert.Equal(TimelineEdl.VideoTitle, player.Mpv.GetString("current-tracks/video/title"));
-        await Until(() => Near(player.Mpv.GetDouble("time-pos"), 2.5), "the start position");
+        await Wait.Until(() => Near(player.Mpv.GetDouble("time-pos"), 2.5), "the start position");
         Assert.True(player.IsTimelineLoaded);
 
         player.LoadTimeline(await TimelineUrl((1, 3), (6, 8)), TimeSpan.FromSeconds(3.25));
-        await Until(() => Near(player.Mpv.GetDouble("time-pos"), 3.25), "the position after reloading");
+        await Wait.Until(() => Near(player.Mpv.GetDouble("time-pos"), 3.25), "the position after reloading");
 
         player.Compact = true;
-        await Until(() => player.Mpv.GetString("vid") == "no", "video off in compact mode");
+        await Wait.Until(() => player.Mpv.GetString("vid") == "no", "video off in compact mode");
         Assert.Equal(TimelineEdl.AudioTitle, player.Mpv.GetString("current-tracks/audio/title"));
     }
 
@@ -73,11 +62,11 @@ public class PreviewPlayerTests(FfmpegFixture media) : IClassFixture<FfmpegFixtu
             .ExecuteAsync();
         using var player = PreviewPlayer.Create(hardwareDecoding: false, headless: true);
         player.LoadSource(path, audioStreamIndex: 2);
-        await Until(() => player.Mpv.GetInt("current-tracks/audio/ff-index") == 2, "the second audio stream");
+        await Wait.Until(() => player.Mpv.GetInt("current-tracks/audio/ff-index") == 2, "the second audio stream");
         Assert.False(player.IsTimelineLoaded);
 
         foreach (var seconds in new[] { 1.0, 2.0, 3.0, 4.5 })
             player.Seek(TimeSpan.FromSeconds(seconds));
-        await Until(() => Near(player.Mpv.GetDouble("time-pos"), 4.5), "the last seek");
+        await Wait.Until(() => Near(player.Mpv.GetDouble("time-pos"), 4.5), "the last seek");
     }
 }

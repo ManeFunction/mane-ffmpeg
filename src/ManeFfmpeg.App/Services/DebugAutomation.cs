@@ -51,7 +51,7 @@ internal static class DebugAutomation
                         {
                             var done = arg switch
                             {
-                                "ready" => vm.Sources.Count > 0 && vm.Sources.All(s => s.Status != ViewModels.SourceStatus.Analyzing),
+                                "ready" => vm.Sources.Count > 0 && vm.Sources.All(s => s.Status != Core.Media.SourceStatus.Analyzing),
                                 "idle" => !vm.IsExporting,
                                 _ => true,
                             };

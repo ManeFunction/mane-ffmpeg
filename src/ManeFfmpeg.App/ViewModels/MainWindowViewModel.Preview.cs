@@ -261,7 +261,7 @@ public sealed partial class MainWindowViewModel
             // No video is decoded in compact mode, so step by one frame of what is being previewed.
             var video = Mode == PreviewMode.Source
                 ? PreviewedSource?.Info?.Video
-                : State.Timeline.Locate(Timeline.Playhead) is { } at ? Media.GetValueOrDefault(State.Timeline.Clips[at.Index].SourceId)?.Video : null;
+                : State.Timeline.Locate(Timeline.Playhead) is { } at ? _catalog.Info(State.Timeline.Clips[at.Index].SourceId)?.Video : null;
             var frame = TimeFormat.FrameDuration(video?.FrameRate ?? default);
             SeekPreview(Position + (direction == "-1" ? -frame : frame));
             return;
@@ -314,7 +314,7 @@ public sealed partial class MainWindowViewModel
         SourcePosition = TimeSpan.Zero;
         SourceLength = item.Info?.Duration ?? TimeSpan.Zero;
         PreviewMessage = null;
-        _preview.LoadSource(item.Path, item.Info?.Audio(item.AudioStreamIndex)?.Index);
+        _preview.LoadSource(item.Path, _catalog.Audio(item.Source)?.Index);
     }
 
     [RelayCommand]
