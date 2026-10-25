@@ -22,9 +22,10 @@ public sealed class ExportRunner(FfmpegTools tools)
 {
     private const int LogLines = 40;
 
-    public async Task<ExportResult> RunAsync(ExportPlan plan, string outputPath, string workDirectory,
-        IProgress<ExportProgress>? progress, CancellationToken ct)
+    public async Task<ExportResult> RunAsync(ExportPlan plan, IProgress<ExportProgress>? progress, CancellationToken ct)
     {
+        var outputPath = plan.OutputPath;
+        var workDirectory = plan.WorkDirectory;
         var clock = Stopwatch.StartNew();
         var total = plan.Steps.Aggregate(TimeSpan.Zero, (s, step) => s + step.Duration);
         var doneBefore = TimeSpan.Zero;
@@ -52,12 +53,9 @@ public sealed class ExportRunner(FfmpegTools tools)
                 };
                 progress?.Report(new ExportProgress(total > TimeSpan.Zero ? doneBefore / total : 0, doneBefore, total, null, null, step.Title));
 
-                var arguments = step.Arguments;
-                if (step.ConcatShiftProbe is { } list)
-                {
-                    var shift = TimeFormat.Seconds(await ConcatShiftAsync(list, ct));
-                    arguments = [.. arguments.Select(a => a.Replace(ExportPlanner.ConcatShiftToken, shift, StringComparison.Ordinal))];
-                }
+                var arguments = step.Shift is { } shift
+                    ? shift.ArgumentsFor(TimeFormat.Seconds(await ConcatShiftAsync(shift.ListPath, ct)))
+                    : step.Arguments;
 
                 var result = await Cli.Wrap(tools.Ffmpeg)
                     .WithArguments(arguments)

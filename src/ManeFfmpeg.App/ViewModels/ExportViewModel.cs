@@ -294,7 +294,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
             var runner = new ExportRunner(tools);
             var token = _exportCts.Token;
             AppLog.Write($"Export {plan.Mode} → {output}\n{plan.CommandText(tools.Ffmpeg)}");
-            var result = await Task.Run(() => runner.RunAsync(plan, output, workDir, progress, token));
+            var result = await Task.Run(() => runner.RunAsync(plan, progress, token));
             AppLog.Write($"Export {result.Outcome}: {result.Message} ({result.Elapsed}){(result.Log is null ? "" : "\n" + result.Log)}");
             _lastOutputPath = output;
             switch (result.Outcome)

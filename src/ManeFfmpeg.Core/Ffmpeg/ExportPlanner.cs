@@ -39,15 +39,23 @@ public sealed record ExportJob
     public IReadOnlyDictionary<string, KeyframeIndex> Keyframes { get; init; } = new Dictionary<string, KeyframeIndex>();
 }
 
-/// <summary>One ffmpeg invocation. <see cref="Duration"/> is the media time it produces, for progress.</summary>
+/// <summary>
+/// One ffmpeg invocation. <see cref="Duration"/> is the media time it produces, for progress. With a
+/// <see cref="Shift"/>, <see cref="Arguments"/> show the shift as <see cref="ConcatShift.Placeholder"/>.
+/// </summary>
 public sealed record ExportStep(string Title, IReadOnlyList<string> Arguments, TimeSpan Duration, bool WritesOutput)
 {
-    /// <summary>
-    /// A concat list whose start time must be probed before running: ffmpeg shifts that input by its
-    /// (often negative) start time, and <see cref="ExportPlanner.ConcatShiftToken"/> in the arguments
-    /// is replaced by the same shift so filtered audio stays aligned with copied video.
-    /// </summary>
-    public string? ConcatShiftProbe { get; init; }
+    public ConcatShift? Shift { get; init; }
+}
+
+/// <summary>
+/// ffmpeg shifts a concat input by minus its (often negative) start time, which is only known once the list's
+/// segments exist. Filtered audio has to be shifted the same way to stay aligned with the copied video, so the
+/// runner probes <see cref="ListPath"/> first and runs <see cref="ArgumentsFor"/> that shift (in seconds).
+/// </summary>
+public sealed record ConcatShift(string ListPath, Func<string, IReadOnlyList<string>> ArgumentsFor)
+{
+    public const string Placeholder = "$SHIFT";
 }
 
 public sealed record PlannedFile(string Path, string Content);
@@ -59,6 +67,12 @@ public sealed record ExportPlan(
     TimeSpan Duration,
     IReadOnlyList<string> Notes)
 {
+    /// <summary>The file the last step writes.</summary>
+    public string OutputPath { get; init; } = "";
+
+    /// <summary>Where the planned files and intermediates go; the runner creates and deletes it.</summary>
+    public string WorkDirectory { get; init; } = "";
+
     /// <summary>The commands as a copyable shell snippet.</summary>
     public string CommandText(string ffmpeg)
     {
@@ -66,8 +80,13 @@ public sealed record ExportPlan(
         foreach (var file in Files)
             sb.Append("# ").Append(file.Path).Append(":\n# ").Append(file.Content.TrimEnd().Replace("\n", "\n# ")).Append("\n\n");
         foreach (var step in Steps)
+        {
+            if (step.Shift is { } shift)
+                sb.Append("# ").Append(ConcatShift.Placeholder).Append(": minus the start time of ").Append(shift.ListPath)
+                  .Append(", probed before this runs\n");
             sb.Append(PresetArguments.ShellQuote(ffmpeg)).Append(' ')
               .AppendJoin(' ', step.Arguments.Select(PresetArguments.ShellQuote)).Append("\n\n");
+        }
         return sb.ToString().TrimEnd();
     }
 }
@@ -75,8 +94,6 @@ public sealed record ExportPlan(
 /// <summary>Turns a timeline and a preset into ffmpeg commands. Pure, apart from resolving symbolic links.</summary>
 public static class ExportPlanner
 {
-    public const string ConcatShiftToken = "$CONCAT_SHIFT$";
-
     private static readonly TimeSpan Tolerance = TimeSpan.FromMilliseconds(1);
     private static readonly TimeSpan AudioPreSeek = TimeSpan.FromSeconds(3);
 
@@ -110,7 +127,7 @@ public static class ExportPlanner
                 : items.Count == 1 && args.AudioCopy && items[0].Audio is not null
                     ? SingleClipAudioCopy(ctx) ?? Encode(ctx)
                     : Encode(ctx);
-        return plan with { Notes = [.. args.Warnings, .. plan.Notes] };
+        return plan with { Notes = [.. args.Warnings, .. plan.Notes], OutputPath = job.OutputPath, WorkDirectory = job.WorkDirectory };
     }
 
     private sealed record Item(Clip Clip, SourceMedia Source, MediaInfo Media, VideoStreamInfo Video, AudioStreamInfo? Audio);
@@ -309,18 +326,13 @@ public static class ExportPlanner
         var videoMap = segmented ? "0:0" : $"0:{first.Video.Index}";
         var audioMap = segmented ? "0:1" : $"0:{first.Audio?.Index}";
 
-        var a = new List<string>(Prefix) { "-f", "concat", "-safe", "0", "-i", listPath };
-        if (copyAudio || !ctx.AnyAudio)
+        // Audio that isn't copied goes through a filter graph, shifted like the concat input (see ConcatShift).
+        var filteredAudio = !copyAudio && ctx.AnyAudio;
+        var inputs = new List<string>();
+        var graph = new StringBuilder();
+        var outputTokens = ctx.Args.OutputTokens;
+        if (filteredAudio)
         {
-            a.AddRange(["-map", videoMap]);
-            if (copyAudio)
-                a.AddRange(["-map", audioMap]);
-            a.AddRange(ctx.Args.OutputTokens);
-        }
-        else
-        {
-            var inputs = new List<string>();
-            var graph = new StringBuilder();
             var audioFormat = AudioFormat(ctx.Items)!.Value;
             var audioInput = 1;
             for (var i = 0; i < ctx.Items.Count; i++)
@@ -329,23 +341,38 @@ public static class ExportPlanner
                 graph.Append(AudioChain(item, starts[i], item.Clip.Out - starts[i], audioFormat, ref audioInput, inputs)).Append($"[a{i}];");
             }
             AppendConcat(graph, ctx.Items.Count, video: false, audio: true, ctx.Args, audioOut: "ashift");
-            graph.Append($";[ashift]asetpts=PTS+{ConcatShiftToken}/TB[aout]");
-            a.AddRange(inputs);
-            a.AddRange(["-filter_complex", graph.ToString(), "-map", videoMap, "-map", "[aout]"]);
             var reason = !noOffsets ? "clips have audio offsets"
                 : !allHaveAudio ? "some clips have no audio"
                 : "the clips' audio formats differ";
-            a.AddRange(AudioTokens(ctx, true, notes, reason));
+            outputTokens = AudioTokens(ctx, true, notes, reason);
         }
-        a.AddRange(ContainerFlags(ctx, IsHevc(ctx.Args, first)));
-        a.Add(ctx.Out);
+
+        IReadOnlyList<string> JoinArguments(string shift)
+        {
+            var a = new List<string>(Prefix) { "-f", "concat", "-safe", "0", "-i", listPath };
+            if (filteredAudio)
+            {
+                a.AddRange(inputs);
+                a.AddRange(["-filter_complex", $"{graph};[ashift]asetpts=PTS+{shift}/TB[aout]", "-map", videoMap, "-map", "[aout]"]);
+            }
+            else
+            {
+                a.AddRange(["-map", videoMap]);
+                if (copyAudio)
+                    a.AddRange(["-map", audioMap]);
+            }
+            a.AddRange(outputTokens);
+            a.AddRange(ContainerFlags(ctx, IsHevc(ctx.Args, first)));
+            a.Add(ctx.Out);
+            return a;
+        }
 
         var duration = TimeSpan.Zero;
         for (var i = 0; i < ctx.Items.Count; i++)
             duration += ctx.Items[i].Clip.Out - starts[i];
-        steps.Add(new ExportStep(segmented ? "Joining" : "Copying", a, duration, true)
+        steps.Add(new ExportStep(segmented ? "Joining" : "Copying", JoinArguments(ConcatShift.Placeholder), duration, true)
         {
-            ConcatShiftProbe = copyAudio || !ctx.AnyAudio ? null : listPath,
+            Shift = filteredAudio ? new ConcatShift(listPath, JoinArguments) : null,
         });
         return new ExportPlan(ExportMode.StreamCopy, steps, [new PlannedFile(listPath, list.ToString())], duration, notes);
     }

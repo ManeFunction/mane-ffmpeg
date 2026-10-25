@@ -48,7 +48,7 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
             WorkDirectory = work,
             Keyframes = keyframes,
         });
-        var result = await new ExportRunner(FfmpegFixture.Tools!).RunAsync(plan, output, work, null, CancellationToken.None);
+        var result = await new ExportRunner(FfmpegFixture.Tools!).RunAsync(plan, null, CancellationToken.None);
         Assert.True(result.Outcome == ExportOutcome.Succeeded, $"{result.Message}\n{result.Log}\n{plan.CommandText("ffmpeg")}");
         Assert.False(Directory.Exists(work));
         return (plan, result, output);
@@ -235,7 +235,7 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
         });
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1.5));
         var progress = new List<ExportProgress>();
-        var result = await new ExportRunner(FfmpegFixture.Tools!).RunAsync(plan, output, work, new Progress<ExportProgress>(progress.Add), cts.Token);
+        var result = await new ExportRunner(FfmpegFixture.Tools!).RunAsync(plan, new Progress<ExportProgress>(progress.Add), cts.Token);
         Assert.Equal(ExportOutcome.Cancelled, result.Outcome);
         Assert.False(File.Exists(output));
         Assert.False(Directory.Exists(work));
