@@ -191,7 +191,8 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         }
         try
         {
-            var plan = await PlanAsync(OutputPath ?? DefaultOutputPath() ?? "out.mp4", Path.Combine(AppPaths.TempDirectory, "preview"));
+            var plan = await PlanAsync(OutputPath ?? DefaultOutputPath() ?? "out.mp4", Path.Combine(AppPaths.TempDirectory, "preview"),
+                status => CommandPreview = status);
             var notes = plan.Notes.Count > 0 ? string.Join("\n", plan.Notes.Select(n => "• " + n)) + "\n\n" : "";
             CommandPreview = notes + plan.CommandText(tools.Ffmpeg);
         }
@@ -205,7 +206,8 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private async Task<ExportPlan> PlanAsync(string output, string workDir)
+    /// <param name="status">Shows what planning is waiting for (the export's progress row, or the command panel).</param>
+    private async Task<ExportPlan> PlanAsync(string output, string workDir, Action<string> status)
     {
         if (SelectedPreset is not { } preset)
             throw new ExportPlanException("Choose a preset.");
@@ -218,7 +220,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
                     continue;
                 if (Catalog.Keyframes(source) is not { } index)
                 {
-                    ExportProgressText = $"Finding keyframes in {source.DisplayName}…";
+                    status($"Finding keyframes in {source.DisplayName}…");
                     index = await Catalog.KeyframesAsync(source);
                 }
                 keyframes[source.Id] = index;
@@ -287,7 +289,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         var workDir = Path.Combine(AppPaths.TempDirectory, "export-" + Guid.NewGuid().ToString("N")[..8]);
         try
         {
-            var plan = await PlanAsync(output, workDir);
+            var plan = await PlanAsync(output, workDir, status => ExportProgressText = status);
             var progress = new Progress<ExportProgress>(OnExportProgress);
             var runner = new ExportRunner(tools);
             var token = _exportCts.Token;
