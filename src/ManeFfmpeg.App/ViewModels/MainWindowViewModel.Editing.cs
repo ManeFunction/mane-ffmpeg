@@ -132,7 +132,8 @@ public sealed partial class MainWindowViewModel
             return;
         }
         Commit(State with { Timeline = next });
-        Timeline.SelectOnly(rightId);
+        // The left half, the part already played, keeps the clip's id.
+        Timeline.SelectOnly(next.Clips[next.IndexOf(rightId) - 1].Id);
         StatusMessage = null;
     }
 
