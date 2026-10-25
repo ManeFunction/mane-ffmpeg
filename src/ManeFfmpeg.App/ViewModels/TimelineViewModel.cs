@@ -23,9 +23,10 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
 
     public Timeline Timeline => owner.State.Timeline;
 
-    public HashSet<string> Selection { get; } = [];
+    private readonly HashSet<string> _selection = [];
 
-    IReadOnlySet<string> ITimelineGestureHost.Selection => Selection;
+    /// <summary>The selected clips' ids; changed through <see cref="Select"/> and friends.</summary>
+    public IReadOnlySet<string> Selection => _selection;
 
     /// <summary>Presses, drags and releases on the timeline, in timeline terms.</summary>
     public TimelineGestures Gestures { get; }
@@ -70,7 +71,8 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
 
     public int ColorIndex(string sourceId) => owner.Sources.FirstOrDefault(s => s.Id == sourceId)?.ColorIndex ?? 0;
 
-    public bool IsMissing(string sourceId) => owner.Sources.FirstOrDefault(s => s.Id == sourceId)?.IsProblem ?? true;
+    /// <summary>The source is missing or can't be read (or isn't in the bin at all).</summary>
+    public bool HasProblem(string sourceId) => owner.Sources.FirstOrDefault(s => s.Id == sourceId)?.IsProblem ?? true;
 
     public Waveform? Waveform(SourceMedia source) => owner.Catalog.Waveform(source);
 
@@ -95,29 +97,37 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
             var target = Timeline.IndexOf(clipId);
             if (anchor >= 0 && target >= 0)
             {
-                Selection.Clear();
+                _selection.Clear();
                 for (var i = Math.Min(anchor, target); i <= Math.Max(anchor, target); i++)
-                    Selection.Add(clips[i].Id);
+                    _selection.Add(clips[i].Id);
             }
         }
         else if (toggle)
         {
-            if (!Selection.Remove(clipId))
-                Selection.Add(clipId);
+            if (!_selection.Remove(clipId))
+                _selection.Add(clipId);
         }
         else if (!Selection.Contains(clipId) || Selection.Count > 1)
         {
-            Selection.Clear();
-            Selection.Add(clipId);
+            _selection.Clear();
+            _selection.Add(clipId);
         }
         SelectionChanged();
     }
 
     public void SelectAll()
     {
-        Selection.Clear();
+        _selection.Clear();
         foreach (var clip in Timeline.Clips)
-            Selection.Add(clip.Id);
+            _selection.Add(clip.Id);
+        SelectionChanged();
+    }
+
+    /// <summary>Selects just this clip.</summary>
+    public void SelectOnly(string clipId)
+    {
+        _selection.Clear();
+        _selection.Add(clipId);
         SelectionChanged();
     }
 
@@ -125,7 +135,7 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
     {
         if (Selection.Count == 0)
             return;
-        Selection.Clear();
+        _selection.Clear();
         SelectionChanged();
     }
 
@@ -133,7 +143,7 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
     public void PruneSelection()
     {
         var ids = Timeline.Clips.Select(c => c.Id).ToHashSet();
-        if (Selection.RemoveWhere(id => !ids.Contains(id)) > 0)
+        if (_selection.RemoveWhere(id => !ids.Contains(id)) > 0)
             SelectionChanged();
     }
 

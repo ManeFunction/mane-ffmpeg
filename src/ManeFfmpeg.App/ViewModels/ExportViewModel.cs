@@ -196,10 +196,6 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
             var notes = plan.Notes.Count > 0 ? string.Join("\n", plan.Notes.Select(n => "• " + n)) + "\n\n" : "";
             CommandPreview = notes + plan.CommandText(tools.Ffmpeg);
         }
-        catch (ExportPlanException ex)
-        {
-            CommandPreview = ex.Message;
-        }
         catch (Exception ex)
         {
             CommandPreview = ex.Message;

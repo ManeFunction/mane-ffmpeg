@@ -57,7 +57,6 @@ public sealed class Ffprobe(FfmpegTools tools)
                     {
                         Index = index,
                         Codec = Str(s, "codec_name") ?? "unknown",
-                        Profile = Str(s, "profile"),
                         Width = Int(s, "width"),
                         Height = Int(s, "height"),
                         FrameRate = rate,

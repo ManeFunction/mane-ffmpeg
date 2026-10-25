@@ -286,7 +286,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         _savedExport = Export.CurrentExportSettings();
         _savedState = project.State;
         History.Reset(project.State);
-        Timeline.Selection.Clear();
+        Timeline.ClearSelection();
         Timeline.Zoom = project.Layout.TimelineZoom;
         Timeline.Scroll = project.Layout.TimelineScroll;
         Timeline.Playhead = project.Layout.Playhead;

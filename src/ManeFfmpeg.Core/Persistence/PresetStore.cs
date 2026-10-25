@@ -61,17 +61,6 @@ public sealed class PresetStore
             Persist();
     }
 
-    public void Move(string id, int newIndex)
-    {
-        var index = _presets.FindIndex(p => p.Id == id);
-        if (index < 0)
-            return;
-        var preset = _presets[index];
-        _presets.RemoveAt(index);
-        _presets.Insert(Math.Clamp(newIndex, 0, _presets.Count), preset);
-        Persist();
-    }
-
     /// <summary>Puts the built-in presets back (replacing edited copies with the same id).</summary>
     public void RestoreBuiltIns()
     {

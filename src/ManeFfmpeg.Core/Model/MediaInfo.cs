@@ -50,7 +50,6 @@ public sealed record VideoStreamInfo
     /// <summary>Absolute stream index in the file (for "-map 0:N").</summary>
     public required int Index { get; init; }
     public required string Codec { get; init; }
-    public string? Profile { get; init; }
     public required int Width { get; init; }
     public required int Height { get; init; }
     public required Rational FrameRate { get; init; }

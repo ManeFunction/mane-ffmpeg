@@ -32,8 +32,6 @@ public sealed class PresetArguments
 
     private PresetArguments() { }
 
-    public IReadOnlyList<string> Tokens { get; private init; } = [];
-
     /// <summary>The preset tokens minus managed options and minus -vf/-af (which go into the filter graph).</summary>
     public IReadOnlyList<string> OutputTokens { get; private init; } = [];
 
@@ -131,7 +129,6 @@ public sealed class PresetArguments
 
         return new PresetArguments
         {
-            Tokens = tokens,
             OutputTokens = output,
             VideoCodec = vcodec,
             AudioCodec = acodec,

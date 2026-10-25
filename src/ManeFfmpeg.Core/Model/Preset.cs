@@ -41,7 +41,7 @@ public sealed record Preset
     {
         Id = "builtin-harsh",
         Name = "harsh",
-        Arguments = "-c:v libx265 -crf 28 -preset slow -c:a copy",
+        Arguments = ForStorageV1Arguments,
         Extension = "mp4",
     };
 

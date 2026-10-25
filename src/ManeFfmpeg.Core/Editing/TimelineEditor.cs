@@ -14,9 +14,6 @@ public static class TimelineEditor
 
     public static Timeline Append(Timeline timeline, Clip clip) => timeline with { Clips = timeline.Clips.Add(clip) };
 
-    public static Timeline Insert(Timeline timeline, int index, Clip clip) =>
-        timeline with { Clips = timeline.Clips.Insert(Math.Clamp(index, 0, timeline.Clips.Count), clip) };
-
     /// <summary>
     /// Splits the clip playing at timeline time <paramref name="at"/>, at the nearest in point of its source's grid
     /// (the cut starts the right half). Returns the id of the right half, or null when the cut is too close to an edge.

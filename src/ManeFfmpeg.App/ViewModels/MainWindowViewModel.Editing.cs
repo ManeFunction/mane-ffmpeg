@@ -132,10 +132,7 @@ public sealed partial class MainWindowViewModel
             return;
         }
         Commit(State with { Timeline = next });
-        Timeline.Selection.Clear();
-        Timeline.Selection.Add(rightId);
-        Timeline.Invalidate();
-        OnSelectionChanged();
+        Timeline.SelectOnly(rightId);
         StatusMessage = null;
     }
 

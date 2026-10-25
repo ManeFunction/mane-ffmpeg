@@ -32,7 +32,7 @@ public sealed partial class SourceItemViewModel(SourceMedia source, int colorInd
     public partial MediaInfo? Info { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StatusText), nameof(IsProblem), nameof(IsMissing))]
+    [NotifyPropertyChangedFor(nameof(StatusText), nameof(IsProblem))]
     public partial SourceStatus Status { get; set; } = SourceStatus.Analyzing;
 
     [ObservableProperty]
@@ -40,8 +40,6 @@ public sealed partial class SourceItemViewModel(SourceMedia source, int colorInd
     public partial string? Error { get; set; }
 
     public bool IsProblem => Status is SourceStatus.Missing or SourceStatus.Failed;
-
-    public bool IsMissing => Status == SourceStatus.Missing;
 
     public string StatusText => Status switch
     {

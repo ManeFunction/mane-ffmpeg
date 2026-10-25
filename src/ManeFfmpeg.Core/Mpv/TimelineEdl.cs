@@ -1,4 +1,5 @@
 using System.Text;
+using ManeFfmpeg.Core.Media;
 using ManeFfmpeg.Core.Model;
 
 namespace ManeFfmpeg.Core.Mpv;
@@ -71,5 +72,6 @@ public static class TimelineEdl
         }
     }
 
-    private static readonly TimeSpan SilenceLength = TimeSpan.FromMinutes(9);
+    // Pieces of the silence file, kept a minute short of its end.
+    private static readonly TimeSpan SilenceLength = SilenceAsset.Length - TimeSpan.FromMinutes(1);
 }

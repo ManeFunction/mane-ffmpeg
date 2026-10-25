@@ -192,7 +192,7 @@ public sealed class TimelineControl : Control
     {
         var source = vm.State.Source(clip.SourceId);
         var color = SourceItemViewModel.Palette[vm.ColorIndex(clip.SourceId) % SourceItemViewModel.Palette.Length];
-        var missing = source is null || vm.IsMissing(clip.SourceId);
+        var missing = source is null || vm.HasProblem(clip.SourceId);
         var selected = vm.Selection.Contains(clip.Id);
         var videoRect = new Rect(x0 + 1, VideoTop + 1, Math.Max(1, x1 - x0 - 2), VideoHeight - 2);
         var audioRect = new Rect(x0 + 1, AudioTop + 1, Math.Max(1, x1 - x0 - 2), AudioHeight - 2);

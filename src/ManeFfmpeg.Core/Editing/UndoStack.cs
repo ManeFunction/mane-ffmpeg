@@ -20,10 +20,7 @@ public sealed class UndoStack<T>(T initial, int capacity = 300) where T : class
         EndGesture();
         if (Equals(next, Current))
             return false;
-        _undo.AddLast(Current);
-        if (_undo.Count > capacity)
-            _undo.RemoveFirst();
-        _redo.Clear();
+        Record(Current);
         Current = next;
         Changed?.Invoke(this, EventArgs.Empty);
         return true;
@@ -53,11 +50,17 @@ public sealed class UndoStack<T>(T initial, int capacity = 300) where T : class
         _gestureBase = null;
         if (Equals(start, Current))
             return;
-        _undo.AddLast(start);
+        Record(start);
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Makes <paramref name="previous"/> the state to undo to; a new step clears what could be redone.</summary>
+    private void Record(T previous)
+    {
+        _undo.AddLast(previous);
         if (_undo.Count > capacity)
             _undo.RemoveFirst();
         _redo.Clear();
-        Changed?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>Abandons a drag and restores the state it started from.</summary>

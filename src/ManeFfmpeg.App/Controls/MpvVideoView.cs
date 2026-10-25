@@ -65,9 +65,11 @@ public sealed class MpvVideoView : Control
     }
 #endif
 
+#if DEBUG
     private int _wakes;
     private int _rendered;
     private int _presented;
+#endif
 
     static MpvVideoView()
     {
@@ -166,7 +168,9 @@ public sealed class MpvVideoView : Control
             _wake.WaitOne();
             if (_stop)
                 break;
+#if DEBUG
             Interlocked.Increment(ref _wakes);
+#endif
             var renderer = _renderer;
             if (renderer is null)
                 continue;
@@ -191,7 +195,9 @@ public sealed class MpvVideoView : Control
                     _bufferHeight = height;
                 }
                 _bufferReady = renderer.Render(width, height, width * 4, _buffer);
+#if DEBUG
                 Interlocked.Increment(ref _rendered);
+#endif
             }
             if (Interlocked.Exchange(ref _presentPending, 1) == 0)
                 Dispatcher.UIThread.Post(Present, DispatcherPriority.Render);
@@ -229,7 +235,9 @@ public sealed class MpvVideoView : Control
                 }
             }
             _front = back;
+#if DEBUG
             _presented++;
+#endif
         }
         InvalidateVisual();
     }

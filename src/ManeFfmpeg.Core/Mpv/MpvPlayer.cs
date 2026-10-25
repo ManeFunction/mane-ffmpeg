@@ -29,11 +29,6 @@ public sealed unsafe class MpvPlayer : IDisposable
 
     public event Action? FileLoaded;
 
-    /// <summary>(reason, error): reason 0 = EOF, 2 = stopped, 4 = error.</summary>
-    public event Action<int, int>? EndFile;
-
-    public event Action? PlaybackRestarted;
-
     public event Action<string, string>? LogMessage;
 
     /// <param name="headless">No video or audio output, for tests; otherwise video goes to a render context.</param>
@@ -189,15 +184,6 @@ public sealed unsafe class MpvPlayer : IDisposable
             }
             case MpvNative.EventIdFileLoaded:
                 FileLoaded?.Invoke();
-                break;
-            case MpvNative.EventIdEndFile when ev->Data != 0:
-            {
-                var end = (MpvNative.EventEndFile*)ev->Data;
-                EndFile?.Invoke(end->Reason, end->Error);
-                break;
-            }
-            case MpvNative.EventIdPlaybackRestart:
-                PlaybackRestarted?.Invoke();
                 break;
             case MpvNative.EventIdLogMessage when ev->Data != 0:
             {
