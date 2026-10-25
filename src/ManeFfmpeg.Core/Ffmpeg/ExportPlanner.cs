@@ -72,7 +72,7 @@ public sealed record ExportPlan(
     }
 }
 
-/// <summary>Turns a timeline and a preset into ffmpeg commands. Pure: no I/O.</summary>
+/// <summary>Turns a timeline and a preset into ffmpeg commands. Pure, apart from resolving symbolic links.</summary>
 public static class ExportPlanner
 {
     public const string ConcatShiftToken = "$CONCAT_SHIFT$";
@@ -99,7 +99,7 @@ public static class ExportPlanner
 
         var items = clips.Select(c => Resolve(job, c, args)).ToList();
         foreach (var item in items)
-            if (string.Equals(Path.GetFullPath(item.Source.Path), Path.GetFullPath(job.OutputPath), StringComparison.Ordinal))
+            if (SameFile(item.Source.Path, job.OutputPath))
                 throw new ExportPlanException("The output file is one of the source videos. Choose another name.");
 
         var ctx = new Context(job, args, fallback, items);
@@ -518,6 +518,27 @@ public static class ExportPlanner
         args.VideoCodec is { } codec
             ? codec == "copy" ? first.Video.Codec == "hevc" : codec.Contains("265") || codec.Contains("hevc")
             : false;
+
+    /// <summary>
+    /// Whether two paths name the same file: compared after resolving symbolic links, and ignoring case on macOS
+    /// and Windows, whose usual file systems treat "clip.mp4" and "clip.MP4" as one file.
+    /// </summary>
+    private static bool SameFile(string a, string b) =>
+        string.Equals(RealPath(a), RealPath(b),
+            OperatingSystem.IsMacOS() || OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    private static string RealPath(string path)
+    {
+        var full = Path.GetFullPath(path);
+        try
+        {
+            return File.ResolveLinkTarget(full, returnFinalTarget: true)?.FullName ?? full;
+        }
+        catch (IOException)
+        {
+            return full;
+        }
+    }
 
     private static string ConcatQuote(string path) => "'" + path.Replace("'", "'\\''") + "'";
 }

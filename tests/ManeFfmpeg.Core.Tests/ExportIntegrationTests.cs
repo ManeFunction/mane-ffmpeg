@@ -229,12 +229,21 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
     public async Task Refuses_to_overwrite_a_source()
     {
         var infos = new Dictionary<string, MediaInfo> { ["a"] = await media.ProbeAsync(media.Sync30) };
-        var ex = Assert.Throws<ExportPlanException>(() => ExportPlanner.Plan(new ExportJob
+        void Refused(string output)
         {
-            State = new ProjectState([new SourceMedia { Id = "a", Path = media.Sync30 }], new Timeline([C("a", 1, 2)])),
-            Media = infos, Preset = FastEncode, OutputPath = media.Sync30, WorkDirectory = "/tmp/x",
-        }));
-        Assert.Contains("source", ex.Message);
+            var ex = Assert.Throws<ExportPlanException>(() => ExportPlanner.Plan(new ExportJob
+            {
+                State = new ProjectState([new SourceMedia { Id = "a", Path = media.Sync30 }], new Timeline([C("a", 1, 2)])),
+                Media = infos, Preset = FastEncode, OutputPath = output, WorkDirectory = "/tmp/x",
+            }));
+            Assert.Contains("source", ex.Message);
+        }
+        Refused(media.Sync30);
+        var link = Path.Combine(media.Directory, "link-to-source.mp4");
+        File.CreateSymbolicLink(link, media.Sync30);
+        Refused(link);
+        if (OperatingSystem.IsMacOS())
+            Refused(Path.ChangeExtension(media.Sync30, ".MP4"));
     }
 
     [FfmpegFact]
