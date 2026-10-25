@@ -46,34 +46,56 @@ public sealed record Timeline
 {
     public static readonly Timeline Empty = new([]);
 
+    private ImmutableArray<TimeSpan>? _bounds;
+
     public Timeline(ImmutableList<Clip> clips) => Clips = clips;
 
-    public ImmutableList<Clip> Clips { get; init; }
+    public ImmutableList<Clip> Clips
+    {
+        get;
+        init
+        {
+            field = value;
+            // "with" copies the cache along; a new clip list starts without one.
+            _bounds = null;
+        }
+    }
 
-    public TimeSpan Duration => Clips.Aggregate(TimeSpan.Zero, (sum, c) => sum + c.Duration);
+    /// <summary>Where each clip starts, plus the end of the last one (Count + 1 entries), worked out once.</summary>
+    public ImmutableArray<TimeSpan> Bounds => _bounds ??= ComputeBounds(Clips);
+
+    public TimeSpan Duration => Bounds[^1];
 
     public int IndexOf(string clipId) => Clips.FindIndex(c => c.Id == clipId);
 
-    public TimeSpan StartOf(int index)
-    {
-        var start = TimeSpan.Zero;
-        for (var i = 0; i < index && i < Clips.Count; i++)
-            start += Clips[i].Duration;
-        return start;
-    }
+    public TimeSpan StartOf(int index) => Bounds[Math.Clamp(index, 0, Clips.Count)];
 
     /// <summary>Finds the clip playing at <paramref name="time"/>; the end of the timeline maps to the last clip.</summary>
     public (int Index, TimeSpan ClipStart)? Locate(TimeSpan time)
     {
+        if (Clips.Count == 0)
+            return null;
+        var bounds = Bounds;
+        // The last clip starting at or before the time; clips of zero length are passed over.
+        var index = bounds.BinarySearch(0, Clips.Count, time, null);
+        index = index >= 0 ? index : ~index - 1;
+        while (index < Clips.Count - 1 && time >= bounds[index + 1])
+            index++;
+        index = Math.Clamp(index, 0, Clips.Count - 1);
+        return (index, bounds[index]);
+    }
+
+    private static ImmutableArray<TimeSpan> ComputeBounds(ImmutableList<Clip> clips)
+    {
+        var bounds = ImmutableArray.CreateBuilder<TimeSpan>(clips.Count + 1);
         var start = TimeSpan.Zero;
-        for (var i = 0; i < Clips.Count; i++)
+        bounds.Add(start);
+        foreach (var clip in clips)
         {
-            var end = start + Clips[i].Duration;
-            if (time < end || i == Clips.Count - 1)
-                return (i, start);
-            start = end;
+            start += clip.Duration;
+            bounds.Add(start);
         }
-        return null;
+        return bounds.MoveToImmutable();
     }
 
     public bool Equals(Timeline? other) =>

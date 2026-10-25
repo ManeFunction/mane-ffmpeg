@@ -197,21 +197,11 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
     /// <summary>The clip boundary (index 0…count) nearest to <paramref name="time"/>.</summary>
     private int NearestCut(TimeSpan time)
     {
-        var clips = host.Timeline.Clips;
+        var bounds = host.Timeline.Bounds;
         var best = 0;
-        var bestDistance = TimeSpan.MaxValue;
-        var start = TimeSpan.Zero;
-        for (var k = 0; k <= clips.Count; k++)
-        {
-            var distance = (start - time).Duration();
-            if (distance < bestDistance)
-            {
-                bestDistance = distance;
+        for (var k = 1; k < bounds.Length; k++)
+            if ((bounds[k] - time).Duration() < (bounds[best] - time).Duration())
                 best = k;
-            }
-            if (k < clips.Count)
-                start += clips[k].Duration;
-        }
         return best;
     }
 

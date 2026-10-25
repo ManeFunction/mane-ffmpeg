@@ -245,9 +245,25 @@ public class TimelineEditorTests
     [Fact]
     public void Locate_finds_clip_and_start()
     {
-        var t = T(C("a", 0, 2), C("b", 10, 13));
+        var t = T(C("a", 0, 2), C("b", 10, 13), C("c", 0, 1));
+        Assert.Equal((0, TimeSpan.Zero), t.Locate(TimeSpan.FromSeconds(-1))!.Value);
+        Assert.Equal((0, TimeSpan.Zero), t.Locate(TimeSpan.FromSeconds(1.999))!.Value);
+        Assert.Equal((1, TimeSpan.FromSeconds(2)), t.Locate(TimeSpan.FromSeconds(2))!.Value);
         Assert.Equal((1, TimeSpan.FromSeconds(2)), t.Locate(TimeSpan.FromSeconds(3))!.Value);
-        Assert.Equal((1, TimeSpan.FromSeconds(2)), t.Locate(TimeSpan.FromSeconds(99))!.Value);
+        Assert.Equal((2, TimeSpan.FromSeconds(5)), t.Locate(TimeSpan.FromSeconds(99))!.Value);
+        Assert.Equal(TimeSpan.FromSeconds(6), t.Duration);
+        Assert.Null(Timeline.Empty.Locate(TimeSpan.Zero));
+        Assert.Equal(TimeSpan.Zero, Timeline.Empty.Duration);
+    }
+
+    [Fact]
+    public void Bounds_follow_a_changed_clip_list()
+    {
+        var t = T(C("a", 0, 2), C("b", 10, 13));
+        Assert.Equal([TimeSpan.Zero, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5)], t.Bounds.ToArray());
+        var longer = t with { Clips = t.Clips.Add(C("c", 0, 4)) };
+        Assert.Equal(TimeSpan.FromSeconds(9), longer.Duration);
+        Assert.Equal(TimeSpan.FromSeconds(5), longer.StartOf(2));
         Assert.Equal(TimeSpan.FromSeconds(5), t.Duration);
     }
 

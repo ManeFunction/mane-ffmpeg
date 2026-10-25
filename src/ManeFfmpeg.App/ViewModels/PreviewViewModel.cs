@@ -332,7 +332,7 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
     /// <summary>Moves the playhead to the previous or next cut.</summary>
     private void JumpToCut(bool back)
     {
-        var bounds = Enumerable.Range(0, State.Timeline.Clips.Count + 1).Select(State.Timeline.StartOf).ToList();
+        var bounds = State.Timeline.Bounds;
         var now = Timeline.Playhead;
         var target = back
             ? bounds.LastOrDefault(b => b < now - TimeSpan.FromMilliseconds(5), TimeSpan.Zero)
