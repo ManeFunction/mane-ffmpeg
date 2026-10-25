@@ -195,6 +195,22 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
     }
 
     [FfmpegFact]
+    public async Task Transport_stream_plane_copy_from_the_first_keyframe_joins_without_a_gap()
+    {
+        // The first clip starts at the file's start, where there's less audio before its keyframe than at other
+        // cuts. The second cut's keyframe (and its lead-in) sits between two beeps.
+        var info = await media.ProbeAsync(media.TransportStream);
+        var keyframes = (await new KeyframeService(FfmpegFixture.Tools!).GetAsync(media.TransportStream, info)).Times;
+        var second = ExportPlanner.KeyframeAtOrBefore(keyframes, TimeSpan.FromSeconds(5.5)).TotalSeconds;
+        Assert.InRange(second, 4.2, 5.5);
+        var (plan, _, output) = await ExportAsync(Preset.PlaneCopy, "mkv", [("t", media.TransportStream)], C("t", 0, 3), C("t", 5.5, 8.0));
+        Assert.Equal(ExportMode.StreamCopy, plan.Mode);
+        var (flashes, beeps, _) = await media.MeasureAsync(output);
+        double[] expected = [2, 3 + (6 - second)];
+        AssertCopyTimes(expected, expected, flashes, beeps);
+    }
+
+    [FfmpegFact]
     public async Task Transport_stream_plane_copy_with_offset_keeps_the_first_gop()
     {
         // The offset forces filtered audio, so each segment is cut from the video stream alone.

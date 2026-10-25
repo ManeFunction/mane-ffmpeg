@@ -248,6 +248,14 @@ public static class ExportPlanner
         // Where the container seeks unreliably (MPEG-TS…), the concat demuxer's inpoint lands early, so each
         // clip is first cut into an exact temporary segment and the segments are joined.
         var segmented = ctx.Items.Any(i => i.Media.HasUnreliableSeeking);
+        // How long a segment runs before its keyframe: with copied audio, it starts at the keyframe's decode
+        // time, the reorder delay earlier, but no earlier than the file. A clip from the file's first keyframe
+        // therefore has a shorter lead; the durations in the list make up for it, so clips join without a gap.
+        var leads = ctx.Items.Select((item, i) =>
+        {
+            var delay = ctx.Job.Keyframes[item.Source.Id].ReorderDelay;
+            return segmented && copyAudio ? (starts[i] < delay ? starts[i] : delay) : TimeSpan.Zero;
+        }).ToList();
         var steps = new List<ExportStep>();
         var list = new StringBuilder("ffconcat version 1.0\n");
         for (var i = 0; i < ctx.Items.Count; i++)
@@ -294,7 +302,8 @@ public static class ExportPlanner
                     list.Append("outpoint ").Append(TimeFormat.Seconds(item.Clip.Out - delay + item.Media.StartTime)).Append('\n');
             }
             // Explicit length, so the next segment starts at the real cut and not at the earlier outpoint.
-            list.Append("duration ").Append(TimeFormat.Seconds(length)).Append('\n');
+            var nextLead = i + 1 < ctx.Items.Count ? leads[i + 1] : leads[i];
+            list.Append("duration ").Append(TimeFormat.Seconds(length + leads[i] - nextLead)).Append('\n');
         }
         var listPath = Path.Combine(ctx.Job.WorkDirectory, "segments.ffconcat");
         var videoMap = segmented ? "0:0" : $"0:{first.Video.Index}";
