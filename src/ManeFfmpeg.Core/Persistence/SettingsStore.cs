@@ -46,8 +46,10 @@ public sealed class SettingsStore
         {
             AtomicFile.WriteAllText(_path, JsonSerializer.Serialize(Current, SettingsJsonContext.Default.AppSettings));
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            // The settings still apply for this session.
+            AppLog.Write($"Couldn't save the settings: {ex.Message}");
         }
         Changed?.Invoke(this, EventArgs.Empty);
     }

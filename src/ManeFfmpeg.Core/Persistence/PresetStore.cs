@@ -38,6 +38,9 @@ public sealed class PresetStore
 
     public IReadOnlyList<Preset> Presets => _presets;
 
+    /// <summary>Why the last save failed (full disk, read-only folder…), or null. Changes stay in memory either way.</summary>
+    public string? SaveError { get; private set; }
+
     public event EventHandler? Changed;
 
     public Preset? Find(string? id) => id is null ? null : _presets.Find(p => p.Id == id);
@@ -86,7 +89,16 @@ public sealed class PresetStore
     private void Persist()
     {
         var file = new PresetFile { Version = CurrentVersion, Presets = _presets };
-        AtomicFile.WriteAllText(_path, JsonSerializer.Serialize(file, PresetJsonContext.Readable.PresetFile));
+        try
+        {
+            AtomicFile.WriteAllText(_path, JsonSerializer.Serialize(file, PresetJsonContext.Readable.PresetFile));
+            SaveError = null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            SaveError = $"Couldn't save the presets: {ex.Message}";
+            AppLog.Write(SaveError);
+        }
         Changed?.Invoke(this, EventArgs.Empty);
     }
 

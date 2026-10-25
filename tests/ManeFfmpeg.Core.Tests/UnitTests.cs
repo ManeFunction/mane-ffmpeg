@@ -383,6 +383,31 @@ public class PresetStoreTests
     }
 
     [Fact]
+    public void An_unwritable_folder_keeps_changes_in_memory_and_reports_it()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+        var dir = Directory.CreateTempSubdirectory("presets-ro");
+        try
+        {
+            var store = new PresetStore(Path.Combine(dir.FullName, "presets.json"));
+            File.SetUnixFileMode(dir.FullName, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            store.Save(Preset.PlaneCopy with { Id = "mine", Name = "mine" });
+            Assert.Contains(store.Presets, p => p.Id == "mine");
+            Assert.NotNull(store.SaveError);
+
+            var settings = new SettingsStore(Path.Combine(dir.FullName, "settings.json"));
+            settings.AddRecentProject("/p/x.mfvp");
+            Assert.Equal(["/p/x.mfvp"], settings.Current.RecentProjects);
+        }
+        finally
+        {
+            File.SetUnixFileMode(dir.FullName, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public void Missing_fields_get_defaults()
     {
         var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");

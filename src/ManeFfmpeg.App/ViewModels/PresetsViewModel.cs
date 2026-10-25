@@ -100,7 +100,7 @@ public sealed partial class PresetsViewModel : ViewModelBase
         {
             Analysis = "";
         }
-        Warnings = string.Join("\n", analysis.Errors.Concat(analysis.Warnings));
+        Warnings = string.Join("\n", new[] { _app.Presets.SaveError }.OfType<string>().Concat(analysis.Errors).Concat(analysis.Warnings));
     }
 
     [RelayCommand(CanExecute = nameof(IsModified))]
