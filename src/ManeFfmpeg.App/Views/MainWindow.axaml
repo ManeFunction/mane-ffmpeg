@@ -89,7 +89,7 @@
                     <Border x:Name="BinPanel" Classes="panel" Padding="8">
                         <DockPanel>
                             <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="2,0,0,6">
-                                <TextBlock Text="VIDEOS" Classes="title" VerticalAlignment="Center" />
+                                <TextBlock Text="Videos" Classes="title" VerticalAlignment="Center" />
                                 <Button Grid.Column="1" Classes="tool" Content="+ Add videos…" Command="{Binding AddMediaCommand}" />
                             </Grid>
                             <TextBlock DockPanel.Dock="Bottom" Text="{Binding ToolsError}" Foreground="{StaticResource ErrorBrush}"
@@ -136,7 +136,7 @@
                     <Border x:Name="InspectorPanel" Grid.Row="1" Classes="panel" Padding="10" Margin="0,8,0,0">
                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel Spacing="8">
-                            <TextBlock Text="CLIP" Classes="title" />
+                            <TextBlock Text="Clip" Classes="title" />
                             <TextBlock Text="{Binding SelectionTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                             <TextBlock Text="{Binding SelectionDetails}" Classes="dim" TextWrapping="Wrap" />
                             <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto" IsVisible="{Binding HasSelection}">

@@ -88,7 +88,7 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
 
     public bool IsSourceMode => Mode == PreviewMode.Source;
 
-    public string PreviewTitle => Mode == PreviewMode.Source && PreviewedSource is { } s ? $"Source: {s.Name}" : "Timeline";
+    public string PreviewTitle => Mode == PreviewMode.Source && PreviewedSource is { } s ? $"Source: {s.Name}" : "Preview";
 
     /// <summary>Where the preview is: in the previewed source, or the playhead on the timeline.</summary>
     public TimeSpan Position => Mode == PreviewMode.Source ? SourcePosition : Timeline.Playhead;
