@@ -71,11 +71,12 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
     public bool IsMissing(string sourceId) => owner.Sources.FirstOrDefault(s => s.Id == sourceId)?.IsProblem ?? true;
 
     public Waveform? Waveform(SourceMedia source) =>
-        Info(source.Id)?.Audio(source.AudioStreamIndex) is { } audio
-            ? AppServices.Instance.Waveforms?.TryGet(source.Path, audio.Index)
+        Info(source.Id) is { } info && info.Audio(source.AudioStreamIndex) is { } audio
+            ? AppServices.Instance.Waveforms?.TryGet(source.Path, info, audio.Index)
             : null;
 
-    public KeyframeIndex? Keyframes(SourceMedia source) => AppServices.Instance.Keyframes?.TryGet(source.Path);
+    public KeyframeIndex? Keyframes(SourceMedia source) =>
+        Info(source.Id) is { } info ? AppServices.Instance.Keyframes?.TryGet(source.Path, info) : null;
 
     public void Seek(TimeSpan time, bool scrubbing) => owner.SeekTo(Clamp(time), scrubbing);
 

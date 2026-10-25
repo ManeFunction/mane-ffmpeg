@@ -201,7 +201,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         {
             var tasks = new List<Task>();
             if (info.Audio(source.AudioStreamIndex) is { } audio && _app.Waveforms is { } waveforms)
-                tasks.Add(waveforms.GetAsync(source.Path, audio.Index));
+                tasks.Add(waveforms.GetAsync(source.Path, info, audio.Index));
             if (SnapToKeyframes && _app.Keyframes is { } keyframes)
                 tasks.Add(keyframes.GetAsync(source.Path, info));
             foreach (var task in tasks)

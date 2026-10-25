@@ -197,7 +197,7 @@ public sealed partial class MainWindowViewModel
             {
                 if (!_media.TryGetValue(source.Id, out var info))
                     continue;
-                if (service.TryGet(source.Path) is not { } index)
+                if (service.TryGet(source.Path, info) is not { } index)
                 {
                     ExportProgressText = $"Finding keyframes in {source.DisplayName}…";
                     index = await service.GetAsync(source.Path, info);

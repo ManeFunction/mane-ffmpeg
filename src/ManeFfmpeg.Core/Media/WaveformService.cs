@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using CliWrap;
 using ManeFfmpeg.Core.Ffmpeg;
+using ManeFfmpeg.Core.Model;
 using ManeFfmpeg.Core.Persistence;
 
 namespace ManeFfmpeg.Core.Media;
@@ -40,17 +41,21 @@ public sealed class WaveformService(FfmpegTools tools)
 
     private readonly ConcurrentDictionary<string, Lazy<Task<Waveform?>>> _cache = new();
 
-    public Waveform? TryGet(string path, int audioStreamIndex) =>
-        _cache.TryGetValue(Key(path, audioStreamIndex), out var lazy) && lazy.Value.IsCompletedSuccessfully ? lazy.Value.Result : null;
+    public Waveform? TryGet(string path, MediaInfo media, int audioStreamIndex) =>
+        _cache.TryGetValue(Key(path, media, audioStreamIndex), out var lazy) && lazy.Value.IsCompletedSuccessfully ? lazy.Value.Result : null;
 
-    /// <summary>The waveform of stream <paramref name="audioStreamIndex"/> (absolute index), or null if it has none.</summary>
-    public Task<Waveform?> GetAsync(string path, int audioStreamIndex)
+    /// <summary>
+    /// The waveform of stream <paramref name="audioStreamIndex"/> (absolute index) of <paramref name="path"/> as probed
+    /// in <paramref name="media"/>, or null if it has none.
+    /// </summary>
+    public Task<Waveform?> GetAsync(string path, MediaInfo media, int audioStreamIndex)
     {
-        var lazy = _cache.GetOrAdd(Key(path, audioStreamIndex), _ => new Lazy<Task<Waveform?>>(() => LoadOrBuildAsync(path, audioStreamIndex)));
+        var lazy = _cache.GetOrAdd(Key(path, media, audioStreamIndex), _ => new Lazy<Task<Waveform?>>(() => LoadOrBuildAsync(path, audioStreamIndex)));
         return lazy.Value;
     }
 
-    private static string Key(string path, int stream) => $"{path}\n{stream}";
+    // A file replaced in place gets a new stamp when probed again, so its waveform is read again.
+    private static string Key(string path, MediaInfo media, int stream) => $"{path}\n{media.Stamp}\n{stream}";
 
     private async Task<Waveform?> LoadOrBuildAsync(string path, int stream)
     {

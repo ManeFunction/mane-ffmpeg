@@ -2,9 +2,24 @@ using System.Collections.Immutable;
 
 namespace ManeFfmpeg.Core.Model;
 
+/// <summary>A file's size and modification time: analyses cached for a file stay valid while they match.</summary>
+public readonly record struct FileStamp(long Size, DateTime LastWriteUtc)
+{
+    public static FileStamp Of(string path)
+    {
+        var info = new FileInfo(path);
+        return info.Exists ? new FileStamp(info.Length, info.LastWriteTimeUtc) : default;
+    }
+
+    public override string ToString() => $"{Size}/{LastWriteUtc.Ticks}";
+}
+
 /// <summary>What ffprobe told us about a source file. Times are 0-based from the file start.</summary>
 public sealed record MediaInfo
 {
+    /// <summary>The file as it was when probed.</summary>
+    public FileStamp Stamp { get; init; }
+
     public required TimeSpan Duration { get; init; }
 
     /// <summary>Container start_time; file timestamps = 0-based time + StartTime.</summary>

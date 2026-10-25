@@ -115,7 +115,7 @@ public sealed partial class MainWindowViewModel
     /// <summary>Where cuts may land in a source: on frames, and in points on keyframes while snapping to them.</summary>
     internal CutGrid? GridOf(string sourceId) =>
         State.Source(sourceId) is { } source && _media.TryGetValue(sourceId, out var info)
-            ? CutGrid.For(info, SnapToKeyframes ? _app.Keyframes?.TryGet(source.Path)?.Times : null)
+            ? CutGrid.For(info, SnapToKeyframes ? _app.Keyframes?.TryGet(source.Path, info)?.Times : null)
             : null;
 
     private TimeSpan? FrameDuration(Clip clip) =>

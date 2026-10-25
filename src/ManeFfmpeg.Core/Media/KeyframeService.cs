@@ -12,22 +12,27 @@ namespace ManeFfmpeg.Core.Media;
 /// </summary>
 public sealed record KeyframeIndex(IReadOnlyList<TimeSpan> Times, TimeSpan ReorderDelay);
 
-/// <summary>Keyframe (seek point) times of a file's video stream, from ffprobe packet flags. Cached per file.</summary>
+/// <summary>Keyframe (seek point) times of a file's video stream, from ffprobe packet flags. Cached per file version.</summary>
 public sealed class KeyframeService(FfmpegTools tools)
 {
     private readonly ConcurrentDictionary<string, Lazy<Task<KeyframeIndex>>> _cache = new();
 
-    public KeyframeIndex? TryGet(string path) =>
-        _cache.TryGetValue(path, out var lazy) && lazy.Value.IsCompletedSuccessfully ? lazy.Value.Result : null;
+    /// <summary>The keyframes of <paramref name="path"/> as probed in <paramref name="media"/>, if already scanned.</summary>
+    public KeyframeIndex? TryGet(string path, MediaInfo media) =>
+        _cache.TryGetValue(Key(path, media), out var lazy) && lazy.Value.IsCompletedSuccessfully ? lazy.Value.Result : null;
 
     public Task<KeyframeIndex> GetAsync(string path, MediaInfo media)
     {
-        var lazy = _cache.GetOrAdd(path, p => new Lazy<Task<KeyframeIndex>>(() => ScanAsync(p, media)));
+        var key = Key(path, media);
+        var lazy = _cache.GetOrAdd(key, _ => new Lazy<Task<KeyframeIndex>>(() => ScanAsync(path, media)));
         var task = lazy.Value;
         if (task.IsFaulted || task.IsCanceled)
-            _cache.TryRemove(path, out _);
+            _cache.TryRemove(key, out _);
         return task;
     }
+
+    // A file replaced in place gets a new stamp when probed again, so it is scanned again.
+    private static string Key(string path, MediaInfo media) => $"{path}\n{media.Stamp}";
 
     private async Task<KeyframeIndex> ScanAsync(string path, MediaInfo media)
     {

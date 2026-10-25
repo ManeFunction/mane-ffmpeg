@@ -238,6 +238,27 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
     }
 
     [FfmpegFact]
+    public async Task A_file_replaced_in_place_is_analyzed_again()
+    {
+        var path = Path.Combine(media.Directory, "replaced.mp4");
+        File.Copy(media.Sync30, path, overwrite: true);
+        var keyframes = new KeyframeService(FfmpegFixture.Tools!);
+        var waveforms = new WaveformService(FfmpegFixture.Tools!);
+        var before = await media.ProbeAsync(path);
+        Assert.Equal(12, (await keyframes.GetAsync(path, before)).Times.Count);
+        Assert.NotNull(await waveforms.GetAsync(path, before, before.AudioStreams[0].Index));
+
+        File.Copy(media.NoAudio, path, overwrite: true);
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(1));
+        var after = await media.ProbeAsync(path);
+        Assert.NotEqual(before.Stamp, after.Stamp);
+        Assert.Null(keyframes.TryGet(path, after));
+        var fresh = await new KeyframeService(FfmpegFixture.Tools!).GetAsync(media.NoAudio, await media.ProbeAsync(media.NoAudio));
+        Assert.Equal(fresh.Times, (await keyframes.GetAsync(path, after)).Times);
+        Assert.Equal(12, keyframes.TryGet(path, before)!.Times.Count);
+    }
+
+    [FfmpegFact]
     public async Task Waveform_and_keyframes_are_read()
     {
         var info = await media.ProbeAsync(media.Sync30);
@@ -247,7 +268,7 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
         Assert.InRange(keyframes.Times[5].TotalSeconds, 4.99, 5.01);
         Assert.InRange(keyframes.ReorderDelay.TotalSeconds, 0.03, 0.1);
 
-        var waveform = await new WaveformService(FfmpegFixture.Tools!).GetAsync(media.Sync30, info.AudioStreams[0].Index);
+        var waveform = await new WaveformService(FfmpegFixture.Tools!).GetAsync(media.Sync30, info, info.AudioStreams[0].Index);
         Assert.NotNull(waveform);
         Assert.InRange(waveform!.Duration.TotalSeconds, 11.9, 12.1);
         Assert.True(waveform.Max(TimeSpan.FromSeconds(2.0), TimeSpan.FromSeconds(2.1)) > 150);

@@ -14,13 +14,15 @@ public sealed class Ffprobe(FfmpegTools tools)
 {
     public async Task<MediaInfo> ProbeAsync(string path, CancellationToken ct = default)
     {
+        // Stamped before probing: a file changing meanwhile gets probed again next time.
+        var stamp = FileStamp.Of(path);
         var result = await Cli.Wrap(tools.Ffprobe)
             .WithArguments(["-v", "error", "-print_format", "json", "-show_format", "-show_streams", path])
             .WithValidation(CommandResultValidation.None)
             .ExecuteBufferedAsync(ct);
         if (result.ExitCode != 0)
             throw new FfprobeException(FirstLine(result.StandardError) ?? $"ffprobe exited with code {result.ExitCode}");
-        return Parse(result.StandardOutput);
+        return Parse(result.StandardOutput) with { Stamp = stamp };
     }
 
     /// <summary>Parses ffprobe's JSON output (separate for unit tests).</summary>
