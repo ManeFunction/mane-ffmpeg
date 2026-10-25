@@ -1,4 +1,3 @@
-using System.Globalization;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -270,7 +269,12 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
     }
 
     [RelayCommand]
-    private void StepFrame(string direction)
+    private void StepBack() => StepFrame(back: true);
+
+    [RelayCommand]
+    private void StepForward() => StepFrame(back: false);
+
+    private void StepFrame(bool back)
     {
         if (_preview is null)
             return;
@@ -281,10 +285,10 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
                 ? PreviewedSource?.Info?.Video
                 : State.Timeline.Locate(Timeline.Playhead) is { } at ? Catalog.Info(State.Timeline.Clips[at.Index].SourceId)?.Video : null;
             var frame = TimeFormat.FrameDuration(video?.FrameRate ?? default);
-            SeekPreview(Position + (direction == "-1" ? -frame : frame));
+            SeekPreview(Position + (back ? -frame : frame));
             return;
         }
-        _preview.StepFrame(back: direction == "-1");
+        _preview.StepFrame(back);
     }
 
     /// <summary>Seeks whatever is previewed, within its length.</summary>
@@ -297,8 +301,21 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
             SeekTo(time, false);
     }
 
+    /// <summary>1 second back (⇧←).</summary>
     [RelayCommand]
-    private void Jump(string seconds) => SeekPreview(Position + TimeSpan.FromSeconds(double.Parse(seconds, CultureInfo.InvariantCulture)));
+    private void JumpBack() => SeekPreview(Position - TimeSpan.FromSeconds(1));
+
+    /// <summary>1 second forward (⇧→).</summary>
+    [RelayCommand]
+    private void JumpForward() => SeekPreview(Position + TimeSpan.FromSeconds(1));
+
+    /// <summary>5 seconds back (J).</summary>
+    [RelayCommand]
+    private void SkipBack() => SeekPreview(Position - TimeSpan.FromSeconds(5));
+
+    /// <summary>5 seconds forward (L).</summary>
+    [RelayCommand]
+    private void SkipForward() => SeekPreview(Position + TimeSpan.FromSeconds(5));
 
     [RelayCommand]
     private void GoToStart() => SeekPreview(TimeSpan.Zero);
@@ -306,13 +323,18 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private void GoToEnd() => SeekPreview(Length);
 
-    /// <summary>Moves the playhead to the previous/next cut.</summary>
     [RelayCommand]
-    private void JumpToCut(string direction)
+    private void PreviousCut() => JumpToCut(back: true);
+
+    [RelayCommand]
+    private void NextCut() => JumpToCut(back: false);
+
+    /// <summary>Moves the playhead to the previous or next cut.</summary>
+    private void JumpToCut(bool back)
     {
         var bounds = Enumerable.Range(0, State.Timeline.Clips.Count + 1).Select(State.Timeline.StartOf).ToList();
         var now = Timeline.Playhead;
-        var target = direction == "-1"
+        var target = back
             ? bounds.LastOrDefault(b => b < now - TimeSpan.FromMilliseconds(5), TimeSpan.Zero)
             : bounds.FirstOrDefault(b => b > now + TimeSpan.FromMilliseconds(5), State.Timeline.Duration);
         SeekTo(target, false);

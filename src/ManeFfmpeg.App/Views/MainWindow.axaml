@@ -148,18 +148,18 @@
                             <StackPanel Spacing="6" IsVisible="{Binding HasSelection}">
                                 <TextBlock Text="Audio offset (ms) — positive plays audio later" Classes="dim" TextWrapping="Wrap" />
                                 <Grid ColumnDefinitions="Auto,*,Auto">
-                                    <Button Classes="tool" Content="−10" Command="{Binding NudgeAudioCommand}" CommandParameter="-10" />
+                                    <Button Classes="tool" Content="−10" Command="{Binding NudgeAudioEarlierCommand}" />
                                     <NumericUpDown Grid.Column="1" Value="{Binding AudioOffsetMs}" Increment="1" FormatString="0.#"
                                                    Minimum="-60000" Maximum="60000" Margin="4,0" />
-                                    <Button Grid.Column="2" Classes="tool" Content="+10" Command="{Binding NudgeAudioCommand}" CommandParameter="10" />
+                                    <Button Grid.Column="2" Classes="tool" Content="+10" Command="{Binding NudgeAudioLaterCommand}" />
                                 </Grid>
                                 <Grid ColumnDefinitions="*,*,*" >
                                     <Button Classes="tool" Content="−1 frame" HorizontalAlignment="Stretch" Margin="0,0,4,0"
-                                            Command="{Binding NudgeAudioFramesCommand}" CommandParameter="-1" />
+                                            Command="{Binding NudgeAudioFrameEarlierCommand}" />
                                     <Button Grid.Column="1" Classes="tool" Content="Reset" HorizontalAlignment="Stretch" Margin="0,0,4,0"
                                             Command="{Binding ResetAudioOffsetCommand}" />
                                     <Button Grid.Column="2" Classes="tool" Content="+1 frame" HorizontalAlignment="Stretch"
-                                            Command="{Binding NudgeAudioFramesCommand}" CommandParameter="1" />
+                                            Command="{Binding NudgeAudioFrameLaterCommand}" />
                                 </Grid>
                                 <TextBlock Text="{Binding AudioOffsetHint}" Classes="dim" TextWrapping="Wrap" />
                                 <Button Classes="tool" Content="Use this offset for all clips of this video" HorizontalAlignment="Stretch"
@@ -187,7 +187,7 @@
                                 <Button Classes="icon" Command="{Binding Preview.GoToStartCommand}" ToolTip.Tip="To start (Home)">
                                     <PathIcon Data="{StaticResource IconToStart}" />
                                 </Button>
-                                <Button Classes="icon" Command="{Binding Preview.StepFrameCommand}" CommandParameter="-1" ToolTip.Tip="Previous frame (←)">
+                                <Button Classes="icon" Command="{Binding Preview.StepBackCommand}" ToolTip.Tip="Previous frame (←)">
                                     <PathIcon Data="{StaticResource IconStepBack}" />
                                 </Button>
                                 <Button x:Name="PlayButton" Classes="icon" Command="{Binding Preview.PlayPauseCommand}" ToolTip.Tip="Play / pause (Space)" Width="44">
@@ -196,7 +196,7 @@
                                         <PathIcon Data="{StaticResource IconPause}" IsVisible="{Binding Preview.IsPlaying}" />
                                     </Panel>
                                 </Button>
-                                <Button Classes="icon" Command="{Binding Preview.StepFrameCommand}" CommandParameter="1" ToolTip.Tip="Next frame (→)">
+                                <Button Classes="icon" Command="{Binding Preview.StepForwardCommand}" ToolTip.Tip="Next frame (→)">
                                     <PathIcon Data="{StaticResource IconStepForward}" />
                                 </Button>
                                 <Button Classes="icon" Command="{Binding Preview.GoToEndCommand}" ToolTip.Tip="To end (End)">

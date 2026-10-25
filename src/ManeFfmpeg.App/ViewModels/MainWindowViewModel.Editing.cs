@@ -153,22 +153,30 @@ public sealed partial class MainWindowViewModel
     [RelayCommand]
     private void SelectAll() => Timeline.SelectAll();
 
-    [RelayCommand]
-    private void NudgeAudio(string milliseconds)
-    {
-        var ms = double.Parse(milliseconds, System.Globalization.CultureInfo.InvariantCulture);
-        CommitTimeline(t => TimelineEditor.NudgeAudioOffset(t, TargetClips(), TimeSpan.FromMilliseconds(ms)));
-    }
+    private static readonly TimeSpan NudgeStep = TimeSpan.FromMilliseconds(10);
 
     [RelayCommand]
-    private void NudgeAudioFrames(string frames)
+    private void NudgeAudioEarlier() => NudgeAudio(-NudgeStep);
+
+    [RelayCommand]
+    private void NudgeAudioLater() => NudgeAudio(NudgeStep);
+
+    [RelayCommand]
+    private void NudgeAudioFrameEarlier() => NudgeAudioFrames(-1);
+
+    [RelayCommand]
+    private void NudgeAudioFrameLater() => NudgeAudioFrames(1);
+
+    /// <summary>Slips the audio of the selected clips (or the clip under the playhead) by <paramref name="delta"/>.</summary>
+    public void NudgeAudio(TimeSpan delta) => CommitTimeline(t => TimelineEditor.NudgeAudioOffset(t, TargetClips(), delta));
+
+    private void NudgeAudioFrames(int frames)
     {
         var targets = TargetClips();
         var clip = State.Timeline.Clips.FirstOrDefault(c => targets.Contains(c.Id));
         if (clip is null || FrameDuration(clip) is not { } frame)
             return;
-        var delta = frame * int.Parse(frames, System.Globalization.CultureInfo.InvariantCulture);
-        CommitTimeline(t => TimelineEditor.NudgeAudioOffset(t, targets, delta));
+        CommitTimeline(t => TimelineEditor.NudgeAudioOffset(t, targets, frame * frames));
     }
 
     [RelayCommand]

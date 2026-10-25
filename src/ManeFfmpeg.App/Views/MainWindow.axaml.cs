@@ -64,10 +64,9 @@ public partial class MainWindow : Window, IMainWindowView
     private void BuildMenu()
     {
         var vm = ViewModel;
-        NativeMenuItem Item(string header, System.Windows.Input.ICommand command, Key? key = null, KeyModifiers modifiers = KeyModifiers.None,
-            object? parameter = null)
+        NativeMenuItem Item(string header, System.Windows.Input.ICommand command, Key? key = null, KeyModifiers modifiers = KeyModifiers.None)
         {
-            var item = new NativeMenuItem(header) { Command = command, CommandParameter = parameter };
+            var item = new NativeMenuItem(header) { Command = command };
             if (key is { } k)
                 item.Gesture = new KeyGesture(k, modifiers);
             return item;
@@ -130,10 +129,10 @@ public partial class MainWindow : Window, IMainWindowView
             Item("Split at Playhead", vm.SplitCommand),
             Item("Delete Selected Clips", vm.DeleteSelectionCommand),
             new NativeMenuItemSeparator(),
-            Item("Audio 10 ms Earlier", vm.NudgeAudioCommand, parameter: "-10"),
-            Item("Audio 10 ms Later", vm.NudgeAudioCommand, parameter: "10"),
-            Item("Audio 1 Frame Earlier", vm.NudgeAudioFramesCommand, parameter: "-1"),
-            Item("Audio 1 Frame Later", vm.NudgeAudioFramesCommand, parameter: "1"),
+            Item("Audio 10 ms Earlier", vm.NudgeAudioEarlierCommand),
+            Item("Audio 10 ms Later", vm.NudgeAudioLaterCommand),
+            Item("Audio 1 Frame Earlier", vm.NudgeAudioFrameEarlierCommand),
+            Item("Audio 1 Frame Later", vm.NudgeAudioFrameLaterCommand),
             Item("Reset Audio Offset", vm.ResetAudioOffsetCommand),
         })
             edit.Items.Add(item);
@@ -191,39 +190,39 @@ public partial class MainWindow : Window, IMainWindowView
                 break;
             case Key.Left when alt:
                 if (shift)
-                    vm.NudgeAudioFramesCommand.Execute("-1");
+                    vm.NudgeAudioFrameEarlierCommand.Execute(null);
                 else
-                    vm.NudgeAudioCommand.Execute("-10");
+                    vm.NudgeAudioEarlierCommand.Execute(null);
                 break;
             case Key.Right when alt:
                 if (shift)
-                    vm.NudgeAudioFramesCommand.Execute("1");
+                    vm.NudgeAudioFrameLaterCommand.Execute(null);
                 else
-                    vm.NudgeAudioCommand.Execute("10");
+                    vm.NudgeAudioLaterCommand.Execute(null);
                 break;
             case Key.Left:
                 if (shift)
-                    vm.Preview.JumpCommand.Execute("-1");
+                    vm.Preview.JumpBackCommand.Execute(null);
                 else
-                    vm.Preview.StepFrameCommand.Execute("-1");
+                    vm.Preview.StepBackCommand.Execute(null);
                 break;
             case Key.Right:
                 if (shift)
-                    vm.Preview.JumpCommand.Execute("1");
+                    vm.Preview.JumpForwardCommand.Execute(null);
                 else
-                    vm.Preview.StepFrameCommand.Execute("1");
+                    vm.Preview.StepForwardCommand.Execute(null);
                 break;
             case Key.J:
-                vm.Preview.JumpCommand.Execute("-5");
+                vm.Preview.SkipBackCommand.Execute(null);
                 break;
             case Key.L:
-                vm.Preview.JumpCommand.Execute("5");
+                vm.Preview.SkipForwardCommand.Execute(null);
                 break;
             case Key.Up:
-                vm.Preview.JumpToCutCommand.Execute("-1");
+                vm.Preview.PreviousCutCommand.Execute(null);
                 break;
             case Key.Down:
-                vm.Preview.JumpToCutCommand.Execute("1");
+                vm.Preview.NextCutCommand.Execute(null);
                 break;
             case Key.Home:
                 vm.Preview.GoToStartCommand.Execute(null);

@@ -94,7 +94,7 @@ internal static class DebugAutomation
                         vm.Timeline.MoveSelection(int.Parse(arg, CultureInfo.InvariantCulture));
                         break;
                     case "nudge":
-                        vm.NudgeAudioCommand.Execute(arg);
+                        vm.NudgeAudio(TimeSpan.FromMilliseconds(double.Parse(arg, CultureInfo.InvariantCulture)));
                         break;
                     case "delete":
                         vm.DeleteSelectionCommand.Execute(null);
