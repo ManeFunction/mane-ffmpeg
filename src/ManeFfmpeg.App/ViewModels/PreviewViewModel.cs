@@ -180,6 +180,10 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
     {
         if (_preview is null || Mode != PreviewMode.Timeline)
             return;
+        // A drag in progress is heard through audio-delay and seen on the timeline; the EDL is rebuilt on release.
+        // Rebuilding mid-drag would reset audio-delay on load and then add the whole drag on top of the new EDL.
+        if (_owner.History.InGesture)
+            return;
         if (!_owner.HasClips)
         {
             _preview.Unload();
