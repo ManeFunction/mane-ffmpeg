@@ -21,8 +21,55 @@ public sealed partial class PresetsViewModel : ViewModelBase
     public ObservableCollection<Preset> Presets { get; } = [];
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasSelection))]
+    [NotifyPropertyChangedFor(nameof(HasSelection), nameof(ListSelection))]
     public partial Preset? Selected { get; set; }
+
+    /// <summary>
+    /// Asks what to do with unsaved edits before they'd be lost: 0 saves them, 1 discards them, anything else
+    /// keeps editing. Without it, edits are discarded.
+    /// </summary>
+    public Func<Task<int>>? AskAboutEdits { get; set; }
+
+    /// <summary>The list's selection. Choosing another preset with unsaved edits asks first.</summary>
+    public Preset? ListSelection
+    {
+        get => Selected;
+        set
+        {
+            if (value == Selected)
+                return;
+            if (!IsModified || AskAboutEdits is null)
+                Selected = value;
+            else
+                _ = SwitchAsync(value);
+        }
+    }
+
+    private async Task SwitchAsync(Preset? target)
+    {
+        if (await ResolveEditsAsync())
+            Selected = Presets.FirstOrDefault(p => p.Id == target?.Id);
+        else
+            // The list moved to the target already; put it back on the preset being edited.
+            OnPropertyChanged(nameof(ListSelection));
+    }
+
+    /// <summary>Saves or discards unsaved edits as the user chooses; false when they'd rather keep editing.</summary>
+    public async Task<bool> ResolveEditsAsync()
+    {
+        if (!IsModified || AskAboutEdits is null)
+            return true;
+        switch (await AskAboutEdits())
+        {
+            case 0:
+                Save();
+                return true;
+            case 1:
+                return true;
+            default:
+                return false;
+        }
+    }
 
     [ObservableProperty]
     public partial string Name { get; set; } = "";
@@ -123,8 +170,10 @@ public sealed partial class PresetsViewModel : ViewModelBase
     private void Revert() => OnSelectedChanged(Selected);
 
     [RelayCommand]
-    private void Add()
+    private async Task Add()
     {
+        if (!await ResolveEditsAsync())
+            return;
         var preset = new Preset
         {
             Id = Ids.New(),
@@ -137,9 +186,9 @@ public sealed partial class PresetsViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void Duplicate()
+    private async Task Duplicate()
     {
-        if (Selected is not { } preset)
+        if (!await ResolveEditsAsync() || Selected is not { } preset)
             return;
         var copy = preset with { Id = Ids.New(), Name = preset.Name + " copy" };
         _app.Presets.Save(copy);
@@ -159,8 +208,10 @@ public sealed partial class PresetsViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void RestoreBuiltIns()
+    private async Task RestoreBuiltIns()
     {
+        if (!await ResolveEditsAsync())
+            return;
         _app.Presets.RestoreBuiltIns();
         Reload(Selected?.Id);
     }

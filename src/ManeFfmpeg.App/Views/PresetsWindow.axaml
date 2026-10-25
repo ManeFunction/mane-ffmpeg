@@ -17,7 +17,7 @@
                 <Button Content="Restore built-in presets" HorizontalAlignment="Stretch" Command="{Binding RestoreBuiltInsCommand}" />
             </StackPanel>
             <Border Classes="panel">
-                <ListBox ItemsSource="{Binding Presets}" SelectedItem="{Binding Selected}" Background="Transparent">
+                <ListBox x:Name="PresetList" ItemsSource="{Binding Presets}" SelectedItem="{Binding ListSelection}" Background="Transparent">
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="model:Preset">
                             <StackPanel Spacing="2">
