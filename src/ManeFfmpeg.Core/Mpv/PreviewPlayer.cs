@@ -1,4 +1,5 @@
 using ManeFfmpeg.Core.Model;
+using ManeFfmpeg.Core.Persistence;
 
 namespace ManeFfmpeg.Core.Mpv;
 
@@ -31,6 +32,8 @@ public sealed class PreviewPlayer : IDisposable
         _seekTimer = new Timer(_ => FlushSeek());
         mpv.PropertyChanged += (name, value) => Post(() => OnProperty(name, value));
         mpv.FileLoaded += () => Post(OnFileLoaded);
+        // mpv's warnings and errors (unplayable segments, failed commands) explain a blank or silent preview.
+        mpv.LogMessage += (level, text) => AppLog.Write($"mpv {level}: {text}");
     }
 
     /// <param name="headless">No video or audio output (tests).</param>
