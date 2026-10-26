@@ -1,4 +1,5 @@
 using ManeFfmpeg.App.ViewModels;
+using ManeFfmpeg.Core.Model;
 
 namespace ManeFfmpeg.App.Tests;
 
@@ -66,6 +67,39 @@ public class PresetsViewModelTests
         vm.ListSelection = vm.Presets.First(p => p.Id == editedId);
         vm.Arguments = vm.Arguments.Replace(" -metadata comment=edited", "");
         Assert.True(await vm.ResolveEditsAsync());
+    }
+
+    [Fact]
+    public async Task Saving_doesnt_ask_when_the_list_is_refilled()
+    {
+        var (vm, asked) = Edited(answer: 2);
+        var editedId = vm.Selected!.Id;
+        // Like the ListBox: clearing its items clears its selection, which reaches the view model.
+        vm.Presets.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset)
+                vm.ListSelection = null;
+        };
+        vm.SaveCommand.Execute(null);
+        await Task.Delay(100);
+        Assert.Empty(asked);
+        Assert.False(vm.IsModified);
+        Assert.Equal(editedId, vm.Selected?.Id);
+        // Put the preset back for the other tests sharing the store.
+        vm.Arguments = vm.Arguments.Replace(" -metadata comment=edited", "");
+        vm.SaveCommand.Execute(null);
+    }
+
+    [Fact]
+    public async Task Refilling_the_list_reselects_an_unchanged_preset()
+    {
+        var vm = new PresetsViewModel();
+        vm.ListSelection = vm.Presets.First(p => p.Id == Preset.PlaneCopy.Id);
+        var announced = 0;
+        vm.PropertyChanged += (_, e) => announced += e.PropertyName == nameof(vm.ListSelection) ? 1 : 0;
+        await vm.RestoreBuiltInsCommand.ExecuteAsync(null);
+        Assert.Equal(Preset.PlaneCopy.Id, vm.ListSelection?.Id);
+        Assert.True(announced > 0);
     }
 
     [Fact]

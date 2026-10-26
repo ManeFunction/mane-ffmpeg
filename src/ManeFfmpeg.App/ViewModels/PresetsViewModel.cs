@@ -12,6 +12,7 @@ public sealed partial class PresetsViewModel : ViewModelBase
 {
     private readonly AppServices _app = AppServices.Instance;
     private bool _loading;
+    private bool _reloading;
 
     public PresetsViewModel()
     {
@@ -36,7 +37,8 @@ public sealed partial class PresetsViewModel : ViewModelBase
         get => Selected;
         set
         {
-            if (value == Selected)
+            // Refilling the list clears its selection; that isn't the user choosing another preset.
+            if (value == Selected || _reloading)
                 return;
             if (!IsModified || AskAboutEdits is null)
                 Selected = value;
@@ -99,10 +101,14 @@ public sealed partial class PresetsViewModel : ViewModelBase
 
     private void Reload(string? selectId)
     {
+        _reloading = true;
         Presets.Clear();
         foreach (var preset in _app.Presets.Presets)
             Presets.Add(preset);
+        _reloading = false;
         Selected = Presets.FirstOrDefault(p => p.Id == selectId) ?? Presets.FirstOrDefault();
+        // The list lost its selection while refilling; an unchanged Selected wouldn't tell it to select again.
+        OnPropertyChanged(nameof(ListSelection));
     }
 
     partial void OnSelectedChanged(Preset? value)
