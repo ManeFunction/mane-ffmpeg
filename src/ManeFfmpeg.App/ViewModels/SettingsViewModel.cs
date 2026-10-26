@@ -35,10 +35,16 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public partial string FfprobePath { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PlayerRestartNeeded))]
     public partial string LibMpvPath { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PlayerRestartNeeded))]
     public partial bool HardwareDecoding { get; set; }
+
+    /// <summary>The player reads these only at startup, so changing them needs a restart.</summary>
+    public bool PlayerRestartNeeded =>
+        (_app.Settings.Current.LibMpvPath ?? "") != LibMpvPath.Trim() || _app.Settings.Current.HardwareDecoding != HardwareDecoding;
 
     [ObservableProperty]
     public partial bool Notifications { get; set; }
@@ -91,12 +97,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
             : $"{MpvLibrary.LoadError}\n{MpvLibrary.InstallHint}";
     }
 
-    [RelayCommand]
-    private async Task Apply()
+    /// <summary>Saves everything and looks for the tools again; the window closes when it's done.</summary>
+    public async Task ApplyAsync()
     {
         IsBusy = true;
-        var mpvChanged = (_app.Settings.Current.LibMpvPath ?? "") != LibMpvPath.Trim();
-        var hwChanged = _app.Settings.Current.HardwareDecoding != HardwareDecoding;
         _app.Settings.Update(s => s with
         {
             FfmpegPath = NullIfEmpty(FfmpegPath),
@@ -108,9 +112,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
             AskToRegisterProjectFiles = AskToRegisterProjectFiles,
         });
         await _app.LocateToolsAsync();
-        RefreshStatus();
-        if (mpvChanged || hwChanged)
-            MpvStatus += "\nRestart the app to use the new player settings.";
         IsBusy = false;
     }
 

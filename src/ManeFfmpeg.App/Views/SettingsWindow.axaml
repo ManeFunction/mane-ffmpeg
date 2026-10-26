@@ -26,6 +26,8 @@
             <TextBox Grid.Column="1" Text="{Binding LibMpvPath}" PlaceholderText="automatic (Homebrew, MacPorts, IINA, system)" />
         </Grid>
         <CheckBox Content="Hardware video decoding for preview" IsChecked="{Binding HardwareDecoding}" />
+        <TextBlock Text="Restart the app after applying to use the new player settings." FontSize="12"
+                   Foreground="{StaticResource AccentWarnBrush}" IsVisible="{Binding PlayerRestartNeeded}" />
 
         <TextBlock Text="GENERAL" Classes="title" Margin="0,8,0,0" />
         <StackPanel Orientation="Horizontal" Spacing="8">
@@ -48,7 +50,7 @@
             <Button Content="Install Missing Components…" Click="OnInstallClicked" IsVisible="{Binding CanInstall}" />
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                 <Button Content="Cancel" Click="OnCancelClicked" />
-                <Button Content="Apply" Classes="accent" Command="{Binding ApplyCommand}" IsEnabled="{Binding !IsBusy}" />
+                <Button Content="Apply" Classes="accent" Click="OnApplyClicked" IsEnabled="{Binding !IsBusy}" />
             </StackPanel>
         </Grid>
     </StackPanel>

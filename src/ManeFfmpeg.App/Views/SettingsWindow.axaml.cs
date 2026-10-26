@@ -19,6 +19,12 @@ public partial class SettingsWindow : Window
 
     private void OnCancelClicked(object? sender, RoutedEventArgs e) => Close();
 
+    private async void OnApplyClicked(object? sender, RoutedEventArgs e)
+    {
+        await ((SettingsViewModel)DataContext!).ApplyAsync();
+        Close();
+    }
+
     private async void OnInstallClicked(object? sender, RoutedEventArgs e)
     {
         await new SetupWindow().ShowDialog(this);
