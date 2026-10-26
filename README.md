@@ -41,6 +41,13 @@ Built with C#, .NET 10 and Avalonia 12.
 - **Several windows**
   - File → New Window. Each window is its own project with its own player and export, so you can export in one window while editing in another.
 
+## Installation
+
+Download the latest build from the [Releases page](https://github.com/ManeFunction/mane-ffmpeg/releases/latest). The builds are self-contained, so you don't need .NET. You still need ffmpeg and libmpv, see [Requirements](#requirements).
+
+- **macOS**: `mane-ffmpeg-<version>-osx-arm64.zip` for Apple Silicon or `osx-x64` for Intel. Unzip it and move *Mane FFmpeg.app* to Applications. The app is signed ad hoc but not notarized, so macOS blocks the first start. Run `xattr -dr com.apple.quarantine "/Applications/Mane FFmpeg.app"`, or allow it in *System Settings → Privacy & Security*.
+- **Linux**: `mane-ffmpeg-<version>-linux-x64.tar.gz` or `linux-arm64`. Run `tar xf mane-ffmpeg-*.tar.gz && ./mane-ffmpeg/install.sh`. It installs for the current user into `~/.local/opt/mane-ffmpeg`, with a menu entry, the `.mfvp` file type and a `mane-ffmpeg` command in `~/.local/bin`.
+
 ## Requirements
 
 | | macOS | Linux |
@@ -142,3 +149,11 @@ Files on disk:
 - **Stream-copy cuts.** They can only start on keyframes, and boundaries may show a frame of artifacts with open-GOP sources. That's inherent to cutting without re-encoding.
 - **Sleeping display.** The app won't start while the display is asleep, because Avalonia's macOS backend needs an active display.
 - **Development automation.** Debug builds can be driven by a script (`MANE_FFMPEG_SCRIPT=file`) for end-to-end checks. See `src/ManeFfmpeg.App/Services/DebugAutomation.cs`.
+
+## Repository info
+
+This repo follows the [Conventional Commits](https://www.conventionalcommits.org/) specification. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/ManeFunction/mane-ffmpeg)](https://github.com/ManeFunction/mane-ffmpeg/releases/latest)
+[![GitHub All Releases](https://img.shields.io/github/downloads/ManeFunction/mane-ffmpeg/total)](https://github.com/ManeFunction/mane-ffmpeg/releases)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/ManeFunction?label=Sponsor&logo=GitHubSponsors&style=flat)](https://github.com/sponsors/ManeFunction)
