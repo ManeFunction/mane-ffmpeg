@@ -23,7 +23,8 @@ public static class AppPaths
 
     public static string TempDirectory => Path.Combine(Path.GetTempPath(), LinuxName);
 
-    private static string Xdg(string variable, string fallback) =>
+    /// <summary>An XDG base directory: the variable when it holds an absolute path, else ~/<paramref name="fallback"/>.</summary>
+    internal static string Xdg(string variable, string fallback) =>
         Environment.GetEnvironmentVariable(variable) is { Length: > 0 } value && Path.IsPathRooted(value)
             ? value
             : Path.Combine(Home, fallback);

@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ManeFfmpeg.App.Services;
+using ManeFfmpeg.Core.Desktop;
 using ManeFfmpeg.Core.Mpv;
 using ManeFfmpeg.Core.Notifications;
 using ManeFfmpeg.Core.Persistence;
@@ -20,7 +21,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
         HardwareDecoding = s.HardwareDecoding;
         Notifications = s.Notifications;
         Theme = s.Theme;
+        AskToRegisterProjectFiles = s.AskToRegisterProjectFiles;
         RefreshStatus();
+        _ = RefreshProjectFilesAsync();
     }
 
     public IReadOnlyList<ThemeChoice> Themes { get; } = Enum.GetValues<ThemeChoice>();
@@ -56,6 +59,22 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool CanInstall { get; private set; }
 
+    /// <summary>Whether this copy can make itself the app that opens .mfvp projects (see <see cref="ProjectFileAssociation"/>).</summary>
+    public bool CanRegisterProjectFiles { get; } = ProjectFileAssociation.IsSupported;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ProjectFilesAction))]
+    public partial bool ProjectFilesRegistered { get; private set; }
+
+    [ObservableProperty]
+    public partial string ProjectFilesStatus { get; private set; } = "";
+
+    public string ProjectFilesAction => ProjectFilesRegistered ? "Unregister" : "Register";
+
+    /// <summary>The startup offer, which its "Do not show anymore" checkbox turns off.</summary>
+    [ObservableProperty]
+    public partial bool AskToRegisterProjectFiles { get; set; }
+
     partial void OnThemeChanged(ThemeChoice value) => App.ApplyTheme(value);
 
     public void RefreshStatus()
@@ -83,12 +102,45 @@ public sealed partial class SettingsViewModel : ViewModelBase
             HardwareDecoding = HardwareDecoding,
             Notifications = Notifications,
             Theme = Theme,
+            AskToRegisterProjectFiles = AskToRegisterProjectFiles,
         });
         await _app.LocateToolsAsync();
         RefreshStatus();
         if (mpvChanged || hwChanged)
             MpvStatus += "\nRestart the app to use the new player settings.";
         IsBusy = false;
+    }
+
+    /// <summary>Applies at once, like the other buttons here, not with Apply.</summary>
+    [RelayCommand(CanExecute = nameof(CanRegisterProjectFiles))]
+    private async Task ToggleProjectFiles()
+    {
+        try
+        {
+            if (ProjectFilesRegistered)
+                await ProjectFileAssociation.UnregisterAsync();
+            else
+                await ProjectFileAssociation.RegisterAsync();
+            await RefreshProjectFilesAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write($"Changing the .{ProjectFile.Extension} association failed: {ex.Message}");
+            ProjectFilesStatus = $"Couldn't change it: {ex.Message}";
+        }
+    }
+
+    private async Task RefreshProjectFilesAsync()
+    {
+        if (!CanRegisterProjectFiles)
+        {
+            ProjectFilesStatus = $"Only the packaged app can open .{ProjectFile.Extension} projects on double-click.";
+            return;
+        }
+        ProjectFilesRegistered = await ProjectFileAssociation.IsRegisteredAsync();
+        ProjectFilesStatus = ProjectFilesRegistered
+            ? $"Double-clicking a .{ProjectFile.Extension} project opens it in Mane FFmpeg."
+            : $"Double-clicking a .{ProjectFile.Extension} project doesn't open it in Mane FFmpeg.";
     }
 
     [RelayCommand]

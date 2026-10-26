@@ -24,6 +24,8 @@ public sealed record AppSettings
     public ThemeChoice Theme { get; set; } = ThemeChoice.Dark;
     /// <summary>Offer to install missing ffmpeg/libmpv with Homebrew when the app starts (macOS).</summary>
     public bool AskToInstallAtStartup { get; set; } = true;
+    /// <summary>Offer to make this app open .mfvp projects on double-click when the app starts.</summary>
+    public bool AskToRegisterProjectFiles { get; set; } = true;
     public List<string> RecentProjects { get; set; } = [];
     public string? LastMediaFolder { get; set; }
     public string? LastProjectFolder { get; set; }

@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
+using ManeFfmpeg.Core.Desktop;
 using ManeFfmpeg.Core.Editing;
 using ManeFfmpeg.Core.Ffmpeg;
 using ManeFfmpeg.Core.Model;
@@ -490,6 +491,26 @@ public class ProgressParserTests
         Assert.Equal(2.5, seen[0].Speed);
         Assert.True(seen[1].Finished);
         Assert.Null(seen[1].Speed);
+    }
+}
+
+public class ProjectFileAssociationTests
+{
+    [Theory]
+    [InlineData("/opt/mane/ManeFfmpeg", "\"/opt/mane/ManeFfmpeg\"")]
+    [InlineData("/home/a b/Mane FFmpeg/ManeFfmpeg", "\"/home/a b/Mane FFmpeg/ManeFfmpeg\"")]
+    [InlineData("/x/$HOME`id`/100%/ManeFfmpeg", "\"/x/\\\\$HOME\\\\`id\\\\`/100%%/ManeFfmpeg\"")]
+    [InlineData("/x/a\\b\"c", "\"/x/a\\\\\\\\b\\\\\"c\"")]
+    public void Quotes_the_executable_for_a_desktop_entry(string path, string expected) =>
+        Assert.Equal(expected, ProjectFileAssociation.ExecArgument(path));
+
+    [Fact]
+    public void Removes_only_the_project_type_from_mimeapps_list()
+    {
+        const string list = "[Default Applications]\nvideo/mp4=vlc.desktop\napplication/x-mane-ffmpeg-project=mane-ffmpeg.desktop\n\n" +
+                            "[Added Associations]\napplication/x-mane-ffmpeg-project=mane-ffmpeg.desktop;\napplication/x-mane-ffmpeg-project-old=x.desktop;\n";
+        Assert.Equal("[Default Applications]\nvideo/mp4=vlc.desktop\n\n[Added Associations]\napplication/x-mane-ffmpeg-project-old=x.desktop;\n",
+            ProjectFileAssociation.WithoutAssociations(list, "application/x-mane-ffmpeg-project"));
     }
 }
 

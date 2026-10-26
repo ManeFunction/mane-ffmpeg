@@ -8,6 +8,7 @@ using Avalonia.Styling;
 using ManeFfmpeg.App.Services;
 using ManeFfmpeg.App.ViewModels;
 using ManeFfmpeg.App.Views;
+using ManeFfmpeg.Core.Desktop;
 using ManeFfmpeg.Core.Persistence;
 
 namespace ManeFfmpeg.App;
@@ -51,6 +52,7 @@ public partial class App : Application
         // Before opening files, so they can be read with what gets installed.
         if (SetupViewModel.ShouldAskAtStartup)
             await new SetupWindow().ShowDialog(first);
+        await OfferProjectFileAssociationAsync(first);
         // macOS turns file arguments into "open document" events (OnActivated) as well; open them only once.
         var files = OperatingSystem.IsMacOS() ? [] : args.Where(File.Exists).ToList();
         if (files.Count > 0)
@@ -58,6 +60,32 @@ public partial class App : Application
 #if DEBUG
         DebugAutomation.StartIfRequested(first);
 #endif
+    }
+
+    private static async Task OfferProjectFileAssociationAsync(Window owner)
+    {
+        var settings = AppServices.Instance.Settings;
+        if (!settings.Current.AskToRegisterProjectFiles || !ProjectFileAssociation.IsSupported
+            || await ProjectFileAssociation.IsRegisteredAsync())
+            return;
+        AppLog.Write($"Offering to open .{ProjectFile.Extension} files with this app");
+        var doNotShow = new CheckBox { Content = "Do not show anymore" };
+        var choice = await Dialogs.AskAsync(owner, $"Open .{ProjectFile.Extension} projects with Mane FFmpeg?",
+            "Projects don't open in Mane FFmpeg on double-click yet. You can change this later in Settings.",
+            doNotShow, "Register", "Not Now");
+        if (doNotShow.IsChecked == true)
+            settings.Update(s => s with { AskToRegisterProjectFiles = false });
+        if (choice != 0)
+            return;
+        try
+        {
+            await ProjectFileAssociation.RegisterAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write($"Registering .{ProjectFile.Extension} files failed: {ex.Message}");
+            await Dialogs.InfoAsync(owner, "Couldn't register project files", ex.Message);
+        }
     }
 
     /// <summary>macOS "open document" events (double-clicked .mfvp files, files dropped on the Dock icon).</summary>

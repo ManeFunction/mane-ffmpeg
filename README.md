@@ -81,7 +81,7 @@ scripts/package-linux.sh                           # → build/linux-<rid>/mane-
 
 The preview player's tests run against a headless libmpv and are skipped when it can't be loaded. With IINA's copy on macOS, start the run with `DYLD_FALLBACK_LIBRARY_PATH=/Applications/IINA.app/Contents/Frameworks:$HOME/lib:/usr/local/lib:/usr/lib dotnet test`.
 
-The packaged apps are self-contained, so no .NET install is needed to run them. The macOS bundle registers the `.mfvp` file type, so double-clicking a project opens it.
+The packaged apps are self-contained, so no .NET install is needed to run them. The macOS bundle registers the `.mfvp` file type, so double-clicking a project opens it. **Settings** has a button that registers or unregisters `.mfvp` projects with the app. On macOS it sets the Launch Services default; on Linux it installs the mime type and sets the default app for the current user. When projects aren't registered, the app offers to register them at startup, after the setup step. That prompt has a "Do not show anymore" checkbox, which **Settings** can undo.
 
 ## How exports work
 

@@ -36,6 +36,13 @@
             <TextBlock Text="Theme" VerticalAlignment="Center" />
             <ComboBox ItemsSource="{Binding Themes}" SelectedItem="{Binding Theme}" MinWidth="120" />
         </StackPanel>
+        <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="{Binding ProjectFilesStatus}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <Button Grid.Column="1" Content="{Binding ProjectFilesAction}" Command="{Binding ToggleProjectFilesCommand}"
+                    MinWidth="90" HorizontalContentAlignment="Center" />
+        </Grid>
+        <CheckBox Content="Offer to register project files at startup" IsChecked="{Binding AskToRegisterProjectFiles}"
+                  IsEnabled="{Binding CanRegisterProjectFiles}" />
 
         <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
             <Button Content="Install Missing Components…" Click="OnInstallClicked" IsVisible="{Binding CanInstall}" />
