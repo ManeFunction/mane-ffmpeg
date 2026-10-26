@@ -171,6 +171,20 @@ internal static class DebugAutomation
                         target.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyUpEvent, Key = key, Source = target });
                         break;
                     }
+                    case "text":
+                    {
+                        // text <x:Name of a text box> <text>: replaces its text, as typing would (bindings aren't pushed)
+                        var parts = arg.Split(' ', 2);
+                        var box = window.FindControl<TextBox>(parts[0]) ?? throw new InvalidOperationException($"no text box {parts[0]}");
+                        box.Text = parts.Length > 1 ? parts[1] : "";
+                        break;
+                    }
+                    case "focused":
+                    {
+                        var focused = window.FocusManager?.GetFocusedElement();
+                        Console.WriteLine($"[focused] {focused?.GetType().Name ?? "nothing"} {(focused as Control)?.Name}");
+                        break;
+                    }
                     case "key":
                         window.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Enum.Parse<Key>(arg), Source = window });
                         break;

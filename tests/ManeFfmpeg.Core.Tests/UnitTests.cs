@@ -52,6 +52,39 @@ public class TimeFormatTests
     }
 }
 
+public class ArithmeticTests
+{
+    [Theory]
+    [InlineData("0-700", -700)]
+    [InlineData(" -700 ", -700)]
+    [InlineData("−120", -120)]
+    [InlineData("100 + 20.5", 120.5)]
+    [InlineData("1,5*2", 3)]
+    [InlineData("2*(40+1)", 82)]
+    [InlineData("1000/3*3", 1000)]
+    [InlineData("10-2-3", 5)]
+    [InlineData("-(5-8)", 3)]
+    [InlineData("--4", 4)]
+    [InlineData("3 × 4 ÷ 2", 6)]
+    public void Evaluates_simple_arithmetic(string text, double expected)
+    {
+        Assert.True(Arithmetic.TryEvaluate(text, out var value));
+        Assert.Equal(expected, value, 9);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("0-")]
+    [InlineData("abc")]
+    [InlineData("(1+2")]
+    [InlineData("1+2)")]
+    [InlineData("1..2")]
+    [InlineData("5/0")]
+    [InlineData("12 ms")]
+    public void Refuses_what_is_not_a_finite_number(string text) =>
+        Assert.False(Arithmetic.TryEvaluate(text, out _));
+}
+
 public class PresetArgumentsTests
 {
     [Fact]

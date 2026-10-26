@@ -156,8 +156,19 @@
                                 <TextBlock Text="Audio offset (ms) — positive plays audio later" Classes="dim" TextWrapping="Wrap" />
                                 <Grid ColumnDefinitions="Auto,*,Auto">
                                     <Button Classes="tool" Content="−10" Command="{Binding NudgeAudioEarlierCommand}" />
-                                    <NumericUpDown Grid.Column="1" Value="{Binding AudioOffsetMs}" Increment="1" FormatString="0.#"
-                                                   Minimum="-60000" Maximum="60000" Margin="4,0" />
+                                    <!-- A NumericUpDown would apply each keystroke; this applies the typed text (which may be
+                                         arithmetic, such as 0-700) on Enter or when the field loses focus. -->
+                                    <ButtonSpinner Grid.Column="1" Margin="4,0" Spin="OnAudioOffsetSpin" IsTabStop="False"
+                                                   Background="{DynamicResource TextControlBackground}"
+                                                   BorderBrush="{DynamicResource TextControlBorderBrush}"
+                                                   BorderThickness="{DynamicResource TextControlBorderThemeThickness}"
+                                                   CornerRadius="{DynamicResource ControlCornerRadius}"
+                                                   MinHeight="{DynamicResource TextControlThemeMinHeight}"
+                                                   Padding="0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                                        <TextBox x:Name="AudioOffsetBox" Text="{Binding AudioOffsetText, UpdateSourceTrigger=LostFocus}"
+                                                 Background="Transparent" BorderBrush="Transparent" Margin="-1" MinWidth="0"
+                                                 AcceptsReturn="False" TextWrapping="NoWrap" FontFeatures="tnum" />
+                                    </ButtonSpinner>
                                     <Button Grid.Column="2" Classes="tool" Content="+10" Command="{Binding NudgeAudioLaterCommand}" />
                                 </Grid>
                                 <Grid ColumnDefinitions="*,*,*" >

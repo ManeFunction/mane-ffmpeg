@@ -1,3 +1,4 @@
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ManeFfmpeg.Core.Editing;
@@ -79,16 +80,24 @@ public sealed partial class MainWindowViewModel
         }
     }
 
-    /// <summary>Audio offset of the selected clip(s), in milliseconds; positive = audio later.</summary>
-    public decimal? AudioOffsetMs
+    /// <summary>
+    /// Audio offset of the selected clip(s), in milliseconds; positive = audio later.
+    /// Takes simple arithmetic too, so "0-700" sets −700 ms.
+    /// </summary>
+    public string AudioOffsetText
     {
-        get => PrimaryClip is { } c ? (decimal)Math.Round(c.AudioOffset.TotalMilliseconds, 1) : null;
+        get => PrimaryClip is { } c
+            ? Math.Round(c.AudioOffset.TotalMilliseconds, 1).ToString("0.#", CultureInfo.InvariantCulture)
+            : "";
         set
         {
-            if (value is not { } ms || Timeline.Selection.Count == 0)
-                return;
-            var offset = TimeSpan.FromTicks((long)Math.Round((double)ms * TimeSpan.TicksPerMillisecond));
-            CommitTimeline(t => TimelineEditor.SetAudioOffset(t, Timeline.Selection, offset));
+            if (Timeline.Selection.Count > 0 && Arithmetic.TryEvaluate(value, out var ms))
+            {
+                var max = TimelineEditor.MaxAudioOffset.TotalMilliseconds;
+                var offset = TimeSpan.FromTicks((long)Math.Round(Math.Clamp(ms, -max, max) * TimeSpan.TicksPerMillisecond));
+                CommitTimeline(t => TimelineEditor.SetAudioOffset(t, Timeline.Selection, offset));
+            }
+            OnPropertyChanged(nameof(AudioOffsetText));
         }
     }
 
@@ -105,7 +114,7 @@ public sealed partial class MainWindowViewModel
         OnPropertyChanged(nameof(SelectionDetails));
         OnPropertyChanged(nameof(ClipIn));
         OnPropertyChanged(nameof(ClipOut));
-        OnPropertyChanged(nameof(AudioOffsetMs));
+        OnPropertyChanged(nameof(AudioOffsetText));
         OnPropertyChanged(nameof(AudioOffsetHint));
     }
 

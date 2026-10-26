@@ -46,6 +46,7 @@ public partial class MainWindow : Window, IMainWindowView
         AddHandler(DragDrop.DropEvent, OnDrop);
         AddHandler(KeyDownEvent, OnWindowKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, OnWindowKeyUp, RoutingStrategies.Tunnel);
+        AudioOffsetBox.AddHandler(KeyDownEvent, OnAudioOffsetKeyDown, RoutingStrategies.Tunnel);
         Deactivated += (_, _) => _shortcutKeysDown.Clear();
         Closing += OnClosing;
         viewModel.Preview.PropertyChanged += (_, e) =>
@@ -277,6 +278,29 @@ public partial class MainWindow : Window, IMainWindowView
     {
         if (_shortcutKeysDown.Remove(e.Key))
             e.Handled = true;
+    }
+
+    // ---- Audio offset field -----------------------------------------------------------------------
+
+    // Enter applies the typed offset and Escape drops it; either way the field gives up focus,
+    // so the single-key shortcuts work again straight away.
+    private void OnAudioOffsetKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Enter or Key.Escape))
+            return;
+        if (e.Key == Key.Enter)
+            ViewModel.AudioOffsetText = AudioOffsetBox.Text ?? "";
+        else
+            AudioOffsetBox.Text = ViewModel.AudioOffsetText;
+        TimelineView.Focus();
+        e.Handled = true;
+    }
+
+    // The spinner arrows, Up/Down keys and mouse wheel step by 1 ms from what's typed in the field.
+    private void OnAudioOffsetSpin(object? sender, SpinEventArgs e)
+    {
+        ViewModel.AudioOffsetText = AudioOffsetBox.Text ?? "";
+        ViewModel.NudgeAudio(TimeSpan.FromMilliseconds(e.Direction == SpinDirection.Increase ? 1 : -1));
     }
 
     // ---- Drag and drop ----------------------------------------------------------------------------
