@@ -8,6 +8,6 @@
     <InvariantGlobalization>false</InvariantGlobalization>
     <Company>Mane Function</Company>
     <Product>Mane FFmpeg</Product>
-    <Version>0.1.0</Version>
+    <Version>0.9.0</Version>
   </PropertyGroup>
 </Project>
