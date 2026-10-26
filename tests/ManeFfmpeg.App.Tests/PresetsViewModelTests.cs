@@ -103,6 +103,24 @@ public class PresetsViewModelTests
     }
 
     [Fact]
+    public async Task Restoring_built_ins_asks_first()
+    {
+        var confirm = false;
+        var vm = new PresetsViewModel { ConfirmRestore = () => Task.FromResult(confirm) };
+        var builtIn = Preset.PlaneCopy;
+        vm.ListSelection = vm.Presets.First(p => p.Id == builtIn.Id);
+        vm.Name = "renamed";
+        vm.SaveCommand.Execute(null);
+
+        await vm.RestoreBuiltInsCommand.ExecuteAsync(null);
+        Assert.Equal("renamed", vm.Presets.First(p => p.Id == builtIn.Id).Name);
+
+        confirm = true;
+        await vm.RestoreBuiltInsCommand.ExecuteAsync(null);
+        Assert.Equal(builtIn.Name, vm.Presets.First(p => p.Id == builtIn.Id).Name);
+    }
+
+    [Fact]
     public async Task Adding_a_preset_asks_first()
     {
         var (vm, asked) = Edited(answer: 2);

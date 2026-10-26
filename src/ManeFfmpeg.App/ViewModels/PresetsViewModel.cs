@@ -31,6 +31,9 @@ public sealed partial class PresetsViewModel : ViewModelBase
     /// </summary>
     public Func<Task<int>>? AskAboutEdits { get; set; }
 
+    /// <summary>Asks before the built-in presets are restored; true goes ahead. Without it, they're restored at once.</summary>
+    public Func<Task<bool>>? ConfirmRestore { get; set; }
+
     /// <summary>The list's selection. Choosing another preset with unsaved edits asks first.</summary>
     public Preset? ListSelection
     {
@@ -216,6 +219,8 @@ public sealed partial class PresetsViewModel : ViewModelBase
     [RelayCommand]
     private async Task RestoreBuiltIns()
     {
+        if (ConfirmRestore is not null && !await ConfirmRestore())
+            return;
         if (!await ResolveEditsAsync())
             return;
         _app.Presets.RestoreBuiltIns();
