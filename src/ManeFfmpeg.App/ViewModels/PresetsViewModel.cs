@@ -23,6 +23,7 @@ public sealed partial class PresetsViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelection), nameof(ListSelection))]
+    [NotifyCanExecuteChangedFor(nameof(MoveUpCommand), nameof(MoveDownCommand))]
     public partial Preset? Selected { get; set; }
 
     /// <summary>
@@ -112,6 +113,8 @@ public sealed partial class PresetsViewModel : ViewModelBase
         Selected = Presets.FirstOrDefault(p => p.Id == selectId) ?? Presets.FirstOrDefault();
         // The list lost its selection while refilling; an unchanged Selected wouldn't tell it to select again.
         OnPropertyChanged(nameof(ListSelection));
+        MoveUpCommand.NotifyCanExecuteChanged();
+        MoveDownCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnSelectedChanged(Preset? value)
@@ -214,6 +217,25 @@ public sealed partial class PresetsViewModel : ViewModelBase
         Reload(Presets.ElementAtOrDefault(Math.Max(0, index - 1))?.Id);
         if (index > 0 && index - 1 < Presets.Count)
             Selected = Presets[index - 1];
+    }
+
+    private bool CanMoveUp() => Selected is not null && Presets.IndexOf(Selected) > 0;
+
+    private bool CanMoveDown() => Selected is not null && Presets.IndexOf(Selected) is var i && i >= 0 && i < Presets.Count - 1;
+
+    /// <summary>Moves the selected preset up the list. Unsaved edits stay in the editor.</summary>
+    [RelayCommand(CanExecute = nameof(CanMoveUp))]
+    private void MoveUp() => Move(-1);
+
+    [RelayCommand(CanExecute = nameof(CanMoveDown))]
+    private void MoveDown() => Move(1);
+
+    private void Move(int offset)
+    {
+        if (Selected is not { } preset)
+            return;
+        _app.Presets.Move(preset.Id, Presets.IndexOf(preset) + offset);
+        Reload(preset.Id);
     }
 
     [RelayCommand]

@@ -45,6 +45,8 @@
             <StreamGeometry x:Key="IconToStart">M5,5 H7 V19 H5 Z M13,5 L8,12 L13,19 Z M20,5 L15,12 L20,19 Z</StreamGeometry>
             <StreamGeometry x:Key="IconToEnd">M17,5 H19 V19 H17 Z M11,5 L16,12 L11,19 Z M4,5 L9,12 L4,19 Z</StreamGeometry>
             <StreamGeometry x:Key="IconSpeaker">M4,9 H8 L13,5 V19 L8,15 H4 Z M15.5,8.5 C17,10 17,14 15.5,15.5 L16.9,16.9 C19,14.8 19,9.2 16.9,7.1 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconArrowUp">M12,4 L19,11 L17.6,12.4 L13,7.8 V20 H11 V7.8 L6.4,12.4 L5,11 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconArrowDown">M12,20 L5,13 L6.4,11.6 L11,16.2 V4 H13 V16.2 L17.6,11.6 L19,13 Z</StreamGeometry>
             <StreamGeometry x:Key="IconClose">M7,5.25 L12,10.25 L17,5.25 L18.75,7 L13.75,12 L18.75,17 L17,18.75 L12,13.75 L7,18.75 L5.25,17 L10.25,12 L5.25,7 Z</StreamGeometry>
             <SolidColorBrush x:Key="AccentWarnBrush" Color="#F5A623" />
             <SolidColorBrush x:Key="ErrorBrush" Color="#FF6B6B" />

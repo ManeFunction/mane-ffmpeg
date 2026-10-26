@@ -121,6 +121,26 @@ public class PresetsViewModelTests
     }
 
     [Fact]
+    public void Moving_a_preset_keeps_it_selected_with_its_edits()
+    {
+        var vm = new PresetsViewModel();
+        var first = vm.Presets[0];
+        vm.ListSelection = first;
+        Assert.False(vm.MoveUpCommand.CanExecute(null));
+        vm.Arguments += " -metadata comment=moved";
+
+        vm.MoveDownCommand.Execute(null);
+        Assert.Equal(first.Id, vm.Presets[1].Id);
+        Assert.Equal(first.Id, vm.ListSelection?.Id);
+        Assert.True(vm.IsModified);
+        Assert.EndsWith("comment=moved", vm.Arguments);
+
+        vm.MoveUpCommand.Execute(null);
+        Assert.Equal(first.Id, vm.Presets[0].Id);
+        vm.RevertCommand.Execute(null);
+    }
+
+    [Fact]
     public async Task Adding_a_preset_asks_first()
     {
         var (vm, asked) = Edited(answer: 2);

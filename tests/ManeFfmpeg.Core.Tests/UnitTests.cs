@@ -386,6 +386,25 @@ public class PresetStoreTests
         Assert.Equal("-c:v libx265 -crf 28 -preset slow -c:a copy", store.Presets[1].Arguments);
     }
 
+    [Fact]
+    public void Moved_preset_keeps_its_place_after_reloading()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");
+        try
+        {
+            var store = new PresetStore(path);
+            store.Move(Preset.PlaneCopy.Id, 0);
+            Assert.Equal(["plane copy", "for storage", "harsh"], store.Presets.Select(p => p.Name));
+            // Past the end means last.
+            store.Move(Preset.ForStorage.Id, 99);
+            Assert.Equal(["plane copy", "harsh", "for storage"], new PresetStore(path).Presets.Select(p => p.Name));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

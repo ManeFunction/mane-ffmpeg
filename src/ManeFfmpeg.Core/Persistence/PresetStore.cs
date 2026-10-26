@@ -55,6 +55,19 @@ public sealed class PresetStore
         Persist();
     }
 
+    /// <summary>Moves a preset to another place in the list (and in the export bar's menu).</summary>
+    public void Move(string id, int index)
+    {
+        var from = _presets.FindIndex(p => p.Id == id);
+        index = Math.Clamp(index, 0, _presets.Count - 1);
+        if (from < 0 || from == index)
+            return;
+        var preset = _presets[from];
+        _presets.RemoveAt(from);
+        _presets.Insert(index, preset);
+        Persist();
+    }
+
     public void Delete(string id)
     {
         if (_presets.RemoveAll(p => p.Id == id) > 0)
