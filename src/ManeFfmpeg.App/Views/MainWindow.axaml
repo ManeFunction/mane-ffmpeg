@@ -136,7 +136,7 @@
                     <Border x:Name="InspectorPanel" Grid.Row="1" Classes="panel" Padding="10" Margin="0,8,0,0">
                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel Spacing="8">
-                            <TextBlock Text="Clip" Classes="title" />
+                            <TextBlock Text="Selection" Classes="title" />
                             <TextBlock Text="{Binding SelectionTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                             <TextBlock Text="{Binding SelectionDetails}" Classes="dim" TextWrapping="Wrap" />
                             <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto" IsVisible="{Binding HasSelection}">
