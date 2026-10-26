@@ -132,6 +132,15 @@ internal static class DebugAutomation
                     case "export-async":
                         _ = vm.Export.ExportCommand.ExecuteAsync(null);
                         break;
+                    case "export-pause":
+                        vm.Export.PauseExportCommand.Execute(null);
+                        break;
+                    case "export-resume":
+                        vm.Export.ResumeExportCommand.Execute(null);
+                        break;
+                    case "export-progress":
+                        Console.WriteLine($"[progress] {vm.Export.ExportProgressText} paused={vm.Export.IsExportPaused} status={vm.Export.ExportStatus}");
+                        break;
                     case "drag":
                     {
                         // drag <ruler|video|audio> <fromSeconds> <toSeconds> [shift]

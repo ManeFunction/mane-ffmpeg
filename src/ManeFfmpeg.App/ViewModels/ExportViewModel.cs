@@ -21,7 +21,14 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
 
     private readonly DispatcherTimer _planTimer;
     private CancellationTokenSource? _exportCts;
+    private ExportRunner? _runner;
+    private SleepInhibitor? _keepAwake;
+    private string? _keepAwakeReason;
     private string? _lastOutputPath;
+
+    /// <summary>The running export's latest progress, or what it's doing before ffmpeg starts.</summary>
+    private ExportProgress? _progress;
+    private string? _preparing;
 
     /// <summary>An existing output file the user agreed to replace (in the save dialog or when asked).</summary>
     private string? _confirmedOutputPath;
@@ -43,8 +50,12 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsIdle))]
-    [NotifyCanExecuteChangedFor(nameof(ExportCommand), nameof(CancelExportCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ExportCommand), nameof(CancelExportCommand), nameof(PauseExportCommand))]
     public partial bool IsExporting { get; private set; }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(PauseExportCommand), nameof(ResumeExportCommand))]
+    public partial bool IsExportPaused { get; private set; }
 
     [ObservableProperty]
     public partial double ExportProgress { get; private set; }
@@ -71,6 +82,8 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
     public partial bool ShowCommand { get; set; }
 
     public bool IsIdle => !IsExporting;
+
+    private bool CanPauseExport => IsExporting && !IsExportPaused;
 
     public string OutputDisplay => OutputPath ?? (DefaultOutputPath() is { } p ? $"{p}  (automatic)" : "Choose where to save…");
 
@@ -281,15 +294,18 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         ExportLog = null;
         ExportStatus = null;
         ExportProgress = 0;
-        ExportProgressText = "Preparing…";
+        _progress = null;
+        ShowPreparing("Preparing…");
         _exportCts = new CancellationTokenSource();
+        // Created before planning, so a pause while finding keyframes holds the export too.
+        var runner = _runner = new ExportRunner(tools);
         var workDir = Path.Combine(AppPaths.TempDirectory, "export-" + Guid.NewGuid().ToString("N")[..8]);
-        using var keepAwake = SleepInhibitor.Acquire($"Exporting {Path.GetFileName(output)}");
+        _keepAwakeReason = $"Exporting {Path.GetFileName(output)}";
+        _keepAwake = SleepInhibitor.Acquire(_keepAwakeReason);
         try
         {
-            var plan = await PlanAsync(output, workDir, status => ExportProgressText = status);
+            var plan = await PlanAsync(output, workDir, ShowPreparing);
             var progress = new Progress<ExportProgress>(OnExportProgress);
-            var runner = new ExportRunner(tools);
             var token = _exportCts.Token;
             AppLog.Write($"Export {plan.Mode} → {output}\n{plan.CommandText(tools.Ffmpeg)}");
             var result = await Task.Run(() => runner.RunAsync(plan, progress, token));
@@ -324,19 +340,44 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         finally
         {
             IsExporting = false;
+            IsExportPaused = false;
+            _runner = null;
+            _keepAwake?.Dispose();
+            _keepAwake = null;
             _exportCts?.Dispose();
             _exportCts = null;
         }
     }
 
+    private void ShowPreparing(string status)
+    {
+        _preparing = status;
+        ShowProgressText();
+    }
+
     private void OnExportProgress(ExportProgress p)
     {
         ExportProgress = p.Fraction * 100;
-        var parts = new List<string> { $"{p.Fraction * 100:0}%", p.StepTitle };
-        if (p.Remaining is { } left && p.Fraction > 0.01)
-            parts.Add($"{FormatElapsed(left)} left");
-        if (p.Speed is { } speed)
-            parts.Add(string.Create(CultureInfo.InvariantCulture, $"{speed:0.0#}×"));
+        _progress = p;
+        ShowProgressText();
+    }
+
+    private void ShowProgressText()
+    {
+        var parts = new List<string>();
+        if (IsExportPaused)
+            parts.Add("Paused");
+        if (_progress is { } p)
+        {
+            parts.Add($"{p.Fraction * 100:0}%");
+            parts.Add(p.StepTitle);
+            if (!IsExportPaused && p.Remaining is { } left && p.Fraction > 0.01)
+                parts.Add($"{FormatElapsed(left)} left");
+            if (!IsExportPaused && p.Speed is { } speed)
+                parts.Add(string.Create(CultureInfo.InvariantCulture, $"{speed:0.0#}×"));
+        }
+        else if (_preparing is not null)
+            parts.Add(_preparing);
         ExportProgressText = string.Join(" · ", parts);
     }
 
@@ -355,6 +396,27 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
 
     private static string FormatElapsed(TimeSpan t) =>
         t.TotalHours >= 1 ? $"{(int)t.TotalHours}h {t.Minutes:D2}m" : t.TotalMinutes >= 1 ? $"{(int)t.TotalMinutes}m {t.Seconds:D2}s" : $"{Math.Max(1, (int)Math.Round(t.TotalSeconds))}s";
+
+    [RelayCommand(CanExecute = nameof(CanPauseExport))]
+    private void PauseExport()
+    {
+        _runner?.Pause();
+        IsExportPaused = true;
+        // A paused export doesn't need the computer awake.
+        _keepAwake?.Dispose();
+        _keepAwake = null;
+        ShowProgressText();
+    }
+
+    [RelayCommand(CanExecute = nameof(IsExportPaused))]
+    private void ResumeExport()
+    {
+        if (_keepAwakeReason is not null)
+            _keepAwake ??= SleepInhibitor.Acquire(_keepAwakeReason);
+        IsExportPaused = false;
+        _runner?.Resume();
+        ShowProgressText();
+    }
 
     [RelayCommand(CanExecute = nameof(IsExporting))]
     private void CancelExport() => _exportCts?.Cancel();

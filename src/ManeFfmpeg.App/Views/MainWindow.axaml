@@ -19,7 +19,7 @@
         <!-- Export bar -->
         <Border DockPanel.Dock="Bottom" Classes="panel" Margin="8,0,8,8" Padding="10,8">
             <StackPanel Spacing="8">
-                <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" >
+                <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" >
                     <TextBlock Grid.Column="0" Text="Preset" VerticalAlignment="Center" Classes="title" Margin="0,0,8,0" />
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="0,0,12,0">
                         <ComboBox ItemsSource="{Binding Export.Presets}" SelectedItem="{Binding Export.SelectedPreset}" MinWidth="170"
@@ -46,7 +46,14 @@
                     </Grid>
                     <Button Grid.Column="3" Classes="accent" Content="Export" Margin="12,0,0,0" Padding="22,6"
                             Command="{Binding Export.ExportCommand}" IsVisible="{Binding Export.IsIdle}" />
-                    <Button Grid.Column="4" Content="Cancel" Margin="8,0,0,0" Padding="16,6"
+                    <!-- Same width either way, so the path field doesn't jump when pausing -->
+                    <Panel Grid.Column="4" Margin="12,0,0,0" IsVisible="{Binding Export.IsExporting}">
+                        <Button Content="Pause" Padding="16,6" MinWidth="88" HorizontalContentAlignment="Center"
+                                Command="{Binding Export.PauseExportCommand}" IsVisible="{Binding !Export.IsExportPaused}" />
+                        <Button Content="Resume" Padding="16,6" MinWidth="88" HorizontalContentAlignment="Center"
+                                Command="{Binding Export.ResumeExportCommand}" IsVisible="{Binding Export.IsExportPaused}" />
+                    </Panel>
+                    <Button Grid.Column="5" Content="Cancel" Margin="8,0,0,0" Padding="16,6"
                             Command="{Binding Export.CancelExportCommand}" IsVisible="{Binding Export.IsExporting}" />
                 </Grid>
 

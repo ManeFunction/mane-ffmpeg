@@ -106,6 +106,8 @@ public partial class MainWindow : Window, IMainWindowView
             Item("Save Project As…", vm.SaveAsCommand, Key.S, Cmd | KeyModifiers.Shift),
             new NativeMenuItemSeparator(),
             Item("Export", vm.Export.ExportCommand, Key.E, Cmd),
+            Item("Pause Export", vm.Export.PauseExportCommand),
+            Item("Resume Export", vm.Export.ResumeExportCommand),
             Item("Cancel Export", vm.Export.CancelExportCommand),
         };
         var closeItem = new NativeMenuItem("Close Window") { Gesture = new KeyGesture(Key.W, Cmd), Command = new RelayCommand(Close) };

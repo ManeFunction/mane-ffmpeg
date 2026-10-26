@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using CliWrap;
+using CliWrap.Buffered;
 using ManeFfmpeg.Core.Ffmpeg;
 using ManeFfmpeg.Core.Media;
 using ManeFfmpeg.Core.Model;
@@ -17,6 +20,8 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
         Arguments = "-c:v libx264 -preset ultrafast -crf 30 -c:a copy",
         Extension = "mp4",
     };
+
+    private static readonly Preset SlowEncode = Preset.ForStorage with { Arguments = "-c:v libx265 -preset veryslow -c:a copy" };
 
     private static Clip C(string source, double inS, double outS, double offsetMs = 0) => new()
     {
@@ -221,24 +226,129 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
         AssertCopyTimes([0.9, 2.9], [1.02, 3.02], flashes, beeps);
     }
 
+    /// <summary>A plan for <see cref="FfmpegFixture.Sync30"/>, writing <paramref name="name"/>.mp4 without running it.</summary>
+    private async Task<ExportPlan> PlanAsync(Preset preset, string name, params Clip[] clips)
+    {
+        var infos = new Dictionary<string, MediaInfo> { ["a"] = await media.ProbeAsync(media.Sync30) };
+        return ExportPlanner.Plan(new ExportJob
+        {
+            State = new ProjectState([new SourceMedia { Id = "a", Path = media.Sync30 }], new Timeline([.. clips])),
+            Media = infos, Preset = preset,
+            OutputPath = Path.Combine(media.Directory, name + ".mp4"), WorkDirectory = Path.Combine(media.Directory, "work-" + name),
+        });
+    }
+
+    /// <summary>Keeps every report as it arrives, on ffmpeg's output thread.</summary>
+    private sealed class ProgressLog : IProgress<ExportProgress>
+    {
+        private readonly List<ExportProgress> _reports = [];
+
+        public int Count
+        {
+            get
+            {
+                lock (_reports)
+                    return _reports.Count;
+            }
+        }
+
+        public TimeSpan Done
+        {
+            get
+            {
+                lock (_reports)
+                    return _reports.LastOrDefault()?.Done ?? TimeSpan.Zero;
+            }
+        }
+
+        public void Report(ExportProgress value)
+        {
+            lock (_reports)
+                _reports.Add(value);
+        }
+    }
+
+    /// <summary>Pids of the processes whose command line mentions <paramref name="text"/>.</summary>
+    private static async Task<string> ProcessesMentioningAsync(string text) =>
+        (await Cli.Wrap("pgrep").WithArguments(["-f", text]).WithValidation(CommandResultValidation.None).ExecuteBufferedAsync())
+        .StandardOutput.Trim();
+
     [FfmpegFact]
     public async Task Cancel_removes_partial_output()
     {
-        var infos = new Dictionary<string, MediaInfo> { ["a"] = await media.ProbeAsync(media.Sync30) };
-        var output = Path.Combine(media.Directory, "cancelled.mp4");
-        var work = Path.Combine(media.Directory, "work-cancel");
-        var slow = Preset.ForStorage with { Arguments = "-c:v libx265 -preset veryslow -c:a copy" };
-        var plan = ExportPlanner.Plan(new ExportJob
-        {
-            State = new ProjectState([new SourceMedia { Id = "a", Path = media.Sync30 }], new Timeline([C("a", 0.5, 11.0), C("a", 0, 0.4)])),
-            Media = infos, Preset = slow, OutputPath = output, WorkDirectory = work,
-        });
+        var plan = await PlanAsync(SlowEncode, "cancelled", C("a", 0.5, 11.0), C("a", 0, 0.4));
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1.5));
-        var progress = new List<ExportProgress>();
-        var result = await new ExportRunner(FfmpegFixture.Tools!).RunAsync(plan, new Progress<ExportProgress>(progress.Add), cts.Token);
+        var result = await new ExportRunner(FfmpegFixture.Tools!).RunAsync(plan, new ProgressLog(), cts.Token);
         Assert.Equal(ExportOutcome.Cancelled, result.Outcome);
-        Assert.False(File.Exists(output));
-        Assert.False(Directory.Exists(work));
+        Assert.False(File.Exists(plan.OutputPath));
+        Assert.False(Directory.Exists(plan.WorkDirectory));
+    }
+
+    [FfmpegFact]
+    public async Task Pause_freezes_ffmpeg_and_resume_finishes_the_export()
+    {
+        var plan = await PlanAsync(SlowEncode, "paused", C("a", 0.5, 6.0), C("a", 0, 0.4));
+        var runner = new ExportRunner(FfmpegFixture.Tools!);
+        var progress = new ProgressLog();
+        var wall = Stopwatch.StartNew();
+        var run = Task.Run(() => runner.RunAsync(plan, progress, CancellationToken.None));
+        await Wait.Until(() => progress.Done > TimeSpan.Zero, "ffmpeg's first progress");
+
+        runner.Pause();
+        // Output ffmpeg wrote just before it stopped may still be in the pipe.
+        await Task.Delay(300);
+        var frozen = progress.Done;
+        await Task.Delay(1500);
+        Assert.Equal(frozen, progress.Done);
+        Assert.False(run.IsCompleted);
+        // Starting another process still works (CliWrap starts it before returning the task).
+        await Task.Run(() => media.ProbeAsync(media.Sync30)).WaitAsync(TimeSpan.FromSeconds(10));
+
+        runner.Resume();
+        var result = await run;
+        Assert.True(result.Outcome == ExportOutcome.Succeeded, $"{result.Message}\n{result.Log}");
+        Assert.True(wall.Elapsed - result.Elapsed >= TimeSpan.FromSeconds(1.7), $"elapsed {result.Elapsed} of {wall.Elapsed}");
+        Assert.InRange((await media.ProbeAsync(plan.OutputPath)).Duration.TotalSeconds, 5.85, 5.95);
+    }
+
+    [FfmpegFact]
+    public async Task Pause_before_the_run_holds_the_first_step()
+    {
+        var plan = await PlanAsync(FastEncode, "paused-early", C("a", 1.0, 4.0), C("a", 5.0, 6.0));
+        var runner = new ExportRunner(FfmpegFixture.Tools!);
+        var progress = new ProgressLog();
+        var wall = Stopwatch.StartNew();
+        runner.Pause();
+        var run = Task.Run(() => runner.RunAsync(plan, progress, CancellationToken.None));
+        await Task.Delay(1000);
+        Assert.False(run.IsCompleted);
+        Assert.Equal(0, progress.Count);
+        Assert.False(File.Exists(plan.OutputPath));
+
+        runner.Resume();
+        var result = await run;
+        Assert.True(result.Outcome == ExportOutcome.Succeeded, $"{result.Message}\n{result.Log}");
+        Assert.True(wall.Elapsed - result.Elapsed >= TimeSpan.FromSeconds(0.9), $"elapsed {result.Elapsed} of {wall.Elapsed}");
+    }
+
+    [FfmpegFact]
+    public async Task Cancel_while_paused_removes_partial_output()
+    {
+        var plan = await PlanAsync(SlowEncode, "cancelled-paused", C("a", 0.5, 6.0), C("a", 0, 0.4));
+        var runner = new ExportRunner(FfmpegFixture.Tools!);
+        var progress = new ProgressLog();
+        using var cts = new CancellationTokenSource();
+        var run = Task.Run(() => runner.RunAsync(plan, progress, cts.Token));
+        await Wait.Until(() => progress.Done > TimeSpan.Zero, "ffmpeg's first progress");
+        runner.Pause();
+        await Task.Delay(300);
+
+        await cts.CancelAsync();
+        var result = await run.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(ExportOutcome.Cancelled, result.Outcome);
+        Assert.False(File.Exists(plan.OutputPath));
+        Assert.False(Directory.Exists(plan.WorkDirectory));
+        Assert.Equal("", await ProcessesMentioningAsync(plan.OutputPath));
     }
 
     [FfmpegFact]
