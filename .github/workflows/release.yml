@@ -1,0 +1,166 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Check the tag matches Directory.Build.props
+        run: python .github/scripts/check_version.py --file Directory.Build.props --regex '<Version>([^<]+)</Version>'
+
+  build-macos:
+    needs: [test, check-version]
+    strategy:
+      matrix:
+        rid: [osx-arm64, osx-x64]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build the app bundle
+        env:
+          RID: ${{ matrix.rid }}
+        run: scripts/package-macos.sh "$RID"
+
+      - name: Check the bundle
+        env:
+          RID: ${{ matrix.rid }}
+        run: |
+          APP="build/macos-$RID/Mane FFmpeg.app"
+          codesign --verify --deep --strict "$APP"
+          BUNDLE_VERSION=$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")
+          ARCHS=$(lipo -archs "$APP/Contents/MacOS/ManeFfmpeg")
+          echo "tag=${GITHUB_REF_NAME#v} bundle=$BUNDLE_VERSION archs=$ARCHS"
+          test "${GITHUB_REF_NAME#v}" = "$BUNDLE_VERSION"
+          case "$RID" in
+            osx-arm64) test "$ARCHS" = "arm64" ;;
+            osx-x64) test "$ARCHS" = "x86_64" ;;
+          esac
+
+      - name: Zip the app
+        env:
+          RID: ${{ matrix.rid }}
+        run: |
+          mkdir -p dist
+          ditto -c -k --keepParent "build/macos-$RID/Mane FFmpeg.app" "dist/mane-ffmpeg-${GITHUB_REF_NAME#v}-$RID.zip"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mane-ffmpeg-${{ matrix.rid }}
+          path: dist/
+
+  build-linux:
+    needs: [test, check-version]
+    strategy:
+      matrix:
+        rid: [linux-x64, linux-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build the tarball
+        env:
+          RID: ${{ matrix.rid }}
+        run: scripts/package-linux.sh "$RID"
+
+      - name: Check the tarball
+        env:
+          RID: ${{ matrix.rid }}
+        run: |
+          TARBALL="build/linux-$RID/mane-ffmpeg-${GITHUB_REF_NAME#v}-$RID.tar.gz"
+          test -f "$TARBALL" # the script names it after the version in Directory.Build.props
+          tar -tzf "$TARBALL" | grep -qx "mane-ffmpeg/install.sh"
+          ELF=$(file -b "build/linux-$RID/mane-ffmpeg/app/ManeFfmpeg")
+          echo "$ELF"
+          case "$RID" in
+            linux-x64) echo "$ELF" | grep -q "x86-64" ;;
+            linux-arm64) echo "$ELF" | grep -q "aarch64" ;;
+          esac
+          mkdir -p dist
+          cp "$TARBALL" dist/
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mane-ffmpeg-${{ matrix.rid }}
+          path: dist/
+
+  github-release:
+    needs: [build-macos, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to create a GitHub Release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # full history + tags -- needed to diff against the previous release tag
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: mane-ffmpeg-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Write checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: Build release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          RANGE="${PREV_TAG:+$PREV_TAG..}${GITHUB_REF_NAME}"
+
+          python3 .github/scripts/categorize_changelog.py "$RANGE" > changelog_section.md
+
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$GITHUB_REF_NAME" --jq .body > auto_notes.md
+
+          {
+            cat auto_notes.md
+            echo ""
+            echo ""
+            cat changelog_section.md
+            echo ""
+            echo "## Downloads"
+            echo ""
+            echo "- macOS: \`osx-arm64\` (Apple Silicon) or \`osx-x64\` (Intel). Unzip and move *Mane FFmpeg.app* to"
+            echo "  Applications. The app is not notarized, so on the first start run"
+            echo "  \`xattr -dr com.apple.quarantine \"/Applications/Mane FFmpeg.app\"\` or allow it in"
+            echo "  *System Settings > Privacy & Security*."
+            echo "- Linux: \`linux-x64\` or \`linux-arm64\`. \`tar xf mane-ffmpeg-*.tar.gz && ./mane-ffmpeg/install.sh\`."
+            echo "- Both need ffmpeg, and libmpv for the preview; see the README's Requirements."
+          } > release_notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release_notes.md

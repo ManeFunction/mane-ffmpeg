@@ -484,3 +484,6 @@ $RECYCLE.BIN/
 # Packaged apps (scripts/package-*.sh)
 build/
 /PLAN.md
+
+# Local release notes (never committed)
+packaging/
