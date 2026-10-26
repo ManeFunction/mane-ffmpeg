@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using ManeFfmpeg.Core.Persistence;
 
 namespace ManeFfmpeg.App.Services;
 
@@ -23,7 +24,11 @@ public static class Dialogs
         };
 
     /// <summary>Shows a message with buttons; returns the index of the pressed button, or -1 if closed.</summary>
-    public static async Task<int> AskAsync(Window owner, string title, string message, params string[] buttons)
+    public static Task<int> AskAsync(Window owner, string title, string message, params string[] buttons) =>
+        AskAsync(owner, title, message, null, buttons);
+
+    /// <summary>Same, with an extra control (e.g. a link) between the message and the buttons.</summary>
+    public static async Task<int> AskAsync(Window owner, string title, string message, Control? extra, params string[] buttons)
     {
         var result = -1;
         var dialog = new Window
@@ -56,7 +61,7 @@ public static class Dialogs
             };
             buttonRow.Children.Add(button);
         }
-        dialog.Content = new StackPanel
+        var content = new StackPanel
         {
             Margin = new Thickness(20),
             Spacing = 16,
@@ -64,12 +69,40 @@ public static class Dialogs
             {
                 new TextBlock { Text = title, FontSize = 16, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap },
                 new SelectableTextBlock { Text = message, TextWrapping = TextWrapping.Wrap, Opacity = 0.85 },
-                buttonRow,
             },
         };
+        if (extra != null)
+            content.Children.Add(extra);
+        content.Children.Add(buttonRow);
+        dialog.Content = content;
         await dialog.ShowDialog(owner);
         return result;
     }
 
     public static Task InfoAsync(Window owner, string title, string message) => AskAsync(owner, title, message, "OK");
+
+    /// <summary>An info box with a clickable link under the message.</summary>
+    public static Task InfoAsync(Window owner, string title, string message, string linkText, string url) =>
+        AskAsync(owner, title, message, Link(owner, linkText, url), "OK");
+
+    /// <summary>A flat, underlined button that opens <paramref name="url"/> in the default browser.</summary>
+    private static Button Link(Window owner, string text, string url)
+    {
+        var button = new Button
+        {
+            Content = new TextBlock { Text = text, TextDecorations = TextDecorations.Underline, Foreground = Brushes.CornflowerBlue },
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Cursor = new Cursor(StandardCursorType.Hand),
+        };
+        ToolTip.SetTip(button, url);
+        button.Click += async (_, _) =>
+        {
+            try { await owner.Launcher.LaunchUriAsync(new Uri(url)); }
+            catch (Exception ex) { AppLog.Write($"Couldn't open {url}: {ex.Message}"); }
+        };
+        return button;
+    }
 }

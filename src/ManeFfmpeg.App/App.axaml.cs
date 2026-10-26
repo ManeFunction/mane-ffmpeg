@@ -88,7 +88,9 @@ public partial class App : Application
             _ = Dialogs.InfoAsync(window, "Mane FFmpeg",
                 $"A small video editor on top of your system ffmpeg.\n\nVersion {typeof(App).Assembly.GetName().Version?.ToString(3)}\n" +
                 $"ffmpeg: {AppServices.Instance.Tools?.VersionText ?? "not found"}\n" +
-                $"libmpv: {Core.Mpv.MpvLibrary.LoadedPath ?? "not found"}");
+                $"libmpv: {Core.Mpv.MpvLibrary.LoadedPath ?? "not found"}\n\n" +
+                "Powered by Ilia Petrov-Komotskii (Mane Function)",
+                "github.com/ManeFunction/mane-ffmpeg", "https://github.com/ManeFunction/mane-ffmpeg");
     }
 
     private void OnSettingsClicked(object? sender, EventArgs e) =>
