@@ -10,12 +10,14 @@ public partial class SettingsWindow : Window
     public SettingsWindow()
     {
         InitializeComponent();
-        DataContext = new SettingsViewModel();
+        var vm = new SettingsViewModel();
+        DataContext = vm;
         EditMenu.Attach(this);
         this.CloseOnEscape();
+        Closed += (_, _) => vm.DiscardThemePreview();
     }
 
-    private void OnCloseClicked(object? sender, RoutedEventArgs e) => Close();
+    private void OnCancelClicked(object? sender, RoutedEventArgs e) => Close();
 
     private async void OnInstallClicked(object? sender, RoutedEventArgs e)
     {

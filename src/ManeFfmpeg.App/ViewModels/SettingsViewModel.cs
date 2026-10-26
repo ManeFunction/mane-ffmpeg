@@ -77,6 +77,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     partial void OnThemeChanged(ThemeChoice value) => App.ApplyTheme(value);
 
+    /// <summary>The theme shows as soon as it's picked; closing without Apply goes back to the saved one.</summary>
+    public void DiscardThemePreview() => App.ApplyTheme(_app.Settings.Current.Theme);
+
     public void RefreshStatus()
     {
         CanInstall = SetupViewModel.IsNeeded;
