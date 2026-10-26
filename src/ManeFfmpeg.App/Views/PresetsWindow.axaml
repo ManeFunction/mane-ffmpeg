@@ -6,6 +6,17 @@
         x:DataType="vm:PresetsViewModel"
         Title="Export Presets" Width="860" Height="560" MinWidth="700" MinHeight="460"
         WindowStartupLocation="CenterOwner" Icon="/Assets/app.ico">
+    <Window.Styles>
+        <Style Selector="Button.save TextBlock.saved">
+            <Setter Property="Opacity" Value="0" />
+        </Style>
+        <Style Selector="Button.save:disabled TextBlock.saved">
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+        <Style Selector="Button.save:disabled TextBlock.unsaved">
+            <Setter Property="Opacity" Value="0" />
+        </Style>
+    </Window.Styles>
     <Grid ColumnDefinitions="270,*" Margin="12">
         <DockPanel Margin="0,0,12,0">
             <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,8,0,0">
@@ -61,7 +72,13 @@
                 </Border>
                 <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
                     <Button Content="Revert" Command="{Binding RevertCommand}" />
-                    <Button Content="Save preset" Classes="accent" Command="{Binding SaveCommand}" />
+                    <Button Classes="accent save" Command="{Binding SaveCommand}">
+                        <!-- Both labels are always laid out (one hidden by opacity), so the width doesn't change with the state. -->
+                        <Panel>
+                            <TextBlock Classes="unsaved" Text="Save preset" HorizontalAlignment="Center" />
+                            <TextBlock Classes="saved" Text="Preset saved" HorizontalAlignment="Center" />
+                        </Panel>
+                    </Button>
                 </StackPanel>
             </StackPanel>
         </ScrollViewer>
