@@ -141,6 +141,19 @@ public class PresetsViewModelTests
     }
 
     [Fact]
+    public void Dropping_a_preset_puts_it_at_the_drop_index()
+    {
+        var vm = new PresetsViewModel();
+        var first = vm.Presets[0];
+        vm.ListSelection = first;
+        vm.MoveSelectedTo(vm.Presets.Count - 1);
+        Assert.Equal(first.Id, vm.Presets[^1].Id);
+        Assert.Equal(first.Id, vm.ListSelection?.Id);
+        vm.MoveSelectedTo(0);
+        Assert.Equal(first.Id, vm.Presets[0].Id);
+    }
+
+    [Fact]
     public async Task Adding_a_preset_asks_first()
     {
         var (vm, asked) = Edited(answer: 2);

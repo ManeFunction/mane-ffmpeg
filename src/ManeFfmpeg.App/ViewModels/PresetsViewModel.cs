@@ -223,18 +223,18 @@ public sealed partial class PresetsViewModel : ViewModelBase
 
     private bool CanMoveDown() => Selected is not null && Presets.IndexOf(Selected) is var i && i >= 0 && i < Presets.Count - 1;
 
-    /// <summary>Moves the selected preset up the list. Unsaved edits stay in the editor.</summary>
     [RelayCommand(CanExecute = nameof(CanMoveUp))]
-    private void MoveUp() => Move(-1);
+    private void MoveUp() => MoveSelectedTo(Presets.IndexOf(Selected!) - 1);
 
     [RelayCommand(CanExecute = nameof(CanMoveDown))]
-    private void MoveDown() => Move(1);
+    private void MoveDown() => MoveSelectedTo(Presets.IndexOf(Selected!) + 1);
 
-    private void Move(int offset)
+    /// <summary>Puts the selected preset at <paramref name="index"/> in the list. Unsaved edits stay in the editor.</summary>
+    public void MoveSelectedTo(int index)
     {
         if (Selected is not { } preset)
             return;
-        _app.Presets.Move(preset.Id, Presets.IndexOf(preset) + offset);
+        _app.Presets.Move(preset.Id, index);
         Reload(preset.Id);
     }
 

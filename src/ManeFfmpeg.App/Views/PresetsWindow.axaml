@@ -44,16 +44,21 @@
                 </Grid>
             </StackPanel>
             <Border Classes="panel">
-                <ListBox x:Name="PresetList" ItemsSource="{Binding Presets}" SelectedItem="{Binding ListSelection}" Background="Transparent">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="model:Preset">
-                            <StackPanel Spacing="2">
-                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                                <TextBlock Text="{Binding Arguments}" Classes="dim" TextTrimming="CharacterEllipsis" FontSize="11" />
-                            </StackPanel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
+                <Panel>
+                    <ListBox x:Name="PresetList" ItemsSource="{Binding Presets}" SelectedItem="{Binding ListSelection}" Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="model:Preset">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding Arguments}" Classes="dim" TextTrimming="CharacterEllipsis" FontSize="11" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <!-- Where a dragged preset will land. -->
+                    <Border x:Name="DropLine" Height="2" VerticalAlignment="Top" IsVisible="False" IsHitTestVisible="False"
+                            Background="{DynamicResource SystemControlHighlightAccentBrush}" />
+                </Panel>
             </Border>
         </DockPanel>
 
