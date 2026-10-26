@@ -4,6 +4,8 @@ A small macOS/Linux video editor on top of your system **ffmpeg**. Load one or m
 
 Built with C#, .NET 10 and Avalonia 12.
 
+![](https://raw.githubusercontent.com/wiki/ManeFunction/mane-ffmpeg/mane-ffmpeg-UI.png)
+
 ## Features
 
 - **Timeline**
