@@ -1,0 +1,93 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ManeFfmpeg.UI.ViewModels"
+        x:Class="ManeFfmpeg.UI.Views.SettingsWindow"
+        x:DataType="vm:SettingsViewModel"
+        Title="Settings" Width="640" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner" Icon="/Assets/app.ico">
+    <Window.Styles>
+        <!-- Each group of settings is a card; its status text sits in a darker well inside it. -->
+        <Style Selector="Border.section">
+            <Setter Property="Padding" Value="14" />
+            <Setter Property="CornerRadius" Value="8" />
+        </Style>
+        <Style Selector="Border.status">
+            <Setter Property="Background" Value="{DynamicResource WindowBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PanelBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="10" />
+        </Style>
+    </Window.Styles>
+    <!-- The shared size group keeps Test and Register/Unregister in one right-aligned column of one width. -->
+    <StackPanel Margin="16" Spacing="12" Grid.IsSharedSizeScope="True">
+        <Border Classes="panel section">
+            <StackPanel Spacing="10">
+                <TextBlock Text="FFMPEG" Classes="title" />
+                <Border Classes="status">
+                    <SelectableTextBlock Text="{Binding FfmpegStatus}" TextWrapping="Wrap" FontSize="12" />
+                </Border>
+                <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,6,Auto">
+                    <TextBlock Text="ffmpeg path" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" Text="{Binding FfmpegPath}" PlaceholderText="automatic (PATH, Homebrew, /usr/bin…)" />
+                    <TextBlock Grid.Row="2" Text="ffprobe path" VerticalAlignment="Center" />
+                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding FfprobePath}" PlaceholderText="automatic (next to ffmpeg)" />
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <Border Classes="panel section">
+            <StackPanel Spacing="10">
+                <TextBlock Text="PREVIEW (LIBMPV)" Classes="title" />
+                <Border Classes="status">
+                    <SelectableTextBlock Text="{Binding MpvStatus}" TextWrapping="Wrap" FontSize="12" />
+                </Border>
+                <Grid ColumnDefinitions="110,*">
+                    <TextBlock Text="libmpv path" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" Text="{Binding LibMpvPath}" PlaceholderText="automatic (Homebrew, MacPorts, IINA, system)" />
+                </Grid>
+                <CheckBox Content="Hardware video decoding for preview" IsChecked="{Binding HardwareDecoding}" />
+                <TextBlock Text="Restart the app after applying to use the new player settings." FontSize="12"
+                           Foreground="{StaticResource AccentWarnBrush}" IsVisible="{Binding PlayerRestartNeeded}" />
+            </StackPanel>
+        </Border>
+
+        <Border Classes="panel section">
+            <StackPanel Spacing="10">
+                <TextBlock Text="GENERAL" Classes="title" />
+                <Grid ColumnDefinitions="110,Auto">
+                    <TextBlock Text="Theme" VerticalAlignment="Center" />
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding Themes}" SelectedItem="{Binding Theme}" MinWidth="120" />
+                </Grid>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="Action" />
+                    </Grid.ColumnDefinitions>
+                    <CheckBox Content="System notification when an export ends" IsChecked="{Binding Notifications}" />
+                    <Button Grid.Column="1" Content="Test" Command="{Binding TestNotificationCommand}"
+                            MinWidth="90" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                </Grid>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="Action" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding ProjectFilesStatus}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <Button Grid.Column="1" Content="{Binding ProjectFilesAction}" Command="{Binding ToggleProjectFilesCommand}"
+                            MinWidth="90" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                </Grid>
+                <CheckBox Content="Offer to register project files at startup" IsChecked="{Binding AskToRegisterProjectFiles}"
+                          IsEnabled="{Binding CanRegisterProjectFiles}" />
+            </StackPanel>
+        </Border>
+
+        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+            <Button Content="Install Missing Components…" Click="OnInstallClicked" IsVisible="{Binding CanInstall}" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <Button Content="Cancel" Click="OnCancelClicked" />
+                <Button Content="Apply" Classes="accent" Click="OnApplyClicked" IsEnabled="{Binding !IsBusy}" />
+            </StackPanel>
+        </Grid>
+    </StackPanel>
+</Window>

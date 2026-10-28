@@ -14,10 +14,10 @@ DOTNET="${DOTNET:-$(command -v dotnet || echo "$HOME/.dotnet/dotnet")}"
 rm -rf "$OUT"
 mkdir -p "$DIR"
 
-"$DOTNET" publish "$ROOT/src/ManeFfmpeg.App/ManeFfmpeg.App.csproj" -c Release -r "$RID" --self-contained true \
+"$DOTNET" publish "$ROOT/src/ManeFfmpeg.UI/ManeFfmpeg.UI.csproj" -c Release -r "$RID" --self-contained true \
   -p:UseAppHost=true -o "$DIR/app"
 
-cp "$ROOT/src/ManeFfmpeg.App/Assets/app.png" "$DIR/mane-ffmpeg.png"
+cp "$ROOT/src/ManeFfmpeg.UI/Assets/app.png" "$DIR/mane-ffmpeg.png"
 
 cat > "$DIR/mane-ffmpeg.desktop" <<'DESKTOP'
 [Desktop Entry]

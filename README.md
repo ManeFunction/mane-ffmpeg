@@ -74,7 +74,7 @@ export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH
 ```
 
 ```sh
-dotnet run --project src/ManeFfmpeg.App            # run
+dotnet run --project src/ManeFfmpeg.UI            # run
 dotnet test                                        # unit + ffmpeg integration tests
 scripts/package-macos.sh                           # → build/macos-<rid>/Mane FFmpeg.app
 scripts/package-linux.sh                           # → build/linux-<rid>/mane-ffmpeg-<version>-<rid>.tar.gz
@@ -132,7 +132,7 @@ Mouse:
 
 ```
 src/ManeFfmpeg.Core   model, editing, ffprobe/ffmpeg (planner, runner), waveforms, keyframes, libmpv binding, persistence
-src/ManeFfmpeg.App    Avalonia UI: windows, view models, timeline control, mpv video view
+src/ManeFfmpeg.UI     Avalonia UI: windows, view models, timeline control, mpv video view
 tests/                xUnit unit tests and real-ffmpeg integration tests
 scripts/              macOS .app and Linux tarball packaging
 ```
@@ -149,7 +149,7 @@ Files on disk:
   - `dotnet run` relaunches itself once with the variable set.
 - **Stream-copy cuts.** They can only start on keyframes, and boundaries may show a frame of artifacts with open-GOP sources. That's inherent to cutting without re-encoding.
 - **Sleeping display.** The app won't start while the display is asleep, because Avalonia's macOS backend needs an active display.
-- **Development automation.** Debug builds can be driven by a script (`MANE_FFMPEG_SCRIPT=file`) for end-to-end checks. See `src/ManeFfmpeg.App/Services/DebugAutomation.cs`.
+- **Development automation.** Debug builds can be driven by a script (`MANE_FFMPEG_SCRIPT=file`) for end-to-end checks. See `src/ManeFfmpeg.UI/Services/DebugAutomation.cs`.
 
 ## Repository info
 

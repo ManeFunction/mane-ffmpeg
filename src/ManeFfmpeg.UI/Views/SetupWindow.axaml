@@ -1,0 +1,68 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ManeFfmpeg.UI.ViewModels"
+        x:Class="ManeFfmpeg.UI.Views.SetupWindow"
+        x:DataType="vm:SetupViewModel"
+        Title="Install Missing Components" Width="560" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Icon="/Assets/app.ico">
+    <Window.Styles>
+        <Style Selector="SelectableTextBlock.status.error">
+            <Setter Property="Foreground" Value="{StaticResource ErrorBrush}" />
+        </Style>
+        <Style Selector="SelectableTextBlock.status.ok">
+            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+        </Style>
+    </Window.Styles>
+
+    <StackPanel Margin="20" Spacing="14">
+        <TextBlock Text="Install missing components" FontSize="16" FontWeight="SemiBold" />
+        <TextBlock TextWrapping="Wrap" Opacity="0.85"
+                   Text="Mane FFmpeg uses tools installed on your Mac, and these are missing. Homebrew, the usual package manager for macOS, can install them." />
+
+        <Border Classes="panel" Padding="12,8">
+            <ItemsControl ItemsSource="{Binding Components}" IsEnabled="{Binding CanEditComponents}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SetupComponent">
+                        <CheckBox IsChecked="{Binding IsSelected}" Margin="0,2">
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Purpose}" Classes="dim" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </CheckBox>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Border>
+
+        <Border Classes="panel" Padding="12,10" IsVisible="{Binding ShowHomebrew}">
+            <StackPanel Spacing="6">
+                <TextBlock Text="HOMEBREW ISN'T INSTALLED" Classes="title" />
+                <TextBlock TextWrapping="Wrap" FontSize="12"
+                           Text="First, Homebrew's official installer opens in Terminal. It asks for your Mac password and may install Apple's Command Line Tools, which takes a few minutes. Come back here when it's done." />
+                <SelectableTextBlock Text="{Binding HomebrewCommand}" TextWrapping="Wrap" FontSize="11" Opacity="0.7"
+                                     FontFamily="Menlo, DejaVu Sans Mono, monospace" />
+            </StackPanel>
+        </Border>
+
+        <SelectableTextBlock Text="{Binding InstallCommand}" FontSize="11" Opacity="0.7"
+                             FontFamily="Menlo, DejaVu Sans Mono, monospace" />
+
+        <TextBox x:Name="LogBox" Text="{Binding Log, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" Height="180"
+                 TextWrapping="NoWrap" FontFamily="Menlo, DejaVu Sans Mono, monospace" FontSize="11"
+                 IsVisible="{Binding Log, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+        <SelectableTextBlock Classes="status" Classes.error="{Binding StatusIsError}" Classes.ok="{Binding IsInstalled}"
+                             Text="{Binding Status}" TextWrapping="Wrap"
+                             IsVisible="{Binding Status, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+            <CheckBox Content="Ask again at startup" IsChecked="{Binding AskAtStartup}" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <Button Content="{Binding SecondaryText}" Command="{Binding DismissCommand}" IsVisible="{Binding HasSecondary}"
+                        MinWidth="90" HorizontalContentAlignment="Center" />
+                <Button Content="{Binding PrimaryText}" Command="{Binding ContinueCommand}" Classes="accent" IsDefault="True"
+                        MinWidth="90" HorizontalContentAlignment="Center" />
+            </StackPanel>
+        </Grid>
+    </StackPanel>
+</Window>

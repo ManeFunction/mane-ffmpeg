@@ -1,10 +1,10 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/ManeFfmpeg.App/ManeFfmpeg.App.csproj" />
+    <Project Path="src/ManeFfmpeg.UI/ManeFfmpeg.UI.csproj" />
     <Project Path="src/ManeFfmpeg.Core/ManeFfmpeg.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/ManeFfmpeg.App.Tests/ManeFfmpeg.App.Tests.csproj" />
+    <Project Path="tests/ManeFfmpeg.UI.Tests/ManeFfmpeg.UI.Tests.csproj" />
     <Project Path="tests/ManeFfmpeg.Core.Tests/ManeFfmpeg.Core.Tests.csproj" />
   </Folder>
 </Solution>

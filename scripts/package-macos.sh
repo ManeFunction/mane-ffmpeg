@@ -13,15 +13,15 @@ DOTNET="${DOTNET:-$(command -v dotnet || echo "$HOME/.dotnet/dotnet")}"
 rm -rf "$OUT"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-"$DOTNET" publish "$ROOT/src/ManeFfmpeg.App/ManeFfmpeg.App.csproj" -c Release -r "$RID" --self-contained true \
+"$DOTNET" publish "$ROOT/src/ManeFfmpeg.UI/ManeFfmpeg.UI.csproj" -c Release -r "$RID" --self-contained true \
   -p:UseAppHost=true -o "$APP/Contents/MacOS"
 
 # Icon: app.png → AppIcon.icns
 ICONSET="$OUT/AppIcon.iconset"
 mkdir -p "$ICONSET"
 for size in 16 32 128 256 512; do
-  sips -z $size $size "$ROOT/src/ManeFfmpeg.App/Assets/app.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
-  sips -z $((size * 2)) $((size * 2)) "$ROOT/src/ManeFfmpeg.App/Assets/app.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+  sips -z $size $size "$ROOT/src/ManeFfmpeg.UI/Assets/app.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+  sips -z $((size * 2)) $((size * 2)) "$ROOT/src/ManeFfmpeg.UI/Assets/app.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 rm -rf "$ICONSET"
