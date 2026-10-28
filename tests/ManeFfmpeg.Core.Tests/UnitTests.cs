@@ -414,7 +414,7 @@ public class PresetStoreTests
     {
         var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");
         var store = new PresetStore(path);
-        Assert.Equal(["for storage", "harsh", "plane copy"], store.Presets.Select(p => p.Name));
+        Assert.Equal(["for storage", "harsh", "share", "plane copy"], store.Presets.Select(p => p.Name));
         Assert.Contains("yuv420p10le", store.Presets[0].Arguments);
         Assert.Equal("-c:v libx265 -crf 28 -preset slow -c:a copy", store.Presets[1].Arguments);
     }
@@ -427,10 +427,10 @@ public class PresetStoreTests
         {
             var store = new PresetStore(path);
             store.Move(Preset.PlaneCopy.Id, 0);
-            Assert.Equal(["plane copy", "for storage", "harsh"], store.Presets.Select(p => p.Name));
+            Assert.Equal(["plane copy", "for storage", "harsh", "share"], store.Presets.Select(p => p.Name));
             // Past the end means last.
             store.Move(Preset.ForStorage.Id, 99);
-            Assert.Equal(["plane copy", "harsh", "for storage"], new PresetStore(path).Presets.Select(p => p.Name));
+            Assert.Equal(["plane copy", "harsh", "share", "for storage"], new PresetStore(path).Presets.Select(p => p.Name));
         }
         finally
         {
@@ -453,9 +453,9 @@ public class PresetStoreTests
         try
         {
             var store = new PresetStore(path);
-            Assert.Equal(["for storage", "harsh", "mine"], store.Presets.Select(p => p.Name));
+            Assert.Equal(["for storage", "harsh", "share", "mine"], store.Presets.Select(p => p.Name));
             Assert.Equal(edited ? storageArgs : Preset.ForStorage.Arguments, store.Presets[0].Arguments);
-            Assert.Contains("\"version\": 2", File.ReadAllText(path));
+            Assert.Contains("\"version\": 3", File.ReadAllText(path));
 
             // A second load doesn't migrate again (an edited preset stays as the user left it).
             Assert.Equal(store.Presets.Select(p => p.Arguments), new PresetStore(path).Presets.Select(p => p.Arguments));
@@ -464,6 +464,39 @@ public class PresetStoreTests
         {
             File.Delete(path);
         }
+    }
+
+    [Fact]
+    public void Version_2_file_gains_share_after_harsh_and_keeps_the_rest()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, """
+            { "version": 2, "presets": [
+              { "id": "builtin-for-storage", "name": "for storage", "arguments": "-c:v libx265 -crf 20 -c:a copy" },
+              { "id": "builtin-harsh", "name": "harsh", "arguments": "-c:v libx265 -crf 28 -c:a copy" },
+              { "id": "mine", "name": "mine", "arguments": "-c:v libx264" } ] }
+            """);
+        try
+        {
+            var store = new PresetStore(path);
+            Assert.Equal(["for storage", "harsh", "share", "mine"], store.Presets.Select(p => p.Name));
+            Assert.Equal("-c:v libx265 -crf 20 -c:a copy", store.Presets[0].Arguments);
+            Assert.Contains("\"version\": 3", File.ReadAllText(path));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Share_preset_is_valid_and_encodes_audio()
+    {
+        var analysis = PresetAnalysis.Of(Preset.Share);
+        Assert.True(analysis.IsValid);
+        Assert.Empty(analysis.Warnings);
+        Assert.Equal("libx264", analysis.Arguments!.VideoCodec);
+        Assert.False(analysis.Arguments.AudioCopy);
     }
 
     [Fact]
@@ -514,7 +547,7 @@ public class PresetStoreTests
     public void Missing_fields_get_defaults()
     {
         var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");
-        File.WriteAllText(path, """{ "version": 2, "presets": [ { "id": "mine", "name": "mine", "arguments": "-c:v libx264" } ] }""");
+        File.WriteAllText(path, """{ "version": 3, "presets": [ { "id": "mine", "name": "mine", "arguments": "-c:v libx264" } ] }""");
         try
         {
             var preset = Assert.Single(new PresetStore(path).Presets);

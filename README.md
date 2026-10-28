@@ -25,6 +25,7 @@ Built with C#, .NET 10 and Avalonia 12.
   - Raw ffmpeg output options, editable in *Presets → Edit Presets…*. Built in:
     - **for storage** (default): `-c:v libx265 -crf 23 -preset slow -pix_fmt yuv420p10le -x265-params aq-mode=3:psy-rdoq=1.0:no-sao=1 -c:a copy` → `.mp4`. 10-bit HEVC tuned to keep detail, so moving objects don't smear.
     - **harsh**: `-c:v libx265 -crf 28 -preset slow -c:a copy` → `.mp4`. Smaller files, softer in motion.
+    - **share**: `-c:v libx264 -crf 20 -preset medium -profile:v high -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart` → `.mp4`. Everyday video for messengers and social media: H.264 + AAC plays everywhere and starts before it finishes downloading.
     - **plane copy**: `-c:v copy -c:a copy` → same container as the source
   - Add, duplicate, delete, or restore the built-ins.
 - **Export**

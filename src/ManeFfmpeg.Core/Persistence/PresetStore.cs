@@ -8,7 +8,7 @@ namespace ManeFfmpeg.Core.Persistence;
 /// <summary>The user's export presets, shared by all windows and saved to presets.json.</summary>
 public sealed class PresetStore
 {
-    private const int CurrentVersion = 2;
+    private const int CurrentVersion = 3;
 
     private readonly string _path;
     private List<Preset> _presets;
@@ -18,21 +18,29 @@ public sealed class PresetStore
         _path = path ?? Path.Combine(AppPaths.ConfigDirectory, "presets.json");
         var (presets, version) = Load(_path);
         _presets = presets ?? [.. Preset.BuiltIns];
-        if (presets is not null && version < CurrentVersion && Migrate(_presets))
+        if (presets is not null && version < CurrentVersion && Migrate(_presets, version))
             Persist();
     }
 
     /// <summary>
     /// Version 2 made "for storage" keep more detail and kept the old settings as "harsh": an unedited
-    /// "for storage" gets the new arguments, and "harsh" is added next to it.
+    /// "for storage" gets the new arguments, and "harsh" is added next to it. Version 3 added "share".
     /// </summary>
-    private static bool Migrate(List<Preset> presets)
+    private static bool Migrate(List<Preset> presets, int version)
     {
-        var storage = presets.FindIndex(p => p.Id == Preset.ForStorage.Id);
-        if (storage >= 0 && presets[storage].Arguments.Trim() == Preset.ForStorageV1Arguments)
-            presets[storage] = presets[storage] with { Arguments = Preset.ForStorage.Arguments };
-        if (presets.All(p => p.Id != Preset.Harsh.Id))
-            presets.Insert(storage >= 0 ? storage + 1 : 0, Preset.Harsh);
+        if (version < 2)
+        {
+            var storage = presets.FindIndex(p => p.Id == Preset.ForStorage.Id);
+            if (storage >= 0 && presets[storage].Arguments.Trim() == Preset.ForStorageV1Arguments)
+                presets[storage] = presets[storage] with { Arguments = Preset.ForStorage.Arguments };
+            if (presets.All(p => p.Id != Preset.Harsh.Id))
+                presets.Insert(storage >= 0 ? storage + 1 : 0, Preset.Harsh);
+        }
+        if (presets.All(p => p.Id != Preset.Share.Id))
+        {
+            var harsh = presets.FindIndex(p => p.Id == Preset.Harsh.Id);
+            presets.Insert(harsh >= 0 ? harsh + 1 : presets.Count, Preset.Share);
+        }
         return true;
     }
 

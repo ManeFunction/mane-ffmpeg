@@ -45,6 +45,19 @@ public sealed record Preset
         Extension = "mp4",
     };
 
+    /// <summary>
+    /// Everyday video for messengers and social media: H.264 High in 8-bit 4:2:0 and AAC play everywhere (phones,
+    /// browsers, TVs). CRF 20 stays well above the bitrates the platforms re-encode to, and the MP4 index goes
+    /// first so it starts playing before it has fully downloaded.
+    /// </summary>
+    public static readonly Preset Share = new()
+    {
+        Id = "builtin-share",
+        Name = "share",
+        Arguments = "-c:v libx264 -crf 20 -preset medium -profile:v high -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart",
+        Extension = "mp4",
+    };
+
     public static readonly Preset PlaneCopy = new()
     {
         Id = "builtin-plane-copy",
@@ -53,7 +66,7 @@ public sealed record Preset
         Extension = "",
     };
 
-    public static IReadOnlyList<Preset> BuiltIns { get; } = [ForStorage, Harsh, PlaneCopy];
+    public static IReadOnlyList<Preset> BuiltIns { get; } = [ForStorage, Harsh, Share, PlaneCopy];
 
     /// <summary>"for storage" arguments before version 2 of the presets file.</summary>
     public const string ForStorageV1Arguments = "-c:v libx265 -crf 28 -preset slow -c:a copy";
