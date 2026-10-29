@@ -4,13 +4,15 @@ using System.Runtime.InteropServices;
 namespace ManeFfmpeg.Core.Mpv;
 
 /// <summary>
-/// mpv's software render API: mpv draws the current frame, scaled and letterboxed, into a BGRX buffer.
+/// mpv's software render API: mpv draws the current frame, scaled and letterboxed, into a BGRA buffer.
 /// <see cref="Invalidated"/> fires on an mpv thread; render from your own thread, never from the callback.
 /// </summary>
 public sealed unsafe class MpvSoftwareRenderer : IDisposable
 {
     private static readonly byte[] ApiType = "sw\0"u8.ToArray();
-    private static readonly byte[] PixelFormat = "bgr0\0"u8.ToArray();
+    // mpv fills in opaque alpha, so frames go straight into a Bgra8888 bitmap. With "bgr0" the 4th byte is 0
+    // and needs a pass over every pixel, which made 1080p60 drop most frames on a 4-core Intel Mac.
+    private static readonly byte[] PixelFormat = "bgra\0"u8.ToArray();
 
     private nint _context;
     private GCHandle _self;
@@ -45,7 +47,7 @@ public sealed unsafe class MpvSoftwareRenderer : IDisposable
     /// <summary>True when mpv wants a new frame drawn (also processes mpv's internal render updates).</summary>
     public bool Update() => _context != 0 && (MpvNative.RenderContextUpdate(_context) & MpvNative.RenderUpdateFrame) != 0;
 
-    /// <summary>Draws the current frame into <paramref name="buffer"/> (BGRX, <paramref name="stride"/> bytes per row).</summary>
+    /// <summary>Draws the current frame into <paramref name="buffer"/> (BGRA, <paramref name="stride"/> bytes per row).</summary>
     public bool Render(int width, int height, int stride, nint buffer)
     {
         if (_context == 0 || width <= 0 || height <= 0)

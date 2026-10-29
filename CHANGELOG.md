@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **share** built-in preset for everyday video to post or send: H.264 + AAC in an MP4 that plays on any phone or
   browser. Existing presets files gain it after *harsh*.
 
+### Fixed
+- The UI no longer freezes while the preview plays: buttons like play/pause could take seconds to respond on older
+  Macs. Drawing a frame no longer blocks the UI, and 1080p60 video plays at close to its full frame rate instead of
+  about 22 fps.
+
 ## [0.9.0] - 2026-10-26
 ### Added
 - First release: a small macOS/Linux video editor on top of the system ffmpeg, with a libmpv preview.

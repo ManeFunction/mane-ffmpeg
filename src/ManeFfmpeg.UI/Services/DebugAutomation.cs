@@ -351,6 +351,9 @@ internal static class DebugAutomation
                     case "state":
                         PrintState(window);
                         break;
+                    case "latency":
+                        await MeasureLatencyAsync(window, double.Parse(arg, CultureInfo.InvariantCulture));
+                        break;
                     case "quit":
                         foreach (var w in WindowManager.Instance.Windows.ToList())
                             w.ForceClose();
@@ -365,6 +368,37 @@ internal static class DebugAutomation
                 Console.WriteLine($"[script] {cmd} failed: {ex}");
             }
         }
+    }
+
+    /// <summary>
+    /// How long work posted at input priority waits for the UI thread (what a click waits for), sampled every
+    /// 50 ms for <paramref name="seconds"/>, with the video view's frame counters over the same span.
+    /// </summary>
+    private static async Task MeasureLatencyAsync(MainWindow window, double seconds)
+    {
+        var samples = new List<double>();
+        var before = window.Video.Counters;
+        var timingsBefore = window.Video.Timings;
+        var mpv = window.ViewModel.Preview.Player;
+        double Mpv(string name) => mpv?.GetDouble(name) ?? double.NaN;
+        var (posBefore, dropBefore, decDropBefore) = (Mpv("time-pos"), Mpv("frame-drop-count"), Mpv("decoder-frame-drop-count"));
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (clock.Elapsed.TotalSeconds < seconds)
+        {
+            var posted = clock.Elapsed;
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Input);
+            samples.Add((clock.Elapsed - posted).TotalMilliseconds);
+            await Task.Delay(50);
+        }
+        var after = window.Video.Counters;
+        var timings = window.Video.Timings;
+        var rendered = Math.Max(1, after.Rendered - before.Rendered);
+        var presented = Math.Max(1, after.Presented - before.Presented);
+        samples.Sort();
+        double At(double q) => samples[Math.Min(samples.Count - 1, (int)(q * samples.Count))];
+        var span = clock.Elapsed.TotalSeconds;
+        Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
+            $"[latency] n={samples.Count} p50={At(0.5):F1}ms p95={At(0.95):F1}ms max={samples[^1]:F1}ms rendered={(after.Rendered - before.Rendered) / span:F1}/s presented={(after.Presented - before.Presented) / span:F1}/s speed={(Mpv("time-pos") - posBefore) / span:F2}x vo-drops={Mpv("frame-drop-count") - dropBefore} dec-drops={Mpv("decoder-frame-drop-count") - decDropBefore} render={(timings.Render - timingsBefore.Render) / rendered:F1}ms/frame present-wait={(timings.PresentWait - timingsBefore.PresentWait) / presented:F1}ms copy={(timings.Copy - timingsBefore.Copy) / presented:F1}ms hwdec={mpv?.GetString("hwdec-current")}"));
     }
 
     private static async Task SaveToAsync(MainWindow window, string path)

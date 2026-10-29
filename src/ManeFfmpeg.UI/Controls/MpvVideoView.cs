@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Numerics;
 using Vector = Avalonia.Vector;
 using System.Runtime.InteropServices;
 using Avalonia;
@@ -14,8 +13,9 @@ namespace ManeFfmpeg.UI.Controls;
 
 /// <summary>
 /// Shows an <see cref="MpvPlayer"/> using mpv's software renderer. A render thread draws each new frame
-/// into a buffer sized to the control's pixels (mpv scales and letterboxes), and the UI thread copies it
-/// into a <see cref="WriteableBitmap"/>.
+/// into a buffer of its own sized to the control's pixels (mpv scales and letterboxes), then swaps it with
+/// the latest finished frame, which the UI thread copies into a <see cref="WriteableBitmap"/>. mpv draws
+/// outside the lock the UI thread takes, so a slow frame never holds up clicks.
 /// </summary>
 public sealed class MpvVideoView : Control
 {
@@ -27,7 +27,10 @@ public sealed class MpvVideoView : Control
 
     private const int MaxPixels = 1920 * 1080;
 
-    private readonly object _bufferLock = new();
+    // Held by the render thread for a whole frame; guards _renderer and _drawing.
+    private readonly object _renderLock = new();
+    // Held briefly to swap or copy _latest.
+    private readonly object _frameLock = new();
     private readonly AutoResetEvent _wake = new(false);
     private MpvSoftwareRenderer? _renderer;
     private Thread? _thread;
@@ -35,10 +38,8 @@ public sealed class MpvVideoView : Control
     private volatile bool _resized;
     private volatile int _targetWidth;
     private volatile int _targetHeight;
-    private nint _buffer;
-    private int _bufferWidth;
-    private int _bufferHeight;
-    private bool _bufferReady;
+    private FrameBuffer _drawing = new();
+    private FrameBuffer _latest = new();
     private int _presentPending;
     // Two bitmaps used alternately: redrawing the same instance can keep showing its first upload.
     private readonly WriteableBitmap?[] _bitmaps = new WriteableBitmap?[2];
@@ -49,18 +50,24 @@ public sealed class MpvVideoView : Control
     /// <summary>Diagnostics for the automation script: wake-ups, frames mpv rendered, frames shown.</summary>
     public (int Wakes, int Rendered, int Presented) Counters => (_wakes, _rendered, _presented);
 
+    /// <summary>Total milliseconds spent in mpv's render call, waiting for the frame lock in Present, and copying.</summary>
+    public (double Render, double PresentWait, double Copy) Timings =>
+        (_renderTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency, _waitTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency,
+            _copyTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
+
 #pragma warning disable CS0618 // debug snapshot only
     public void SaveFrame(string path) => Front?.Save(path);
 #pragma warning restore CS0618
 
     public unsafe string CenterPixel()
     {
-        lock (_bufferLock)
+        lock (_frameLock)
         {
-            if (_buffer == 0)
+            if (!_latest.Ready)
                 return "none";
-            var p = (byte*)_buffer + (_bufferHeight / 2 * _bufferWidth + _bufferWidth / 2) * 4;
-            return $"{_bufferWidth}x{_bufferHeight} bgrx=({p[0]},{p[1]},{p[2]},{p[3]})";
+            var (w, h) = (_latest.Width, _latest.Height);
+            var p = (byte*)_latest.Pixels + (h / 2 * w + w / 2) * 4;
+            return $"{w}x{h} bgra=({p[0]},{p[1]},{p[2]},{p[3]})";
         }
     }
 #endif
@@ -69,6 +76,9 @@ public sealed class MpvVideoView : Control
     private int _wakes;
     private int _rendered;
     private int _presented;
+    private long _renderTicks;
+    private long _waitTicks;
+    private long _copyTicks;
 #endif
 
     static MpvVideoView()
@@ -143,16 +153,15 @@ public sealed class MpvVideoView : Control
         _wake.Set();
         _thread?.Join(TimeSpan.FromSeconds(2));
         _thread = null;
-        lock (_bufferLock)
+        lock (_renderLock)
         {
             _renderer.Dispose();
             _renderer = null;
-            if (_buffer != 0)
+            lock (_frameLock)
             {
-                Marshal.FreeHGlobal(_buffer);
-                _buffer = 0;
+                _drawing.Free();
+                _latest.Free();
             }
-            _bufferReady = false;
         }
         for (var i = 0; i < _bitmaps.Length; i++)
         {
@@ -171,33 +180,33 @@ public sealed class MpvVideoView : Control
 #if DEBUG
             Interlocked.Increment(ref _wakes);
 #endif
-            var renderer = _renderer;
-            if (renderer is null)
-                continue;
-            var resized = _resized;
-            _resized = false;
-            var newFrame = renderer.Update();
-            if (!newFrame && !resized)
-                continue;
-            int width = _targetWidth, height = _targetHeight;
-            if (width <= 0 || height <= 0)
-                continue;
-            lock (_bufferLock)
+            lock (_renderLock)
             {
-                if (_renderer is null)
+                if (_renderer is not { } renderer)
                     break;
-                if (_buffer == 0 || width != _bufferWidth || height != _bufferHeight)
-                {
-                    if (_buffer != 0)
-                        Marshal.FreeHGlobal(_buffer);
-                    _buffer = Marshal.AllocHGlobal(width * height * 4);
-                    _bufferWidth = width;
-                    _bufferHeight = height;
-                }
-                _bufferReady = renderer.Render(width, height, width * 4, _buffer);
+                var resized = _resized;
+                _resized = false;
+                var newFrame = renderer.Update();
+                if (!newFrame && !resized)
+                    continue;
+                int width = _targetWidth, height = _targetHeight;
+                if (width <= 0 || height <= 0)
+                    continue;
+                _drawing.Resize(width, height);
 #if DEBUG
+                var renderStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
+                if (!renderer.Render(width, height, width * 4, _drawing.Pixels))
+                    continue;
+#if DEBUG
+                Interlocked.Add(ref _renderTicks, System.Diagnostics.Stopwatch.GetTimestamp() - renderStart);
                 Interlocked.Increment(ref _rendered);
 #endif
+                lock (_frameLock)
+                {
+                    (_latest, _drawing) = (_drawing, _latest);
+                    _latest.Ready = true;
+                }
             }
             if (Interlocked.Exchange(ref _presentPending, 1) == 0)
                 Dispatcher.UIThread.Post(Present, DispatcherPriority.Render);
@@ -207,11 +216,18 @@ public sealed class MpvVideoView : Control
     private unsafe void Present()
     {
         Interlocked.Exchange(ref _presentPending, 0);
-        lock (_bufferLock)
+#if DEBUG
+        var waitStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
+        lock (_frameLock)
         {
-            if (!_bufferReady || _buffer == 0)
+#if DEBUG
+            var copyStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            _waitTicks += copyStart - waitStart;
+#endif
+            if (!_latest.Ready)
                 return;
-            var size = new PixelSize(_bufferWidth, _bufferHeight);
+            var size = new PixelSize(_latest.Width, _latest.Height);
             var back = 1 - _front;
             if (_bitmaps[back] is not { } bitmap || bitmap.PixelSize != size)
             {
@@ -220,22 +236,16 @@ public sealed class MpvVideoView : Control
             }
             using (var target = bitmap.Lock())
             {
-                var rowBytes = _bufferWidth * 4;
-                var opaque = new Vector<uint>(0xFF000000);
-                for (var y = 0; y < _bufferHeight; y++)
-                {
-                    // mpv's "bgr0" leaves the 4th byte at 0; make it opaque alpha.
-                    var src = new ReadOnlySpan<uint>((byte*)_buffer + y * rowBytes, _bufferWidth);
-                    var dst = new Span<uint>((byte*)target.Address + y * target.RowBytes, _bufferWidth);
-                    var i = 0;
-                    for (; i <= src.Length - Vector<uint>.Count; i += Vector<uint>.Count)
-                        (new Vector<uint>(src[i..]) | opaque).CopyTo(dst[i..]);
-                    for (; i < src.Length; i++)
-                        dst[i] = src[i] | 0xFF000000;
-                }
+                var rowBytes = _latest.Width * 4;
+                if (target.RowBytes == rowBytes)
+                    Buffer.MemoryCopy((void*)_latest.Pixels, (void*)target.Address, (long)rowBytes * size.Height, (long)rowBytes * size.Height);
+                else
+                    for (var y = 0; y < size.Height; y++)
+                        Buffer.MemoryCopy((byte*)_latest.Pixels + y * rowBytes, (byte*)target.Address + y * target.RowBytes, rowBytes, rowBytes);
             }
             _front = back;
 #if DEBUG
+            _copyTicks += System.Diagnostics.Stopwatch.GetTimestamp() - copyStart;
             _presented++;
 #endif
         }
@@ -266,6 +276,34 @@ public sealed class MpvVideoView : Control
         _targetHeight = (int)height / 2 * 2;
         _resized = true;
         _wake.Set();
+    }
+
+    /// <summary>A native BGRA frame.</summary>
+    private sealed class FrameBuffer
+    {
+        public nint Pixels { get; private set; }
+        public int Width { get; private set; }
+        public int Height { get; private set; }
+
+        /// <summary>Holds a whole rendered frame (false until the first one and after a resize).</summary>
+        public bool Ready { get; set; }
+
+        public void Resize(int width, int height)
+        {
+            if (Pixels != 0 && width == Width && height == Height)
+                return;
+            Free();
+            Pixels = Marshal.AllocHGlobal(width * height * 4);
+            (Width, Height) = (width, height);
+        }
+
+        public void Free()
+        {
+            if (Pixels != 0)
+                Marshal.FreeHGlobal(Pixels);
+            Pixels = 0;
+            Ready = false;
+        }
     }
 
     public override void Render(DrawingContext context)
