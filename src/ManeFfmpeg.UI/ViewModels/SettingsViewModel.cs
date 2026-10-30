@@ -22,6 +22,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         Notifications = s.Notifications;
         Theme = s.Theme;
         AskToRegisterProjectFiles = s.AskToRegisterProjectFiles;
+        CheckForUpdates = s.CheckForUpdates;
         RefreshStatus();
         _ = RefreshProjectFilesAsync();
     }
@@ -81,6 +82,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool AskToRegisterProjectFiles { get; set; }
 
+    [ObservableProperty]
+    public partial bool CheckForUpdates { get; set; }
+
     partial void OnThemeChanged(ThemeChoice value) => App.ApplyTheme(value);
 
     /// <summary>The theme shows as soon as it's picked; closing without Apply goes back to the saved one.</summary>
@@ -110,6 +114,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             Notifications = Notifications,
             Theme = Theme,
             AskToRegisterProjectFiles = AskToRegisterProjectFiles,
+            CheckForUpdates = CheckForUpdates,
         });
         await _app.LocateToolsAsync();
         IsBusy = false;

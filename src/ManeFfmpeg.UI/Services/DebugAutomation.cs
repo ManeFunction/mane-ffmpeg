@@ -320,6 +320,34 @@ internal static class DebugAutomation
                     case "settings-snapshot":
                         await SnapshotWindowAsync(new SettingsWindow(), arg);
                         break;
+                    case "update-snapshot":
+                    {
+                        // update-snapshot <fake installed .app> <png>: the update window offering the latest release as if
+                        // this were 0.8.0. It then clicks Update and also snapshots the download (<png>.downloading.png)
+                        // and the ready step (<png>.ready.png). Nothing is installed.
+                        var parts = arg.Split(' ', 2);
+                        using var http = Core.Updates.UpdateChecker.CreateHttpClient();
+                        var current = new Version(0, 8, 0);
+                        var offer = await Core.Updates.UpdateChecker.CheckAsync(http, current)
+                            ?? throw new InvalidOperationException("No release newer than 0.8.0.");
+                        var update = new UpdateViewModel(offer, current, http, parts[0]);
+                        var dialog = new UpdateWindow(update);
+                        dialog.Show(window);
+                        await Task.Delay(800);
+                        SaveSnapshot(dialog, parts[1]);
+                        _ = update.PrimaryCommand.ExecuteAsync(null);
+                        while (update.Progress < 30 && update.IsDownloading)
+                            await Task.Delay(50);
+                        SaveSnapshot(dialog, parts[1] + ".downloading.png");
+                        while (update.IsDownloading)
+                            await Task.Delay(100);
+                        await Task.Delay(300);
+                        SaveSnapshot(dialog, parts[1] + ".ready.png");
+                        Console.WriteLine($"[update] step={update.Step} status='{update.Status}' staged={update.Prepared?.Staged}");
+                        dialog.Close();
+                        Core.Updates.UpdateInstaller.CleanUp();
+                        break;
+                    }
                     case "setup-snapshot":
                     {
                         // setup-snapshot nobrew|<fake brew> <png>: the install dialog offering everything. With a fake brew

@@ -40,6 +40,7 @@ public partial class App : Application
 
             if (TryGetFeature(typeof(IActivatableLifetime)) is IActivatableLifetime activatable)
                 activatable.Activated += OnActivated;
+            desktop.Exit += (_, _) => Updater.Instance.ApplyPendingOnExit();
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -47,6 +48,8 @@ public partial class App : Application
 
     private static async Task StartAsync(string[] args, MainWindow first)
     {
+        // Looked up while the startup dialogs are open; offered after them.
+        var update = Updater.Instance.CheckAsync();
         await AppServices.Instance.LocateToolsAsync();
         AppLog.Write(AppServices.Instance.Tools is { } tools ? $"ffmpeg: {tools.VersionText} ({tools.Ffmpeg})" : $"ffmpeg: {AppServices.Instance.ToolsError}");
         // Before opening files, so they can be read with what gets installed.
@@ -57,6 +60,8 @@ public partial class App : Application
         var files = OperatingSystem.IsMacOS() ? [] : args.Where(File.Exists).ToList();
         if (files.Count > 0)
             await WindowManager.Instance.OpenFilesAsync(files, first);
+        if (await update is { } offer)
+            await Updater.Instance.OfferAsync(offer);
 #if DEBUG
         DebugAutomation.StartIfRequested(first);
 #endif

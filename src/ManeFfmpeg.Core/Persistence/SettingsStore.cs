@@ -26,6 +26,10 @@ public sealed record AppSettings
     public bool AskToInstallAtStartup { get; set; } = true;
     /// <summary>Offer to make this app open .mfvp projects on double-click when the app starts.</summary>
     public bool AskToRegisterProjectFiles { get; set; } = true;
+    /// <summary>Look for a newer release on GitHub when the app starts.</summary>
+    public bool CheckForUpdates { get; set; } = true;
+    /// <summary>A release the user asked not to be reminded about ("1.2.0"); a newer one is offered again.</summary>
+    public string? SkippedUpdateVersion { get; set; }
     public List<string> RecentProjects { get; set; } = [];
     public string? LastMediaFolder { get; set; }
     public string? LastProjectFolder { get; set; }

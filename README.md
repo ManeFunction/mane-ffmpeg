@@ -39,6 +39,10 @@ Built with C#, .NET 10 and Avalonia 12.
 - **Compact mode**
   - The *Compact* button or ⇧⌘C hides the video preview and shrinks the window from the top, so the timeline and export controls stay where they are on screen. The video list and selection inspector sit side by side, with play/pause in the timeline toolbar.
   - Only audio is decoded while compact. The mode is saved with the project.
+- **Updates**
+  - At launch the app checks GitHub for a newer release and shows the changelog since your version.
+  - *Update* downloads it, checks its checksum and restarts into the new version. Each window asks to save first, and saved projects open again. *Install on Quit* waits until you quit instead.
+  - "Do not remind for this version" stays quiet until the next release. *Settings → Check for updates at startup* turns the check off.
 - **Several windows**
   - File → New Window. Each window is its own project with its own player and export, so you can export in one window while editing in another.
 

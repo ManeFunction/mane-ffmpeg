@@ -344,11 +344,21 @@ public partial class MainWindow : Window, IMainWindowView
         if (_closeConfirmed)
             return;
         e.Cancel = true;
+        if (await ConfirmCloseAsync())
+            ForceClose();
+    }
+
+    /// <summary>
+    /// Asks before a running export or unsaved edits would be lost (stopping or saving them as the user chooses);
+    /// false when the user would rather keep the window open.
+    /// </summary>
+    public async Task<bool> ConfirmCloseAsync()
+    {
         if (ViewModel.Export.IsExporting)
         {
             var stop = await AskAsync("An export is still running", "Stop the export and close this window?", "Stop and close", "Keep working");
             if (stop != 0)
-                return;
+                return false;
             ViewModel.Export.CancelExportCommand.Execute(null);
         }
         if (ViewModel.IsDirty && ViewModel.HasClips)
@@ -356,15 +366,14 @@ public partial class MainWindow : Window, IMainWindowView
             var answer = await AskAsync($"Save changes to “{ViewModel.ProjectName}”?", "Your edits will be lost if you don't save them.",
                 "Save", "Don't save", "Cancel");
             if (answer == 2 || answer < 0)
-                return;
+                return false;
             if (answer == 0 && !await ViewModel.SaveAsync(saveAs: false))
-                return;
+                return false;
         }
-        _closeConfirmed = true;
-        Close();
+        return true;
     }
 
-    /// <summary>Closes without asking (used when the app quits from automation).</summary>
+    /// <summary>Closes without asking (after <see cref="ConfirmCloseAsync"/>, or when the app quits from automation).</summary>
     public void ForceClose()
     {
         _closeConfirmed = true;

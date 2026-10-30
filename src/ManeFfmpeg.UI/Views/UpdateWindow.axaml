@@ -1,0 +1,43 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ManeFfmpeg.UI.ViewModels"
+        xmlns:controls="using:ManeFfmpeg.UI.Controls"
+        x:Class="ManeFfmpeg.UI.Views.UpdateWindow"
+        x:DataType="vm:UpdateViewModel"
+        Title="Update Available" Width="560" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Icon="/Assets/app.ico">
+    <Window.Styles>
+        <Style Selector="SelectableTextBlock.status.error">
+            <Setter Property="Foreground" Value="{StaticResource ErrorBrush}" />
+        </Style>
+    </Window.Styles>
+
+    <StackPanel Margin="20" Spacing="14">
+        <StackPanel Spacing="4">
+            <TextBlock Text="{Binding Heading}" FontSize="16" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding Subheading}" Opacity="0.85" />
+        </StackPanel>
+
+        <Border Classes="panel" Padding="0">
+            <ScrollViewer Height="300" HorizontalScrollBarVisibility="Disabled">
+                <controls:ChangelogView Markdown="{Binding Changelog}" Margin="14,12" />
+            </ScrollViewer>
+        </Border>
+
+        <ProgressBar Value="{Binding Progress}" Maximum="100" IsVisible="{Binding IsDownloading}" />
+
+        <SelectableTextBlock Classes="status" Classes.error="{Binding StatusIsError}" Text="{Binding Status}" TextWrapping="Wrap"
+                             FontSize="12" IsVisible="{Binding Status, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+            <CheckBox Content="Do not remind for this version" IsChecked="{Binding DoNotRemind}" IsVisible="{Binding ShowDoNotRemind}"
+                      VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <Button Content="{Binding SecondaryText}" Command="{Binding SecondaryCommand}"
+                        MinWidth="90" HorizontalContentAlignment="Center" />
+                <Button Content="{Binding PrimaryText}" Command="{Binding PrimaryCommand}" Classes="accent" IsDefault="True"
+                        MinWidth="90" HorizontalContentAlignment="Center" />
+            </StackPanel>
+        </Grid>
+    </StackPanel>
+</Window>

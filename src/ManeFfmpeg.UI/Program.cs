@@ -7,7 +7,8 @@ namespace ManeFfmpeg.UI;
 
 internal static class Program
 {
-    private const string RelaunchedVariable = "MANE_FFMPEG_RELAUNCHED";
+    /// <summary>Set for the copy started by <see cref="TryRelaunchForBundledMpv"/>, whose parent waits for it.</summary>
+    internal const string RelaunchedVariable = "MANE_FFMPEG_RELAUNCHED";
 
     // Initialization code. Don't use any Avalonia, third-party APIs or any
     // SynchronizationContext-reliant code before AppMain is called: things aren't initialized

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - **share** built-in preset for everyday video to post or send: H.264 + AAC in an MP4 that plays on any phone or
   browser. Existing presets files gain it after *harsh*.
+- Updates: at launch the app looks for a newer release on GitHub and shows what changed since your version. It
+  downloads and installs the update and restarts, asking to save open projects first and reopening them afterwards,
+  or installs it when you quit. "Do not remind for this version" skips a release until the next one, and Settings can
+  turn the check off.
 
 ### Fixed
 - The UI no longer freezes while the preview plays: buttons like play/pause could take seconds to respond on older

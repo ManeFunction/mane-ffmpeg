@@ -79,6 +79,7 @@
                 </Grid>
                 <CheckBox Content="Offer to register project files at startup" IsChecked="{Binding AskToRegisterProjectFiles}"
                           IsEnabled="{Binding CanRegisterProjectFiles}" />
+                <CheckBox Content="Check for updates at startup" IsChecked="{Binding CheckForUpdates}" />
             </StackPanel>
         </Border>
 
