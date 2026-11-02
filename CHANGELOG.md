@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-11-02
 ### Added
 - **share** built-in preset for everyday video to post or send: H.264 + AAC in an MP4 that plays on any phone or
   browser. Existing presets files gain it after *harsh*.
