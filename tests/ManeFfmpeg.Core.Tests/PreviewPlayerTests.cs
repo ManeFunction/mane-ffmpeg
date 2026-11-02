@@ -157,4 +157,45 @@ public class PreviewPlayerTests(FfmpegFixture media) : IClassFixture<FfmpegFixtu
             player.Seek(TimeSpan.FromSeconds(seconds));
         await Wait.Until(() => Near(player.Mpv.GetDouble("time-pos"), 4.5), "the last seek");
     }
+
+    [MpvFact]
+    public async Task Scrubbing_a_long_gop_timeline_shows_frames_while_the_pointer_still_moves()
+    {
+        // One GOP for the whole file, so each exact seek decodes from its start (and brings the audio along), which
+        // takes far longer than the pointer takes to move again.
+        var path = Path.Combine(media.Directory, "long-gop.mp4");
+        await Cli.Wrap(FfmpegFixture.Tools!.Ffmpeg)
+            .WithArguments([.. FfmpegTools.Quiet, "-y", "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30", "-f", "lavfi", "-i", "sine",
+                "-t", "10", "-c:v", "libx264", "-preset", "veryfast", "-g", "300", "-pix_fmt", "yuv420p", "-c:a", "aac", path])
+            .ExecuteAsync();
+        var state = new ProjectState([new SourceMedia { Id = "s", Path = path }],
+            new Timeline([Clip.Create("s", TimeSpan.FromSeconds(0.5), TimeSpan.FromSeconds(9.5))]));
+        var url = TimelineEdl.Build(state, new Dictionary<string, MediaInfo> { ["s"] = await media.ProbeAsync(path) }, "/nonexistent/silence.mka")!;
+        using var player = PreviewPlayer.Create(hardwareDecoding: false, headless: true);
+        player.LoadTimeline(url, TimeSpan.Zero);
+        await Wait.Until(() => player.Mpv.GetString("current-tracks/audio/title") == TimelineEdl.AudioTitle, "the timeline");
+        await Wait.Until(() => Near(player.Mpv.GetDouble("time-pos"), 0), "the first frame");
+
+        var shown = new ConcurrentQueue<double>();
+        var dragging = true;
+        player.Mpv.PlaybackRestarted += () =>
+        {
+            if (dragging && player.Mpv.GetDouble("time-pos") is { } position)
+                shown.Enqueue(position);
+        };
+        // Drag back and forth between 1 s and 8 s, a seek per pointer move, until three frames have been shown.
+        // (Each frame takes as long as its decode, which depends on what else the machine is doing.)
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (shown.Count(p => p is > 1.2 and < 8) < 3 && clock.Elapsed < TimeSpan.FromSeconds(20))
+        {
+            var t = clock.Elapsed.TotalSeconds * 3.5 % 14;
+            player.Seek(TimeSpan.FromSeconds(1 + (t < 7 ? t : 14 - t)));
+            await Task.Delay(8);
+        }
+        dragging = false;
+        player.Seek(TimeSpan.FromSeconds(8.5));
+
+        Assert.True(shown.Count(p => p is > 1.2 and < 8) >= 3, $"frames shown during a {clock.Elapsed.TotalSeconds:F0} s drag: {string.Join(", ", shown)}");
+        await Wait.Until(() => Near(player.Mpv.GetDouble("time-pos"), 8.5), "the frame under the released pointer");
+    }
 }

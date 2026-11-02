@@ -143,10 +143,13 @@ internal static class DebugAutomation
                         break;
                     case "drag":
                     {
-                        // drag <ruler|video|audio> <fromSeconds> <toSeconds> [shift]
+                        // drag <ruler|video|audio> <fromSeconds> <toSeconds> [shift] [milliseconds]: by default ten moves,
+                        // 16 ms apart; given a duration, a move every 8 ms (and prints the preview frames shown meanwhile)
                         var parts = arg.Split(' ');
+                        var duration = parts.Skip(3).Select(p => double.TryParse(p, CultureInfo.InvariantCulture, out var ms) ? ms : (double?)null)
+                            .FirstOrDefault(ms => ms is not null);
                         await DragAsync(window, parts[0], double.Parse(parts[1], CultureInfo.InvariantCulture),
-                            double.Parse(parts[2], CultureInfo.InvariantCulture), parts.Length > 3 && parts[3] == "shift");
+                            double.Parse(parts[2], CultureInfo.InvariantCulture), parts.Skip(3).Contains("shift"), duration);
                         break;
                     }
                     case "focus":
@@ -446,7 +449,7 @@ internal static class DebugAutomation
     }
 
     /// <summary>Synthetic mouse drag on the timeline, in timeline seconds (x) and track rows (y).</summary>
-    private static async Task DragAsync(MainWindow window, string row, double from, double to, bool shift)
+    private static async Task DragAsync(MainWindow window, string row, double from, double to, bool shift, double? milliseconds = null)
     {
         var control = window.TimelineView;
         var vm = window.ViewModel.Timeline;
@@ -459,13 +462,18 @@ internal static class DebugAutomation
         ulong ts = 1;
         control.RaiseEvent(new PointerPressedEventArgs(control, pointer, window, origin + At(from), ts++,
             new PointerPointProperties(raw | RawInputModifiers.LeftMouseButton, PointerUpdateKind.LeftButtonPressed), mods));
-        for (var i = 1; i <= 10; i++)
+        var moves = milliseconds is { } ms ? Math.Max(1, (int)(ms / 8)) : 10;
+        var presented = window.Video.Counters.Presented;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        for (var i = 1; i <= moves; i++)
         {
-            var t = from + (to - from) * i / 10;
+            var t = from + (to - from) * i / moves;
             control.RaiseEvent(new PointerEventArgs(InputElement.PointerMovedEvent, control, pointer, window, origin + At(t), ts++,
                 new PointerPointProperties(raw | RawInputModifiers.LeftMouseButton, PointerUpdateKind.Other), mods));
-            await Task.Delay(16);
+            await Task.Delay(milliseconds is null ? 16 : 8);
         }
+        if (milliseconds is not null)
+            Console.WriteLine($"[drag] {window.Video.Counters.Presented - presented} preview frames shown in {clock.ElapsedMilliseconds} ms of dragging");
         control.RaiseEvent(new PointerReleasedEventArgs(control, pointer, window, origin + At(to), ts,
             new PointerPointProperties(raw, PointerUpdateKind.LeftButtonReleased), mods, MouseButton.Left));
     }

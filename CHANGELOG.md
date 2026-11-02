@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The UI no longer freezes while the preview plays: buttons like play/pause could take seconds to respond on older
   Macs. Drawing a frame no longer blocks the UI, and 1080p60 video plays at close to its full frame rate instead of
   about 22 fps.
+- Dragging the playhead along the timeline now updates the preview while the pointer moves. Before, video with long
+  gaps between keyframes (H.265 from *for storage*, camera footage) showed no new frame until the pointer stopped,
+  because each new position cancelled the one mpv was still decoding.
 
 ## [0.9.0] - 2026-10-26
 ### Added

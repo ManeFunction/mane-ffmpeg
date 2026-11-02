@@ -6,21 +6,26 @@ namespace ManeFfmpeg.Core.Mpv;
 /// <summary>
 /// The editor's preview: plays the timeline (an EDL from <see cref="TimelineEdl"/>) or a single source file,
 /// and keeps mpv's protocol to itself: which tracks to play (the EDL's titled tracks, or a source's chosen
-/// audio stream), keeping the position across reloads, audio-only compact mode, coalescing rapid seeks,
+/// audio stream), keeping the position across reloads, audio-only compact mode, pacing rapid seeks so each one
+/// finishes (and shows its frame) before the next,
 /// ignoring position reports that still echo the old position while a seek is under way or come from the
 /// file being replaced, forgetting a file that failed so the next load tries again, and live audio-delay
 /// feedback. Events arrive on the <see cref="SynchronizationContext"/> it was created on.
 /// </summary>
 public sealed class PreviewPlayer : IDisposable
 {
-    private static readonly TimeSpan SeekInterval = TimeSpan.FromMilliseconds(40);
+    // How often to check on a seek mpv hasn't reported finished: one that failed or was lost lets the next go.
+    private static readonly TimeSpan SeekCheck = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan SeekEcho = TimeSpan.FromMilliseconds(250);
 
     private readonly SynchronizationContext? _context = SynchronizationContext.Current;
     private readonly object _gate = new();
     private readonly Timer _seekTimer;
     private TimeSpan? _pendingSeek;
+    // A seek is under way (until mpv reports it finished or stops seeking); _seekTarget is where it goes.
     private bool _seeking;
+    private TimeSpan _seekTarget;
+    private bool _disposed;
     private DateTime _lastSeekAt;
     private bool _loading;
     private string? _loaded;
@@ -32,7 +37,9 @@ public sealed class PreviewPlayer : IDisposable
     private PreviewPlayer(MpvPlayer mpv)
     {
         Mpv = mpv;
-        _seekTimer = new Timer(_ => FlushSeek());
+        _seekTimer = new Timer(_ => CheckSeek());
+        // Straight from mpv's event thread: the next seek shouldn't wait for a busy UI thread.
+        mpv.PlaybackRestarted += OnPlaybackRestarted;
         mpv.PropertyChanged += (name, value) => Post(() => OnProperty(name, value));
         mpv.FileLoaded += entry => Post(() => OnFileLoaded(entry));
         mpv.FileFailed += (entry, error) => Post(() => OnFileFailed(entry, error));
@@ -107,7 +114,7 @@ public sealed class PreviewPlayer : IDisposable
     public void Unload()
     {
         lock (_gate)
-            _pendingSeek = null;
+            (_pendingSeek, _seeking) = (null, false);
         if (_loaded is null)
             return;
         _loaded = null;
@@ -117,9 +124,10 @@ public sealed class PreviewPlayer : IDisposable
 
     private void Load(string target, TimeSpan start)
     {
+        // A seek under way is dropped with the file it was in: the next one goes at once.
         lock (_gate)
         {
-            _pendingSeek = null;
+            (_pendingSeek, _seeking) = (null, false);
             _loading = true;
         }
         _loaded = target;
@@ -131,16 +139,24 @@ public sealed class PreviewPlayer : IDisposable
         _entry = Mpv.LoadFile(target);
     }
 
-    /// <summary>Seeks exactly; seeks arriving faster than mpv can follow collapse into the latest one.</summary>
+    /// <summary>
+    /// Seeks exactly. While a seek is under way, later ones wait and collapse into the latest, which goes as soon
+    /// as mpv has shown the frame. mpv drops an unfinished exact seek for a newer one, so seeking at the pointer's
+    /// pace would show nothing until the pointer stopped (an exact seek in a long GOP can take hundreds of ms).
+    /// </summary>
     public void Seek(TimeSpan time)
     {
         lock (_gate)
         {
             if (_loaded is null)
                 return;
-            _pendingSeek = time;
             if (_seeking)
+            {
+                // The pointer moving along the time it's already at (up and down) costs no second decode.
+                _pendingSeek = time == _seekTarget ? null : time;
                 return;
+            }
+            _pendingSeek = time;
             _seeking = true;
         }
         FlushSeek();
@@ -148,21 +164,51 @@ public sealed class PreviewPlayer : IDisposable
 
     private void FlushSeek()
     {
-        TimeSpan time;
+        TimeSpan? next;
         lock (_gate)
         {
-            if (_pendingSeek is not { } pending || _loaded is null)
-            {
-                _pendingSeek = null;
-                _seeking = false;
+            if (_disposed)
                 return;
-            }
-            time = pending;
+            next = _loaded is null ? null : _pendingSeek;
             _pendingSeek = null;
-            _lastSeekAt = DateTime.UtcNow;
-            _seekTimer.Change(SeekInterval, Timeout.InfiniteTimeSpan);
+            _seeking = next is not null;
+            if (next is { } target)
+            {
+                _seekTarget = target;
+                _lastSeekAt = DateTime.UtcNow;
+            }
+            _seekTimer.Change(_seeking ? SeekCheck : Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
-        Mpv.CommandAsync("seek", TimeFormat.Seconds(time), "absolute+exact");
+        if (next is { } time)
+            Mpv.CommandAsync("seek", TimeFormat.Seconds(time), "absolute+exact");
+    }
+
+    /// <summary>
+    /// A seek still under way keeps the next one waiting, however slow (a busy machine can take seconds per seek,
+    /// and replacing it would show nothing again); a seek mpv isn't working on lets the next one go.
+    /// </summary>
+    private void CheckSeek()
+    {
+        lock (_gate)
+            if (_disposed || !_seeking)
+                return;
+        if (Mpv.GetString("seeking") == "yes")
+        {
+            lock (_gate)
+                if (!_disposed && _seeking)
+                    _seekTimer.Change(SeekCheck, Timeout.InfiniteTimeSpan);
+            return;
+        }
+        FlushSeek();
+    }
+
+    /// <summary>The seek under way finished (or a load did): the latest waiting seek goes now.</summary>
+    private void OnPlaybackRestarted()
+    {
+        lock (_gate)
+            if (!_seeking)
+                return;
+        FlushSeek();
     }
 
     public void StepFrame(bool back)
@@ -268,6 +314,9 @@ public sealed class PreviewPlayer : IDisposable
 
     public void Dispose()
     {
+        // Seeks also go from mpv's event thread and the timer's; neither may touch the timer once it's gone.
+        lock (_gate)
+            _disposed = true;
         _seekTimer.Dispose();
         Mpv.Dispose();
     }

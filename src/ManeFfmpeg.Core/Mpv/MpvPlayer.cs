@@ -36,6 +36,9 @@ public sealed unsafe class MpvPlayer : IDisposable
 
     public event Action<string, string>? LogMessage;
 
+    /// <summary>A seek (or a load) finished: playback, or the paused frame, is at the new position.</summary>
+    public event Action? PlaybackRestarted;
+
     /// <param name="headless">No video or audio output, for tests; otherwise video goes to a render context.</param>
     public static MpvPlayer Create(bool hardwareDecoding, bool headless = false)
     {
@@ -202,6 +205,9 @@ public sealed unsafe class MpvPlayer : IDisposable
             case MpvNative.EventIdFileLoaded:
                 // Always follows the start of the same file.
                 FileLoaded?.Invoke(_startedEntry);
+                break;
+            case MpvNative.EventIdPlaybackRestart:
+                PlaybackRestarted?.Invoke();
                 break;
             case MpvNative.EventIdEndFile when ev->Data != 0:
             {
