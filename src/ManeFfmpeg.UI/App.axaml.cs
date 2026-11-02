@@ -15,6 +15,11 @@ namespace ManeFfmpeg.UI;
 
 public partial class App : Application
 {
+    private const string CheckForUpdatesHeader = "Check for Updates…";
+    private const string CheckingForUpdatesHeader = "Checking for Update…";
+
+    private NativeMenuItem? _updateItem;
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -33,6 +38,9 @@ public partial class App : Application
                 : $"libmpv not loaded: {Core.Mpv.MpvLibrary.LoadError}");
             if (NativeMenu.GetMenu(this)?.Items.OfType<NativeMenuItem>().FirstOrDefault(i => i.Header == "Settings…") is { } settingsItem)
                 settingsItem.Gesture = new KeyGesture(Key.OemComma, KeyModifiers.Meta);
+            _updateItem = NativeMenu.GetMenu(this)?.Items.OfType<NativeMenuItem>().FirstOrDefault(i => i.Header == CheckForUpdatesHeader);
+            Updater.Instance.BusyChanged += ShowUpdateBusy;
+            ShowUpdateBusy();
 
             var first = WindowManager.Instance.OpenNew();
             desktop.MainWindow = first;
@@ -124,6 +132,18 @@ public partial class App : Application
                 $"libmpv: {Core.Mpv.MpvLibrary.LoadedPath ?? "not found"}\n\n" +
                 "Powered by Ilia Petrov-Komotskii (Mane Function)",
                 "github.com/ManeFunction/mane-ffmpeg", "https://github.com/ManeFunction/mane-ffmpeg");
+    }
+
+    private void OnCheckForUpdatesClicked(object? sender, EventArgs e) => _ = Updater.Instance.CheckAndOfferAsync();
+
+    /// <summary>The menu item can't be clicked while a check or the update window is open.</summary>
+    private void ShowUpdateBusy()
+    {
+        if (_updateItem is not { } item)
+            return;
+        var busy = Updater.Instance.IsBusy;
+        item.Header = busy ? CheckingForUpdatesHeader : CheckForUpdatesHeader;
+        item.IsEnabled = !busy;
     }
 
     private void OnSettingsClicked(object? sender, EventArgs e) =>

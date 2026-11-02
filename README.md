@@ -42,7 +42,7 @@ Built with C#, .NET 10 and Avalonia 12.
 - **Updates**
   - At launch the app checks GitHub for a newer release and shows the changelog since your version.
   - *Update* downloads it, checks its checksum and restarts into the new version. Each window asks to save first, and saved projects open again. *Install on Quit* waits until you quit instead.
-  - "Do not remind for this version" stays quiet until the next release. *Settings → Check for updates at startup* turns the check off.
+  - "Do not remind for this version" stays quiet until the next release. *Settings → Check for updates at startup* turns the check off. *Check for Updates…* in the app menu looks on demand.
 - **Several windows**
   - File → New Window. Each window is its own project with its own player and export, so you can export in one window while editing in another.
 

@@ -7,6 +7,7 @@
     <NativeMenu.Menu>
         <NativeMenu>
             <NativeMenuItem Header="About Mane FFmpeg" Click="OnAboutClicked" />
+            <NativeMenuItem Header="Check for Updates…" Click="OnCheckForUpdatesClicked" />
             <NativeMenuItem Header="Settings…" Click="OnSettingsClicked" />
         </NativeMenu>
     </NativeMenu.Menu>

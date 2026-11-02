@@ -8,8 +8,8 @@ using ManeFfmpeg.UI.Views;
 namespace ManeFfmpeg.UI.Services;
 
 /// <summary>
-/// Offers a newer GitHub release once per launch. A downloaded update installs when the app restarts for it, or when
-/// the app quits if the user chose "Install on Quit".
+/// Offers a newer GitHub release once per launch, or whenever the user asks from the menu. A downloaded update installs
+/// when the app restarts for it, or when the app quits if the user chose "Install on Quit".
 /// </summary>
 public sealed class Updater
 {
@@ -30,16 +30,61 @@ public sealed class Updater
         AppVersion.Current;
 #endif
 
-    /// <summary>The newer release to offer, or null (none, turned off, skipped by the user, or no connection).</summary>
-    public async Task<UpdateOffer?> CheckAsync()
+    /// <summary>
+    /// True from the start of a check until its outcome is dealt with: no newer release, or the update window closed.
+    /// Only one check/offer runs at a time. Raised and read on the UI thread.
+    /// </summary>
+    public bool IsBusy { get; private set; }
+
+    public event Action? BusyChanged;
+
+    private void SetBusy(bool busy)
     {
+        if (IsBusy == busy)
+            return;
+        IsBusy = busy;
+        BusyChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// The newer release to offer, or null (none, turned off, skipped by the user, no connection, or another check is
+    /// already running). When it returns a release the updater stays busy until <see cref="OfferAsync"/> is done with it.
+    /// </summary>
+    /// <param name="manual">The user asked: look even when automatic checks are off, and offer a release they skipped.</param>
+    public async Task<UpdateOffer?> CheckAsync(bool manual = false)
+    {
+        if (IsBusy)
+            return null;
         var settings = AppServices.Instance.Settings.Current;
 #if DEBUG
         if (Environment.GetEnvironmentVariable(PretendVersionVariable) is null)
             return null;
 #endif
-        if (!settings.CheckForUpdates)
+        if (!manual && !settings.CheckForUpdates)
             return null;
+        SetBusy(true);
+        UpdateOffer? offer = null;
+        try
+        {
+            offer = await LookUpAsync(settings, manual);
+            return offer;
+        }
+        finally
+        {
+            if (offer is null)
+                SetBusy(false);
+        }
+    }
+
+    /// <summary>The menu command: checks now and, if there is a newer release, shows the update window.</summary>
+    public async Task CheckAndOfferAsync()
+    {
+        if (await CheckAsync(manual: true) is { } offer)
+            await OfferAsync(offer);
+    }
+
+    private async Task<UpdateOffer?> LookUpAsync(AppSettings settings, bool manual)
+    {
         UpdateInstaller.CleanUp();
         try
         {
@@ -50,7 +95,7 @@ public sealed class Updater
                 AppLog.Write($"Update: {CurrentVersion.ToString(3)} is the latest release");
                 return null;
             }
-            if (settings.SkippedUpdateVersion == offer.Version.ToString(3))
+            if (!manual && settings.SkippedUpdateVersion == offer.Version.ToString(3))
             {
                 AppLog.Write($"Update: {offer.Version.ToString(3)} is available, but the user skipped it");
                 return null;
@@ -67,6 +112,18 @@ public sealed class Updater
 
     /// <summary>Shows the update window for <paramref name="offer"/> and carries out what the user picks there.</summary>
     public async Task OfferAsync(UpdateOffer offer)
+    {
+        try
+        {
+            await ShowOfferAsync(offer);
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    private async Task ShowOfferAsync(UpdateOffer offer)
     {
         if (WindowManager.Instance.Windows.LastOrDefault() is not { } owner)
             return;

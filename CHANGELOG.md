@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Updates: at launch the app looks for a newer release on GitHub and shows what changed since your version. It
   downloads and installs the update and restarts, asking to save open projects first and reopening them afterwards,
   or installs it when you quit. "Do not remind for this version" skips a release until the next one, and Settings can
-  turn the check off.
+  turn the check off. *Check for Updates…* in the app menu looks right away (even with the automatic check off, and
+  even for a release you skipped) and is greyed out as *Checking for Update…* until the check or the update window is done.
 
 ### Fixed
 - The UI no longer freezes while the preview plays: buttons like play/pause could take seconds to respond on older
