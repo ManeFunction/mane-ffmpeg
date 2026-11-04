@@ -117,11 +117,11 @@ public static class ExportPlanner
 
         var items = clips.Select(c => Resolve(job, c, args)).ToList();
         foreach (var item in items)
+        foreach (var file in new[] { item.Source, job.State.AudioSourceOf(item.Clip) }.OfType<SourceMedia>().Distinct())
         {
-            if (SameFile(item.Source.Path, job.OutputPath))
-                throw new ExportPlanException("The output file is one of the source videos. Choose another name.");
-            if (job.State.AudioSourceOf(item.Clip) is { } heard && heard.Id != item.Source.Id && SameFile(heard.Path, job.OutputPath))
-                throw new ExportPlanException("The output file is one of the audio files. Choose another name.");
+            if (SameFile(file.Path, job.OutputPath))
+                throw new ExportPlanException(
+                    $"The output file is one of the {(file == item.Source ? "source videos" : "audio files")}. Choose another name.");
         }
 
         var ctx = new Context(job, args, fallback, items);
@@ -129,8 +129,7 @@ public static class ExportPlanner
             ? Passthrough(ctx)
             : args.VideoCopy
                 ? StreamCopy(ctx)
-                // Replaced audio is always re-encoded: the audio file's codec may not fit the output container.
-                : items.Count == 1 && args.AudioCopy && items[0].Audio is not null && items[0].Clip.ReplacedAudio is null
+                : items.Count == 1 && args.AudioCopy && items[0].Audio is not null
                     ? SingleClipAudioCopy(ctx) ?? Encode(ctx)
                     : Encode(ctx);
         return plan with { Notes = [.. args.Warnings, .. plan.Notes], OutputPath = job.OutputPath, WorkDirectory = job.WorkDirectory };
@@ -141,6 +140,15 @@ public static class ExportPlanner
     {
         /// <summary>The heard stream, or null for silence.</summary>
         public AudioStreamInfo? Audio => Heard?.Stream;
+
+        /// <summary>
+        /// The clip plays its video's own audio (none dropped on it). Replaced audio is always re-encoded: the audio
+        /// file's codec may not fit the output container.
+        /// </summary>
+        public bool PlaysOwnAudio => Clip.ReplacedAudio is null;
+
+        /// <summary>The clip plays its own audio, not slipped: the audio can be copied along with the video.</summary>
+        public bool OwnAudioInSync => PlaysOwnAudio && Clip.AudioOffset == TimeSpan.Zero;
     }
 
     private sealed record Context(ExportJob Job, PresetArguments Args, IReadOnlyList<string> Fallback, List<Item> Items)
@@ -170,8 +178,7 @@ public static class ExportPlanner
     }
 
     private static bool IsWholeFile(Item item) =>
-        item.Clip.In <= Tolerance && item.Clip.Out >= item.Media.Duration - Tolerance && item.Clip.AudioOffset == TimeSpan.Zero
-        && item.Clip.ReplacedAudio is null;
+        item.Clip.In <= Tolerance && item.Clip.Out >= item.Media.Duration - Tolerance && item.OwnAudioInSync;
 
     // ---- Passthrough -----------------------------------------------------------------------------------
 
@@ -229,9 +236,7 @@ public static class ExportPlanner
         a.AddRange(["-filter_complex", graph.ToString(), "-map", "[vout]"]);
         if (ctx.AnyAudio)
             a.AddRange(["-map", "[aout]"]);
-        a.AddRange(AudioTokens(ctx, ctx.AnyAudio, notes, ctx.Items.Any(i => i.Clip.ReplacedAudio is not null)
-            ? "clips have replaced audio"
-            : "the edit has cuts or audio offsets"));
+        a.AddRange(AudioTokens(ctx, ctx.AnyAudio, notes, AudioReencodeReason(ctx, otherwise: "the edit has cuts")));
         a.AddRange(ContainerFlags(ctx, IsHevc(ctx.Args, ctx.Items[0])));
         a.Add(ctx.Out);
 
@@ -282,9 +287,7 @@ public static class ExportPlanner
         var sameAudio = allHaveAudio && ctx.Items.All(i =>
             i.Audio!.Codec == first.Audio!.Codec && i.Audio.SampleRate == first.Audio.SampleRate
             && i.Audio.Channels == first.Audio.Channels && i.Audio.Index == first.Audio.Index);
-        var noOffsets = ctx.Items.All(i => i.Clip.AudioOffset == TimeSpan.Zero);
-        var noReplaced = ctx.Items.All(i => i.Clip.ReplacedAudio is null);
-        var copyAudio = ctx.AnyAudio && ctx.Args.AudioCopy && sameAudio && noOffsets && noReplaced;
+        var copyAudio = ctx.AnyAudio && ctx.Args.AudioCopy && sameAudio && ctx.Items.All(i => i.OwnAudioInSync);
 
         // Where the container seeks unreliably (MPEG-TS…), the concat demuxer's inpoint lands early, so each
         // clip is first cut into an exact temporary segment and the segments are joined.
@@ -365,11 +368,8 @@ public static class ExportPlanner
                 graph.Append(AudioChain(item, starts[i], item.Clip.Out - starts[i], audioFormat, ref audioInput, inputs)).Append($"[a{i}];");
             }
             AppendConcat(graph, ctx.Items.Count, video: false, audio: true, ctx.Args, audioOut: "ashift");
-            var reason = !noReplaced ? "clips have replaced audio"
-                : !noOffsets ? "clips have audio offsets"
-                : !allHaveAudio ? "some clips have no audio"
-                : "the clips' audio formats differ";
-            outputTokens = AudioTokens(ctx, true, notes, reason);
+            outputTokens = AudioTokens(ctx, true, notes,
+                AudioReencodeReason(ctx, otherwise: allHaveAudio ? "the clips' audio formats differ" : "some clips have no audio"));
         }
 
         IReadOnlyList<string> JoinArguments(string shift)
@@ -421,6 +421,8 @@ public static class ExportPlanner
         var item = ctx.Items[0];
         var heard = item.Heard!;
         var clip = item.Clip;
+        if (!item.PlaysOwnAudio)
+            return null;
         if (heard.Layout(clip) is not AudioLayout.Placed { Placement: { IsSilent: false } placement })
             return null;
         var (lead, readFrom, readLength, _) = placement;
@@ -564,6 +566,12 @@ public static class ExportPlanner
         if (audio && args.AudioFilter is not null)
             graph.Append($";[acat]{args.AudioFilter}[{audioOut}]");
     }
+
+    /// <summary>Why audio can't be copied: replaced or slipped audio first, else <paramref name="otherwise"/>.</summary>
+    private static string AudioReencodeReason(Context ctx, string otherwise) =>
+        ctx.Items.Any(i => !i.PlaysOwnAudio) ? "clips have replaced audio"
+        : ctx.Items.Any(i => !i.OwnAudioInSync) ? "clips have audio offsets"
+        : otherwise;
 
     /// <summary>Preset output options, with "-c:a copy" swapped for the fallback when audio is filtered.</summary>
     private static IReadOnlyList<string> AudioTokens(Context ctx, bool audioFiltered, List<string> notes, string reason)
