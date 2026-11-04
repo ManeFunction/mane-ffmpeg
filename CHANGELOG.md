@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   audio file dropped on it) downgraded the sound of the whole export.
 - *Check for Updates…* could stay greyed out for the rest of the session when something failed at launch between
   finding an update and showing it.
+- Restarting for an update no longer stops a running export in one window when a later window answers *Cancel*: exports
+  stop only once every window has agreed to close.
 
 ## [1.0.0] - 2026-11-02
 ### Added

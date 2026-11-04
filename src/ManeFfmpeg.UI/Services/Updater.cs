@@ -131,7 +131,8 @@ public sealed class Updater
 
     /// <summary>
     /// Closes every window the way the user would (saving or stopping what they ask to), then quits so the update can
-    /// replace the app and start it again with the saved projects. Nothing closes until every window has agreed.
+    /// replace the app and start it again with the saved projects. Nothing closes, and no export stops, until every
+    /// window has agreed.
     /// </summary>
     private async Task RestartAsync()
     {
@@ -139,7 +140,7 @@ public sealed class Updater
         foreach (var window in windows)
         {
             window.Activate();
-            if (await window.ConfirmCloseAsync())
+            if (await window.ConfirmCloseAsync(stopExport: false))
                 continue;
             AppLog.Write("Update: restart cancelled; installing on quit instead");
             await Dialogs.InfoAsync(window, "Update postponed",
@@ -153,7 +154,10 @@ public sealed class Updater
             return;
         }
         foreach (var window in windows)
+        {
+            window.StopExport();
             window.ForceClose();
+        }
         (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
     }
 

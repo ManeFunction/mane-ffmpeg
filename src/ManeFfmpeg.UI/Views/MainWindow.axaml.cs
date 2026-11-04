@@ -448,14 +448,19 @@ public partial class MainWindow : Window, IMainWindowView
     /// Asks before a running export or unsaved edits would be lost (stopping or saving them as the user chooses);
     /// false when the user would rather keep the window open.
     /// </summary>
-    public async Task<bool> ConfirmCloseAsync()
+    /// <param name="stopExport">
+    /// Stop an export the user agreed to stop right away. Closing several windows at once passes false and calls
+    /// <see cref="StopExport"/> once every window has agreed, so a later "Cancel" loses nothing.
+    /// </param>
+    public async Task<bool> ConfirmCloseAsync(bool stopExport = true)
     {
         if (ViewModel.Export.IsExporting)
         {
             var stop = await AskAsync("An export is still running", "Stop the export and close this window?", "Stop and close", "Keep working");
             if (stop != 0)
                 return false;
-            ViewModel.Export.CancelExportCommand.Execute(null);
+            if (stopExport)
+                StopExport();
         }
         if (ViewModel.IsDirty && ViewModel.HasClips)
         {
@@ -467,6 +472,12 @@ public partial class MainWindow : Window, IMainWindowView
                 return false;
         }
         return true;
+    }
+
+    public void StopExport()
+    {
+        if (ViewModel.Export.IsExporting)
+            ViewModel.Export.CancelExportCommand.Execute(null);
     }
 
     /// <summary>Closes without asking (after <see cref="ConfirmCloseAsync"/>, or when the app quits from automation).</summary>
