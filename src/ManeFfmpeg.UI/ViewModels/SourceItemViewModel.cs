@@ -7,7 +7,7 @@ using ManeFfmpeg.Core.Model;
 namespace ManeFfmpeg.UI.ViewModels;
 
 /// <summary>A row in the Files panel: a video on the Video tab, or an audio file on the Audio tab.</summary>
-public sealed partial class SourceItemViewModel(SourceMedia source, int colorIndex, bool isAudioFile = false) : ViewModelBase
+public sealed partial class SourceItemViewModel(SourceMedia source, int colorIndex, FileKind kind) : ViewModelBase
 {
     public static readonly Color[] Palette =
     [
@@ -24,8 +24,8 @@ public sealed partial class SourceItemViewModel(SourceMedia source, int colorInd
 
     public static Color AudioColor(int colorIndex) => AudioPalette[colorIndex % AudioPalette.Length];
 
-    /// <summary>An imported audio file (Audio tab) rather than a video.</summary>
-    public bool IsAudioFile { get; } = isAudioFile;
+    /// <summary>A video (Video tab) or an imported audio file (Audio tab).</summary>
+    public FileKind Kind { get; } = kind;
 
     public SourceMedia Source { get; private set; } = source;
 
@@ -37,7 +37,7 @@ public sealed partial class SourceItemViewModel(SourceMedia source, int colorInd
 
     public int ColorIndex { get; } = colorIndex;
 
-    public Color Color => IsAudioFile ? AudioColor(ColorIndex) : Palette[ColorIndex % Palette.Length];
+    public Color Color => Kind == FileKind.Audio ? AudioColor(ColorIndex) : Palette[ColorIndex % Palette.Length];
 
     public IBrush Brush => new SolidColorBrush(Color);
 
@@ -70,7 +70,7 @@ public sealed partial class SourceItemViewModel(SourceMedia source, int colorInd
             if (Info is not { } info)
                 return "";
             var parts = new List<string> { TimeFormat.Display(info.Duration) };
-            if (IsAudioFile)
+            if (Kind == FileKind.Audio)
             {
                 parts.Add(info.Audio(Source.AudioStreamIndex) is { } stream ? stream.Describe() : "no audio");
                 return string.Join(" · ", parts);
@@ -115,7 +115,8 @@ public sealed partial class SourceItemViewModel(SourceMedia source, int colorInd
             OnPropertyChanged(nameof(Name));
             OnPropertyChanged(nameof(Path));
         }
-        if (IsAudioFile)
+        // An audio file's details show its chosen stream.
+        if (Kind == FileKind.Audio)
             OnPropertyChanged(nameof(Details));
     }
 }

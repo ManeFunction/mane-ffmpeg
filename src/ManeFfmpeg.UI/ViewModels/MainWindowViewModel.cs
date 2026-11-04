@@ -158,13 +158,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     /// <summary>Keeps the Files panel and the catalog in step with the project state (after edits, undo, load).</summary>
     private void SyncSources()
     {
-        SyncList(Sources, State.Sources, audio: false);
-        SyncList(AudioFiles, State.AudioFiles, audio: true);
+        SyncList(Sources, FileKind.Video);
+        SyncList(AudioFiles, FileKind.Audio);
         _catalog.Sync(State.Sources, State.AudioFiles);
     }
 
-    private void SyncList(ObservableCollection<SourceItemViewModel> items, IReadOnlyList<SourceMedia> sources, bool audio)
+    private void SyncList(ObservableCollection<SourceItemViewModel> items, FileKind kind)
     {
+        var sources = State.Files(kind);
         var ids = sources.Select(s => s.Id).ToHashSet();
         for (var i = items.Count - 1; i >= 0; i--)
             if (!ids.Contains(items[i].Id))
@@ -175,7 +176,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
             if (item is null)
             {
                 var color = Enumerable.Range(0, int.MaxValue).First(c => items.All(s => s.ColorIndex != c));
-                item = new SourceItemViewModel(source, color, audio);
+                item = new SourceItemViewModel(source, color, kind);
                 item.AudioStreamChosen += OnAudioStreamChosen;
                 items.Add(item);
             }
@@ -202,13 +203,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     private void OnAudioStreamChosen(SourceItemViewModel item, int index) =>
-        Commit(ReplaceFile(State, item, item.Source with { AudioStreamIndex = index }));
-
-    /// <summary>The state with a video or audio file changed (relinked, another stream).</summary>
-    private static ProjectState ReplaceFile(ProjectState state, SourceItemViewModel item, SourceMedia updated) =>
-        item.IsAudioFile
-            ? state with { AudioFiles = state.AudioFiles.Replace(item.Source, updated) }
-            : state with { Sources = state.Sources.Replace(item.Source, updated) };
+        Commit(State.ReplaceFile(item.Kind, item.Source, item.Source with { AudioStreamIndex = index }));
 
     /// <summary>
     /// Adds files by what they hold: videos as sources, each appended as a whole clip; files with only sound to the
@@ -354,7 +349,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         if (item is null || View is null)
             return;
-        if (item.IsAudioFile)
+        if (item.Kind == FileKind.Audio)
         {
             var playing = State.Timeline.Clips.Count(c => c.ReplacedAudio?.FileId == item.Id);
             if (playing > 0 && await View.AskAsync("Remove audio file?",
@@ -386,7 +381,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         var file = new FileInfo(path);
         var updated = item.Source with { Path = file.FullName, FileSize = file.Length, LastWriteUtc = file.LastWriteTimeUtc };
-        Commit(ReplaceFile(State, item, updated));
+        Commit(State.ReplaceFile(item.Kind, item.Source, updated));
     }
 
     // ---- Files ------------------------------------------------------------------------------------

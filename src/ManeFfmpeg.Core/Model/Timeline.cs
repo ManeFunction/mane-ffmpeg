@@ -142,6 +142,16 @@ public sealed record ProjectState(ImmutableList<SourceMedia> Sources, Timeline T
 
     public SourceMedia? AudioFile(string id) => AudioFiles.Find(s => s.Id == id);
 
+    /// <summary>The videos or the audio files.</summary>
+    public ImmutableList<SourceMedia> Files(FileKind kind) => kind == FileKind.Audio ? AudioFiles : Sources;
+
+    /// <summary>The state with the videos or the audio files changed.</summary>
+    public ProjectState WithFiles(FileKind kind, ImmutableList<SourceMedia> files) =>
+        kind == FileKind.Audio ? this with { AudioFiles = files } : this with { Sources = files };
+
+    /// <summary>The state with one video or audio file changed (relinked, another audio stream).</summary>
+    public ProjectState ReplaceFile(FileKind kind, SourceMedia old, SourceMedia updated) => WithFiles(kind, Files(kind).Replace(old, updated));
+
     /// <summary>The file whose audio the clip plays: its replacement audio file, or its own video.</summary>
     public SourceMedia? AudioSourceOf(Clip clip) => clip.ReplacedAudio is { } r ? AudioFile(r.FileId) : Source(clip.SourceId);
 

@@ -89,10 +89,10 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
     public bool IsSourceMode => Mode == PreviewMode.Source;
 
     /// <summary>A video is previewed on its own: In/Out marks can pick a range of it (audio files have none).</summary>
-    public bool CanMark => IsSourceMode && PreviewedSource is { IsAudioFile: false };
+    public bool CanMark => IsSourceMode && PreviewedSource is { Kind: FileKind.Video };
 
     public string PreviewTitle => Mode == PreviewMode.Source && PreviewedSource is { } s
-        ? $"{(s.IsAudioFile ? "Audio" : "Source")}: {s.Name}"
+        ? $"{(s.Kind == FileKind.Audio ? "Audio" : "Source")}: {s.Name}"
         : "Preview";
 
     /// <summary>Where the preview is: in the previewed source, or the playhead on the timeline.</summary>
