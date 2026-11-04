@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   out inside it (shifted audio, or audio shorter than the clip) and where looped audio starts again. Pressing or
   releasing Shift mid-drag snaps or lets go at once.
 
+### Fixed
+- Exports that join clips with different audio formats keep the best of them: the highest sample rate and the widest
+  channel layout. Before, everything was converted to the first clip's format, so a mono or low-rate first clip (or an
+  audio file dropped on it) downgraded the sound of the whole export.
+
 ## [1.0.0] - 2026-11-02
 ### Added
 - **share** built-in preset for everyday video to post or send: H.264 + AAC in an MP4 that plays on any phone or

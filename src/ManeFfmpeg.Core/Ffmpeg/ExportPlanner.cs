@@ -585,9 +585,18 @@ public static class ExportPlanner
         return sb.ToString();
     }
 
-    /// <summary>Sample rate and layout of the first clip that has audio; everything is converted to it.</summary>
-    private static (int Rate, string Layout)? AudioFormat(List<Item> items) =>
-        items.FirstOrDefault(i => i.Audio is not null)?.Audio is { } a ? (a.SampleRate, a.EffectiveLayout) : null;
+    /// <summary>
+    /// The format every clip's audio is converted to: the highest sample rate and the widest channel layout among the
+    /// clips, so a low-rate or mono audio file on one clip never downgrades the others.
+    /// </summary>
+    private static (int Rate, string Layout)? AudioFormat(List<Item> items)
+    {
+        var streams = items.Select(i => i.Audio).OfType<AudioStreamInfo>().ToList();
+        if (streams.Count == 0)
+            return null;
+        var widest = streams.MaxBy(a => a.Channels)!;
+        return (streams.Max(a => a.SampleRate), widest.EffectiveLayout);
+    }
 
     private static IEnumerable<string> ContainerFlags(Context ctx, bool hevc)
     {

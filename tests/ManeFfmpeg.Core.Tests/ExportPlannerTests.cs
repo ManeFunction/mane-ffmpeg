@@ -192,6 +192,21 @@ public class ReplacedAudioPlannerTests
     }
 
     [Fact]
+    public void A_mono_low_rate_file_does_not_downgrade_the_other_clips()
+    {
+        var voice = new MediaInfo
+        {
+            Duration = S(3), FormatName = "mp3",
+            AudioStreams = [new AudioStreamInfo { Index = 0, Codec = "mp3", SampleRate = 22050, Channels = 1, ChannelLayout = "mono", Duration = S(3) }],
+        };
+        var own = Clip.Create("a", S(5), S(6));
+        var args = ExportPlanner.Plan(Job(Encode, new Dictionary<string, MediaInfo> { ["a"] = Video, ["t"] = voice }, C(1, 4), own)).CommandText("ffmpeg");
+        Assert.DoesNotContain("sample_rates=22050", args);
+        Assert.DoesNotContain("channel_layouts=mono", args);
+        Assert.Equal(2, args.Split("aformat=sample_rates=48000:channel_layouts=stereo").Length - 1);
+    }
+
+    [Fact]
     public void Looped_snapshot()
     {
         var plan = ExportPlanner.Plan(Job(Encode, Both, C(1, 8, loop: true, offset: 0.5)));
