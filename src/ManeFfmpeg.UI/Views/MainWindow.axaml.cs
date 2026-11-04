@@ -22,9 +22,7 @@ public partial class MainWindow : Window, IMainWindowView
         ["*.mp3", "*.m4a", "*.aac", "*.wav", "*.aif", "*.aiff", "*.flac", "*.ogg", "*.oga", "*.opus", "*.wma", "*.mka", "*.ac3", "*.eac3", "*.dts", "*.caf"];
 
     // An audio file pressed in the Audio tab, and whether it is being dragged towards the timeline.
-    private SourceItemViewModel? _audioPressed;
     private Point _audioPressPoint;
-    private bool _audioDragging;
     private static readonly Cursor DropCursor = new(StandardCursorType.DragCopy);
     private static readonly Cursor NoDropCursor = new(StandardCursorType.No);
 
@@ -266,8 +264,8 @@ public partial class MainWindow : Window, IMainWindowView
                 vm.Preview.AddMarkedRangeCommand.Execute(null);
                 break;
             case Key.Escape:
-                if (_audioDragging)
-                    EndAudioDrag(drop: false);
+                if (vm.AudioDrag.IsDragging)
+                    CancelAudioDrag();
                 else if (vm.Preview.IsSourceMode)
                     vm.Preview.BackToTimelineCommand.Execute(null);
                 else
@@ -376,64 +374,40 @@ public partial class MainWindow : Window, IMainWindowView
         return TimelineLayout.HitTest(vm.Timeline, vm.Zoom, vm.Scroll, p.X, p.Y) is { ClipId: { } id, Zone: not (ViewModels.TimelineZone.Ruler or ViewModels.TimelineZone.Empty) } ? id : null;
     }
 
-    // ---- Dragging an audio file onto a clip -------------------------------------------------------
-    // An in-app pointer drag (captured by the list) rather than the platform's drag and drop: it can't get stuck
-    // in a native drag session, draws its own feedback on the timeline and can be scripted.
+    // ---- Dragging an audio file onto a clip (AudioDragGesture) -------------------------------------
 
     private void OnAudioListPressed(object? sender, PointerPressedEventArgs e)
     {
-        _audioPressed = null;
-        if (!e.GetCurrentPoint(AudioList).Properties.IsLeftButtonPressed)
-            return;
-        if ((e.Source as Control)?.DataContext is SourceItemViewModel { IsProblem: false } item)
-        {
-            _audioPressed = item;
-            _audioPressPoint = e.GetPosition(this);
-        }
+        var left = e.GetCurrentPoint(AudioList).Properties.IsLeftButtonPressed;
+        ViewModel.AudioDrag.Press(left ? (e.Source as Control)?.DataContext as SourceItemViewModel : null);
+        _audioPressPoint = e.GetPosition(this);
     }
 
     private void OnAudioListMoved(object? sender, PointerEventArgs e)
     {
-        if (_audioPressed is not { } item)
+        var p = e.GetPosition(this);
+        var started = !ViewModel.AudioDrag.IsDragging;
+        if (!ViewModel.AudioDrag.Move(Math.Abs(p.X - _audioPressPoint.X) + Math.Abs(p.Y - _audioPressPoint.Y), ClipAt(e.GetPosition(TimelineView))))
             return;
-        if (!_audioDragging)
-        {
-            var p = e.GetPosition(this);
-            if (Math.Abs(p.X - _audioPressPoint.X) + Math.Abs(p.Y - _audioPressPoint.Y) <= TimelineGestures.DragThreshold)
-                return;
-            _audioDragging = true;
+        if (started)
             e.Pointer.Capture(AudioList);
-            ViewModel.StatusMessage = $"Drop {item.Name} on a clip to replace its sound.";
-        }
-        var clip = ClipAt(e.GetPosition(TimelineView));
-        AudioList.Cursor = clip is null ? NoDropCursor : DropCursor;
-        ViewModel.Timeline.ShowAudioDrop(new AudioDropTarget(item.Name, item.Color, clip));
+        AudioList.Cursor = ViewModel.AudioDrag.TargetClip is null ? NoDropCursor : DropCursor;
         e.Handled = true;
     }
 
     private void OnAudioListReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (!_audioDragging)
-        {
-            _audioPressed = null;
+        if (!ViewModel.AudioDrag.Release())
             return;
-        }
-        EndAudioDrag(drop: true);
+        AudioList.Cursor = Cursor.Default;
         e.Pointer.Capture(null);
         e.Handled = true;
     }
 
-    private void EndAudioDrag(bool drop)
+    private void CancelAudioDrag()
     {
-        var item = _audioPressed;
-        var clip = ViewModel.Timeline.AudioDrop?.ClipId;
-        _audioPressed = null;
-        _audioDragging = false;
-        AudioList.Cursor = Cursor.Default;
-        ViewModel.Timeline.ShowAudioDrop(null);
-        ViewModel.StatusMessage = null;
-        if (drop && item is not null && clip is not null)
-            ViewModel.ReplaceClipAudio(clip, item.Id);
+        if (ViewModel.AudioDrag.Cancel())
+            AudioList.Cursor = Cursor.Default;
     }
 
     // ---- Media bin context menu -------------------------------------------------------------------
@@ -456,11 +430,7 @@ public partial class MainWindow : Window, IMainWindowView
         AudioList.AddHandler(PointerPressedEvent, OnAudioListPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
         AudioList.AddHandler(PointerMovedEvent, OnAudioListMoved, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
         AudioList.AddHandler(PointerReleasedEvent, OnAudioListReleased, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
-        AudioList.PointerCaptureLost += (_, _) =>
-        {
-            if (_audioDragging)
-                EndAudioDrag(drop: false);
-        };
+        AudioList.PointerCaptureLost += (_, _) => CancelAudioDrag();
     }
 
     // ---- Closing ----------------------------------------------------------------------------------

@@ -28,7 +28,7 @@ public interface IMainWindowView
 }
 
 /// <summary>One open project: its edit history, sources and clip inspector, with the preview and export as children.</summary>
-public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
+public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable, IAudioDragHost
 {
     private readonly AppServices _app = AppServices.Instance;
     private readonly SourceCatalog _catalog = new(AppServices.Instance);
@@ -46,6 +46,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         AudioFiles.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasNoAudioFiles));
         Export = new ExportViewModel(this);
         Preview = new PreviewViewModel(this);
+        AudioDrag = new AudioDragGesture(this);
     }
 
     public IMainWindowView? View { get; set; }
@@ -59,6 +60,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     public PreviewViewModel Preview { get; }
 
     public ExportViewModel Export { get; }
+
+    /// <summary>Dragging a file from the Audio tab onto a clip.</summary>
+    public AudioDragGesture AudioDrag { get; }
+
+    void IAudioDragHost.ShowAudioDrop(AudioDropTarget? target) => Timeline.ShowAudioDrop(target);
 
     /// <summary>The project state changed (an edit, undo or redo, or loading); raised after the bin is in step.</summary>
     public event EventHandler? StateChanged;
