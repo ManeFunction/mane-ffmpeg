@@ -221,7 +221,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         {
             if (info is { Video: null, AudioStreams.Length: > 0 })
             {
-                (state, var id) = AddAudioFile(state, path);
+                (state, var id) = ProjectEditor.AddFile(state, FileKind.Audio, NewSource(path));
                 audio.Add(id);
                 continue;
             }
@@ -230,14 +230,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
                 failed.Add($"{Path.GetFileName(path)}: {error ?? "no video or audio stream"}");
                 continue;
             }
-            var existing = state.Sources.Find(s => s.Path == path);
-            var source = existing ?? NewSource(path);
-            if (existing is null)
-                state = state with { Sources = state.Sources.Add(source) };
-            state = state with { Timeline = TimelineEditor.Append(state.Timeline, Clip.Create(source.Id, TimeSpan.Zero, info.Duration)) };
+            (state, var sourceId) = ProjectEditor.AddFile(state, FileKind.Video, NewSource(path));
+            state = ProjectEditor.AppendClip(state, sourceId, TimeSpan.Zero, info.Duration);
         }
         if (replaceAudioOf is not null && audio.Count > 0)
-            state = state with { Timeline = TimelineEditor.ReplaceAudio(state.Timeline, replaceAudioOf, audio[0]) };
+            state = ProjectEditor.ReplaceClipAudio(state, replaceAudioOf, audio[0]);
         CommitKeepingFit(state);
         if (audio.Count > 0)
             FilesTab = 1;
@@ -264,7 +261,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
                 failed.Add($"{Path.GetFileName(path)}: {error ?? "no audio stream"}");
                 continue;
             }
-            (state, _) = AddAudioFile(state, path);
+            (state, _) = ProjectEditor.AddFile(state, FileKind.Audio, NewSource(path));
             added++;
         }
         Commit(state);
@@ -275,15 +272,6 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     private static string AudioAddedMessage(int count) =>
         $"{(count == 1 ? "Audio file added" : $"{count} audio files added")}: drag one onto a clip to replace its sound.";
-
-    /// <summary>The state with <paramref name="path"/> as an audio file (once), and its id.</summary>
-    private static (ProjectState State, string Id) AddAudioFile(ProjectState state, string path)
-    {
-        if (state.AudioFiles.Find(s => s.Path == path) is { } existing)
-            return (state, existing.Id);
-        var file = NewSource(path);
-        return (state with { AudioFiles = state.AudioFiles.Add(file) }, file.Id);
-    }
 
     /// <summary>Probes the files that exist, once ffmpeg is known; null when there's nothing to add.</summary>
     private async Task<(string Path, MediaInfo? Info, string? Error)[]?> ProbeFilesAsync(IEnumerable<string> paths)
@@ -341,7 +329,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         if (item?.Info is not { Video: not null } info)
             return;
-        CommitKeepingFit(State with { Timeline = TimelineEditor.Append(State.Timeline, Clip.Create(item.Id, TimeSpan.Zero, info.Duration)) });
+        CommitKeepingFit(ProjectEditor.AppendClip(State, item.Id, TimeSpan.Zero, info.Duration));
     }
 
     [RelayCommand]
@@ -349,26 +337,16 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         if (item is null || View is null)
             return;
-        if (item.Kind == FileKind.Audio)
-        {
-            var playing = State.Timeline.Clips.Count(c => c.ReplacedAudio?.FileId == item.Id);
-            if (playing > 0 && await View.AskAsync("Remove audio file?",
-                    $"\"{item.Name}\" plays on {playing} clip(s). They will go back to their own audio (you can undo).",
-                    "Remove", "Cancel") != 0)
-                return;
-            Commit(State with { AudioFiles = State.AudioFiles.Remove(item.Source), Timeline = TimelineEditor.RemoveAudioFile(State.Timeline, item.Id) });
-            return;
-        }
-        var used = State.Timeline.Clips.Count(c => c.SourceId == item.Id);
+        var used = ProjectEditor.ClipsUsing(State, item.Kind, item.Id);
         if (used > 0)
         {
-            var answer = await View.AskAsync("Remove video?",
-                $"\"{item.Name}\" is used by {used} clip(s) on the timeline. They will be removed too (you can undo).",
-                "Remove", "Cancel");
-            if (answer != 0)
+            var (title, message) = item.Kind == FileKind.Audio
+                ? ("Remove audio file?", $"\"{item.Name}\" plays on {used} clip(s). They will go back to their own audio (you can undo).")
+                : ("Remove video?", $"\"{item.Name}\" is used by {used} clip(s) on the timeline. They will be removed too (you can undo).");
+            if (await View.AskAsync(title, message, "Remove", "Cancel") != 0)
                 return;
         }
-        Commit(State with { Sources = State.Sources.Remove(item.Source), Timeline = TimelineEditor.RemoveSource(State.Timeline, item.Id) });
+        Commit(ProjectEditor.RemoveFile(State, item.Kind, item.Id));
     }
 
     [RelayCommand]

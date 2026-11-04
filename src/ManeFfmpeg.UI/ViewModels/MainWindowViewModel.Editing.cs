@@ -144,9 +144,10 @@ public sealed partial class MainWindowViewModel
     /// <summary>Plays audio file <paramref name="fileId"/> instead of the clip's sound (an audio file dropped on it).</summary>
     public void ReplaceClipAudio(string clipId, string fileId)
     {
-        if (State.Timeline.IndexOf(clipId) < 0 || State.AudioFile(fileId) is null)
+        var next = ProjectEditor.ReplaceClipAudio(State, clipId, fileId);
+        if (ReferenceEquals(next, State))
             return;
-        CommitTimeline(t => TimelineEditor.ReplaceAudio(t, clipId, fileId));
+        Commit(next);
         Timeline.SelectOnly(clipId);
         StatusMessage = ReplacedMessage(fileId);
     }

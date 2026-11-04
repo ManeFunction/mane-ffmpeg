@@ -971,3 +971,74 @@ public class AudioReplacementTests
         Assert.DoesNotContain("/m/t.m4a", TimelineEdl.Build(Replaced(later), new Dictionary<string, MediaInfo> { ["s"] = Video }, "/c/silence.mka"));
     }
 }
+
+/// <summary>Edits of a project's files that keep its clips pointing at listed files.</summary>
+public class ProjectEditorTests
+{
+    private static TimeSpan S(double seconds) => TimeSpan.FromSeconds(seconds);
+
+    private static readonly SourceMedia Video = new() { Id = "v", Path = "/m/a.mp4" };
+    private static readonly SourceMedia Song = new() { Id = "f", Path = "/m/song.m4a" };
+
+    private static Clip Plays(string id, string? fileId) =>
+        Clip.Create("v", S(0), S(2)) with { Id = id, ReplacedAudio = fileId is null ? null : new AudioReplacement { FileId = fileId } };
+
+    private static ProjectState State(params Clip[] clips) => new([Video], new Timeline([.. clips])) { AudioFiles = [Song] };
+
+    [Fact]
+    public void A_path_is_listed_once_and_keeps_its_id()
+    {
+        var (state, id) = ProjectEditor.AddFile(State(), FileKind.Audio, new SourceMedia { Id = "new", Path = Song.Path });
+        Assert.Equal("f", id);
+        Assert.Single(state.AudioFiles);
+        (state, id) = ProjectEditor.AddFile(state, FileKind.Video, new SourceMedia { Id = "w", Path = "/m/b.mp4" });
+        Assert.Equal(("w", 2), (id, state.Sources.Count));
+    }
+
+    [Fact]
+    public void Removing_an_audio_file_gives_its_clips_their_own_sound_back()
+    {
+        var state = ProjectEditor.RemoveFile(State(Plays("a", "f"), Plays("b", null)), FileKind.Audio, "f");
+        Assert.Empty(state.AudioFiles);
+        Assert.All(state.Timeline.Clips, c => Assert.Null(c.ReplacedAudio));
+        Assert.Equal(2, state.Timeline.Clips.Count);
+    }
+
+    [Fact]
+    public void Removing_a_video_removes_its_clips()
+    {
+        var before = State(Plays("a", "f"));
+        Assert.Equal(1, ProjectEditor.ClipsUsing(before, FileKind.Video, "v"));
+        Assert.Equal(1, ProjectEditor.ClipsUsing(before, FileKind.Audio, "f"));
+        var state = ProjectEditor.RemoveFile(before, FileKind.Video, "v");
+        Assert.Empty(state.Sources);
+        Assert.Empty(state.Timeline.Clips);
+        Assert.Single(state.AudioFiles);
+    }
+
+    [Fact]
+    public void Replacing_a_clip_s_audio_needs_both_the_clip_and_the_file()
+    {
+        var state = State(Plays("a", null));
+        Assert.Equal("f", ProjectEditor.ReplaceClipAudio(state, "a", "f").Timeline.Clips[0].ReplacedAudio!.FileId);
+        Assert.Same(state, ProjectEditor.ReplaceClipAudio(state, "a", "gone"));
+        Assert.Same(state, ProjectEditor.ReplaceClipAudio(state, "gone", "f"));
+    }
+
+    [Fact]
+    public void Appending_needs_a_listed_video()
+    {
+        Assert.Single(ProjectEditor.AppendClip(State(), "v", S(1), S(3)).Timeline.Clips);
+        Assert.Empty(ProjectEditor.AppendClip(State(), "gone", S(1), S(3)).Timeline.Clips);
+    }
+
+    [Fact]
+    public void Orphans_are_dropped_or_fall_back_to_their_own_sound()
+    {
+        var orphan = Plays("x", null) with { SourceId = "gone" };
+        var state = ProjectEditor.DropOrphans(State(Plays("a", "gone"), Plays("b", "f"), orphan));
+        Assert.Equal(["a", "b"], state.Timeline.Clips.Select(c => c.Id));
+        Assert.Null(state.Timeline.Clips[0].ReplacedAudio);
+        Assert.Equal("f", state.Timeline.Clips[1].ReplacedAudio!.FileId);
+    }
+}

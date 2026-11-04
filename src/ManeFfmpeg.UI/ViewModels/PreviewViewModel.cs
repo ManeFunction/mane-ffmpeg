@@ -420,7 +420,7 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
             _owner.StatusMessage = "Set In (I) and Out (O) marks further apart.";
             return;
         }
-        _owner.CommitKeepingFit(State with { Timeline = TimelineEditor.Append(State.Timeline, Clip.Create(item.Id, start, end)) });
+        _owner.CommitKeepingFit(ProjectEditor.AppendClip(State, item.Id, start, end));
         _owner.StatusMessage = $"Added {TimeFormat.Display(end - start)} from {item.Name} to the end of the timeline.";
         MarkIn = MarkOut = null;
     }

@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ManeFfmpeg.Core.Editing;
 using ManeFfmpeg.Core.Model;
 
 namespace ManeFfmpeg.Core.Persistence;
@@ -109,15 +110,12 @@ public static class ProjectFile
             }).ToImmutableList();
         var sources = Sources(dto.Sources);
         var audioFiles = Sources(dto.AudioFiles);
-        var known = sources.Select(s => s.Id).ToHashSet();
-        var knownAudio = audioFiles.Select(s => s.Id).ToHashSet();
         var clips = (dto.Clips ?? []).OfType<ClipDto>()
-            .Where(c => c is { Id.Length: > 0 } && known.Contains(c.Source) && c.Out > c.In)
+            .Where(c => c is { Id.Length: > 0, Source.Length: > 0 } && c.Out > c.In)
             .Select(c => new Clip
             {
                 Id = c.Id, SourceId = c.Source, In = c.In, Out = c.Out, AudioOffset = c.AudioOffset,
-                // A replacement whose audio file is gone leaves the clip with its own audio.
-                ReplacedAudio = c.ReplacedAudio is { File: { } file } r && knownAudio.Contains(file)
+                ReplacedAudio = c.ReplacedAudio is { File: { } file } r
                     ? new AudioReplacement { FileId = file, Anchor = r.Anchor, Offset = r.Offset, Loop = r.Loop }
                     : null,
             })
@@ -125,7 +123,9 @@ public static class ProjectFile
 
         return new Project
         {
-            State = new ProjectState(sources, new Timeline(clips)) { AudioFiles = audioFiles },
+            // Clips of a video that isn't listed are dropped; a replacement whose audio file is gone leaves the clip
+            // with its own audio.
+            State = ProjectEditor.DropOrphans(new ProjectState(sources, new Timeline(clips)) { AudioFiles = audioFiles }),
             Export = dto.Export ?? new ExportSettings(),
             Layout = dto.Layout ?? new ProjectLayout(),
         };
