@@ -335,7 +335,7 @@ public partial class MainWindow : Window, IMainWindowView
         var clip = audio is null ? null : ClipAt(e.GetPosition(TimelineView));
         ViewModel.Timeline.ShowAudioDrop(audio is null || clip is null
             ? null
-            : new AudioDropTarget(Path.GetFileName(audio), SourceItemViewModel.AudioColor(ViewModel.AudioFiles.Count), clip));
+            : new AudioDropTarget(Path.GetFileName(audio), ViewModel.AudioFileColor(Path.GetFullPath(audio)), clip));
     }
 
     private async void OnDrop(object? sender, DragEventArgs e)

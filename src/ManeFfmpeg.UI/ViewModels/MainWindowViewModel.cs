@@ -181,8 +181,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable, IA
             var item = items.FirstOrDefault(s => s.Id == source.Id);
             if (item is null)
             {
-                var color = Enumerable.Range(0, int.MaxValue).First(c => items.All(s => s.ColorIndex != c));
-                item = new SourceItemViewModel(source, color, kind);
+                item = new SourceItemViewModel(source, FreeColorIndex(items), kind);
                 item.AudioStreamChosen += OnAudioStreamChosen;
                 items.Add(item);
             }
@@ -192,6 +191,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable, IA
             }
         }
     }
+
+    /// <summary>The first color no listed file uses: the one the next new file gets.</summary>
+    private static int FreeColorIndex(IEnumerable<SourceItemViewModel> items) =>
+        Enumerable.Range(0, int.MaxValue).First(c => items.All(s => s.ColorIndex != c));
+
+    /// <summary>The color <paramref name="path"/> has on the Audio tab, or will get once it is added.</summary>
+    public Avalonia.Media.Color AudioFileColor(string path) =>
+        AudioFiles.FirstOrDefault(f => f.Path == path)?.Color ?? SourceItemViewModel.AudioColor(FreeColorIndex(AudioFiles));
 
     /// <summary>A video or audio file in the Files panel, by id.</summary>
     public SourceItemViewModel? FileItem(string id) =>
