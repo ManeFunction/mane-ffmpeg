@@ -3,8 +3,8 @@ namespace ManeFfmpeg.Core.Model;
 /// <summary>
 /// Where the audio under a stretch of a clip's video comes from, once the clip's audio is slipped:
 /// <see cref="Lead"/> of silence, then <see cref="ReadLength"/> of the file read from <see cref="ReadFrom"/>,
-/// then <see cref="Tail"/> of silence, <see cref="Length"/> in all. The preview, every export mode and the
-/// timeline's silence hatching place audio through this, so they always agree.
+/// then <see cref="Tail"/> of silence, <see cref="Length"/> in all. Clips' audio is placed through
+/// <see cref="AudioLayout"/>, which uses this for audio that isn't looped.
 /// </summary>
 public readonly record struct AudioPlacement(TimeSpan Lead, TimeSpan ReadFrom, TimeSpan ReadLength, TimeSpan Length)
 {
@@ -32,8 +32,7 @@ public readonly record struct AudioPlacement(TimeSpan Lead, TimeSpan ReadFrom, T
 
 /// <summary>
 /// A stretch of a looped audio file: <see cref="Length"/> of the file read from <see cref="Phase"/>, starting again
-/// from its beginning every <see cref="Period"/>. Like <see cref="AudioPlacement"/>, the preview, the export and the
-/// timeline all loop through this.
+/// from its beginning every <see cref="Period"/>. <see cref="AudioLayout"/> uses this for looped audio.
 /// </summary>
 public readonly record struct AudioLoop(TimeSpan Phase, TimeSpan Period, TimeSpan Length)
 {
@@ -56,10 +55,10 @@ public readonly record struct AudioLoop(TimeSpan Phase, TimeSpan Period, TimeSpa
     }
 
     /// <summary>
-    /// The stretch as a plain read, for a loop that doesn't wrap: <see cref="Length"/> of the file from <see cref="Phase"/>,
-    /// with no silence around it.
+    /// The stretch's first piece as a plain read from <see cref="Phase"/>: all of it for a loop that doesn't wrap,
+    /// followed by silence for one that does.
     /// </summary>
-    public AudioPlacement AsPlacement() => new(TimeSpan.Zero, Phase, Length, Length);
+    public AudioPlacement AsPlacement() => new(TimeSpan.Zero, Phase, Wraps ? Period - Phase : Length, Length);
 
     /// <summary>The pieces of the file to play in order: from the phase to the end, whole files, then the rest.</summary>
     public IEnumerable<(TimeSpan ReadFrom, TimeSpan Length)> Pieces()

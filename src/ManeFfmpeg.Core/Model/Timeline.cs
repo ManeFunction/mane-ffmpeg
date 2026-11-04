@@ -51,9 +51,6 @@ public sealed record Clip
     public TimeSpan AudioIn => In - AudioSlip;
 
     public TimeSpan AudioOut => Out - AudioSlip;
-
-    /// <summary>Where the whole clip's audio comes from, given where the heard file's audio stream ends.</summary>
-    public AudioPlacement AudioPlacement(TimeSpan audioEnd) => Model.AudioPlacement.For(In, Duration, AudioSlip, audioEnd);
 }
 
 /// <summary>
@@ -147,6 +144,15 @@ public sealed record ProjectState(ImmutableList<SourceMedia> Sources, Timeline T
 
     /// <summary>The file whose audio the clip plays: its replacement audio file, or its own video.</summary>
     public SourceMedia? AudioSourceOf(Clip clip) => clip.ReplacedAudio is { } r ? AudioFile(r.FileId) : Source(clip.SourceId);
+
+    /// <summary>
+    /// The file the clip plays with its probe results and chosen stream; null when the clip is silent: the file is
+    /// gone, isn't analyzed yet (<paramref name="info"/> returns null) or has no such audio stream.
+    /// </summary>
+    public HeardAudio? HeardAudio(Clip clip, Func<string, MediaInfo?> info) =>
+        AudioSourceOf(clip) is { } file && info(file.Id) is { } media && media.Audio(file.AudioStreamIndex) is { } stream
+            ? new HeardAudio(file, media, stream)
+            : null;
 
     public bool Equals(ProjectState? other) =>
         other is not null && Sources.SequenceEqual(other.Sources) && AudioFiles.SequenceEqual(other.AudioFiles)

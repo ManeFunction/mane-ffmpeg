@@ -669,13 +669,91 @@ public class AudioPlacementTests
         Assert.Equal(tail, p.Tail.TotalSeconds, 6);
         Assert.Equal(readLength == 0, p.IsSilent);
     }
+}
+
+/// <summary>What a clip sounds like: the one decision the preview, the export, the timeline and snapping all render.</summary>
+public class AudioLayoutTests
+{
+    private static TimeSpan S(double seconds) => TimeSpan.FromSeconds(seconds);
+
+    private static Clip Own(double inS, double outS, double offsetS) =>
+        new() { Id = "c", SourceId = "s", In = S(inS), Out = S(outS), AudioOffset = S(offsetS) };
+
+    private static Clip Replaced(double inS, double outS, double anchorS, double offsetS, bool loop) =>
+        Own(inS, outS, 0) with { ReplacedAudio = new AudioReplacement { FileId = "f", Anchor = S(anchorS), Offset = S(offsetS), Loop = loop } };
+
+    private static AudioLayout Layout(Clip clip, double audioEnd) => AudioLayout.For(clip, clip.In, clip.Duration, S(audioEnd));
 
     [Fact]
-    public void Clip_placement_covers_the_whole_clip()
+    public void Placed_audio_is_one_read_with_silence_around_it()
     {
-        var clip = new Clip { Id = "c", SourceId = "s", In = TimeSpan.FromSeconds(1), Out = TimeSpan.FromSeconds(4), AudioOffset = TimeSpan.FromSeconds(1.5) };
-        Assert.Equal(AudioPlacement.For(clip.In, clip.Duration, clip.AudioOffset, TimeSpan.FromSeconds(10)), clip.AudioPlacement(TimeSpan.FromSeconds(10)));
-        Assert.Equal(TimeSpan.FromSeconds(0.5), clip.AudioPlacement(TimeSpan.FromSeconds(10)).Lead);
+        // Heard 1.5 s late: half a second of silence, then the file from its start.
+        var layout = Layout(Own(1, 4, 1.5), 10);
+        Assert.IsType<AudioLayout.Placed>(layout);
+        Assert.Equal([new AudioSpan(S(0), S(0.5), null), new AudioSpan(S(0.5), S(2.5), S(0))], layout.Spans());
+        Assert.Equal([S(0.5)], layout.Edges(S(0), S(3)));
+        Assert.Empty(layout.Edges(S(1), S(3)));
+        Assert.Equal(S(-0.5), layout.FileTime(S(0)));
+        Assert.Equal(S(1.5), layout.FileTime(S(2)));
+    }
+
+    [Fact]
+    public void Audio_wholly_past_the_file_is_one_silence()
+    {
+        var layout = Layout(Own(5, 7, 0), 0.5);
+        Assert.Equal([new AudioSpan(S(0), S(2), null)], layout.Spans());
+        Assert.Empty(layout.Edges(S(0), S(2)));
+    }
+
+    [Fact]
+    public void Looped_audio_repeats_without_silence_and_marks_its_seams()
+    {
+        // A 3 s file slipped 1.5 s: it starts 2.5 s in and starts again 0.5 s, 3.5 s and 6.5 s into the clip.
+        var layout = Layout(Replaced(1, 8, anchorS: 1, offsetS: 0.5, loop: true), 3);
+        Assert.IsType<AudioLayout.Looped>(layout);
+        Assert.Equal([
+            new AudioSpan(S(0), S(0.5), S(2.5)), new AudioSpan(S(0.5), S(3), S(0)),
+            new AudioSpan(S(3.5), S(3), S(0)), new AudioSpan(S(6.5), S(0.5), S(0)),
+        ], layout.Spans());
+        Assert.Equal([S(0.5), S(3.5), S(6.5)], layout.Edges(S(0), S(7)));
+        Assert.Equal([S(3.5)], layout.Edges(S(3), S(4)));
+        Assert.Equal(S(2.5), layout.FileTime(S(0)));
+        Assert.Equal(S(0.5), layout.FileTime(S(4)));
+    }
+
+    [Fact]
+    public void Looped_audio_that_does_not_wrap_is_one_read_not_silence()
+    {
+        // A split half inside the second repetition of a 3 s file.
+        var layout = Layout(Replaced(4.5, 5.5, anchorS: 1, offsetS: 0, loop: true), 3);
+        Assert.Equal([new AudioSpan(S(0), S(1), S(0.5))], layout.Spans());
+        Assert.Empty(layout.Edges(S(0), S(1)));
+    }
+
+    [Fact]
+    public void Too_short_files_and_loop_off_play_once()
+    {
+        Assert.IsType<AudioLayout.Placed>(Layout(Replaced(0, 2, 0, 0, loop: true), 0.05));
+        Assert.IsType<AudioLayout.Placed>(Layout(Replaced(0, 2, 0, 0, loop: false), 3));
+    }
+
+    [Fact]
+    public void Heard_audio_is_the_replacement_or_the_clip_s_own_once_analyzed()
+    {
+        var video = new MediaInfo { Duration = S(10), AudioStreams = [new AudioStreamInfo { Index = 1, Codec = "aac", SampleRate = 48000, Channels = 2 }] };
+        var tone = new MediaInfo { Duration = S(3), AudioStreams = [new AudioStreamInfo { Index = 0, Codec = "aac", SampleRate = 44100, Channels = 2, Duration = S(2.5) }] };
+        var state = new ProjectState([new SourceMedia { Id = "s", Path = "/m/a.mp4" }], new Timeline([]))
+        {
+            AudioFiles = [new SourceMedia { Id = "f", Path = "/m/t.m4a" }],
+        };
+        var media = new Dictionary<string, MediaInfo> { ["s"] = video, ["f"] = tone };
+
+        Assert.Equal("s", state.HeardAudio(Own(0, 1, 0), media.GetValueOrDefault)!.File.Id);
+        var replaced = state.HeardAudio(Replaced(0, 1, 0, 0, false), media.GetValueOrDefault)!;
+        Assert.Equal(("f", S(2.5)), (replaced.File.Id, replaced.End));
+        Assert.Null(state.HeardAudio(Replaced(0, 1, 0, 0, false), new Dictionary<string, MediaInfo> { ["s"] = video }.GetValueOrDefault));
+        Assert.Null(state.HeardAudio(Own(0, 1, 0) with { SourceId = "gone" }, media.GetValueOrDefault));
+        Assert.Null(state.HeardAudio(Own(0, 1, 0), new Dictionary<string, MediaInfo> { ["s"] = video with { AudioStreams = [] } }.GetValueOrDefault));
     }
 }
 

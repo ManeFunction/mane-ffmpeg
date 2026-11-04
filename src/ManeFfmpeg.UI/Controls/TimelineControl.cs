@@ -243,24 +243,17 @@ public sealed class TimelineControl : Control
                 var badge = DrawBadge(context, $"♪ {TimeFormat.Offset(clip.ActiveAudioOffset)}", new Point(textX, audioRect.Top + (audioRect.Height - 16) / 2));
                 textX += badge + 6;
             }
-            if (heard is not null && vm.Info(heard.Id) is { } info)
+            if (vm.Heard(clip) is { } sound)
             {
-                var audio = vm.Audio(heard);
-                if (audio is null)
-                {
-                    DrawText(context, "no audio", new Point(textX + 1, audioRect.Top + (audioRect.Height - 14) / 2), TextBrush, 11);
-                }
-                else
-                {
-                    var end = info.AudioEnd(audio);
-                    var loops = clip.LoopsAudio && AudioLoop.CanLoop(end);
-                    if (loops)
-                        DrawSeams(context, vm, clip, start, audioRect, end);
-                    else
-                        DrawSilence(context, vm, clip, start, audioRect, clip.AudioPlacement(end), replaced is null ? HatchPen : InkHatchPen);
-                    DrawWaveform(context, vm, clip, start, audioRect, vm.Waveform(heard), width, loops ? end : null,
-                        replaced is null ? WavePen : InkPen);
-                }
+                var layout = sound.Layout(clip);
+                DrawSilence(context, vm, start, audioRect, layout, replaced is null ? HatchPen : InkHatchPen);
+                if (layout is AudioLayout.Looped looped)
+                    DrawSeams(context, vm, start, audioRect, looped, width);
+                DrawWaveform(context, vm, start, audioRect, layout, vm.Waveform(sound.File), width, replaced is null ? WavePen : InkPen);
+            }
+            else if (heard is not null && vm.Info(heard.Id) is not null)
+            {
+                DrawText(context, "no audio", new Point(textX + 1, audioRect.Top + (audioRect.Height - 14) / 2), TextBrush, 11);
             }
             if (replaced is not null)
             {
@@ -291,44 +284,41 @@ public sealed class TimelineControl : Control
     }
 
     /// <summary>Hatches the parts of the clip where the slipped audio runs past the file (silence on export).</summary>
-    private void DrawSilence(DrawingContext context, TimelineViewModel vm, Clip clip, TimeSpan start, Rect rect, AudioPlacement placement, IPen hatchPen)
+    private void DrawSilence(DrawingContext context, TimelineViewModel vm, TimeSpan start, Rect rect, AudioLayout layout, IPen hatchPen)
     {
-        void Hatch(double a, double b)
+        foreach (var span in layout.Spans())
         {
+            if (!span.IsSilence)
+                continue;
+            var a = X(vm, start + span.At);
+            var b = X(vm, start + span.At + span.Length);
             if (b - a < 1)
-                return;
+                continue;
             var r = new Rect(a, rect.Top, b - a, rect.Height);
             context.FillRectangle(SilenceBrush, r);
             using (context.PushClip(r))
                 for (var x = a - rect.Height; x < b; x += 8)
                     context.DrawLine(hatchPen, new Point(x, rect.Bottom), new Point(x + rect.Height, rect.Top));
         }
-        if (placement.Lead > TimeSpan.Zero)
-            Hatch(X(vm, start), X(vm, start + placement.Lead));
-        if (placement.Tail > TimeSpan.Zero)
-            Hatch(X(vm, start + placement.Lead + placement.ReadLength), X(vm, start + clip.Duration));
     }
 
-    /// <summary>Marks where a looped audio file starts again.</summary>
-    private void DrawSeams(DrawingContext context, TimelineViewModel vm, Clip clip, TimeSpan start, Rect rect, TimeSpan period)
+    /// <summary>Marks where a looped audio file starts again; only the first seam when they would be under 2 px apart.</summary>
+    private void DrawSeams(DrawingContext context, TimelineViewModel vm, TimeSpan start, Rect rect, AudioLayout.Looped layout, double width)
     {
-        var loop = AudioLoop.For(clip.In, clip.Duration, clip.AudioSlip, period);
-        // The file starts again at Period − Phase into the clip, then every period.
-        for (var at = period - loop.Phase; at < clip.Duration; at += period)
+        var dense = layout.Loop.Period.TotalSeconds * vm.Zoom < 2;
+        var from = dense ? TimeSpan.Zero : T(vm, Math.Max(rect.Left, Header)) - start;
+        foreach (var at in layout.Edges(from, T(vm, Math.Min(rect.Right, width)) - start))
         {
             var x = Math.Round(X(vm, start + at)) + 0.5;
-            if (x > rect.Right)
-                break;
-            if (x >= rect.Left)
+            if (x >= rect.Left && x <= rect.Right)
                 context.DrawLine(SeamPen, new Point(x, rect.Top + 2), new Point(x, rect.Bottom - 2));
-            if (period.TotalSeconds * vm.Zoom < 2)
+            if (dense)
                 break;
         }
     }
 
-    /// <param name="loopPeriod">Looped audio: the waveform repeats every this long.</param>
-    private void DrawWaveform(DrawingContext context, TimelineViewModel vm, Clip clip, TimeSpan start, Rect rect,
-        Core.Media.Waveform? waveform, double width, TimeSpan? loopPeriod, IPen pen)
+    private void DrawWaveform(DrawingContext context, TimelineViewModel vm, TimeSpan start, Rect rect, AudioLayout layout,
+        Core.Media.Waveform? waveform, double width, IPen pen)
     {
         if (waveform is null)
             return;
@@ -342,16 +332,10 @@ public sealed class TimelineControl : Control
         {
             for (var x = Math.Floor(left); x < right; x++)
             {
-                var local = T(vm, x) - start;
-                var sourceTime = clip.AudioIn + local;
-                if (loopPeriod is { Ticks: > 0 } period)
-                {
-                    var ticks = sourceTime.Ticks % period.Ticks;
-                    sourceTime = TimeSpan.FromTicks(ticks < 0 ? ticks + period.Ticks : ticks);
-                }
-                if (sourceTime + perPixel < TimeSpan.Zero || sourceTime > waveform.Duration)
+                var fileTime = layout.FileTime(T(vm, x) - start);
+                if (fileTime + perPixel < TimeSpan.Zero || fileTime > waveform.Duration)
                     continue;
-                var h = waveform.Max(sourceTime, sourceTime + perPixel) / 255.0 * half;
+                var h = waveform.Max(fileTime, fileTime + perPixel) / 255.0 * half;
                 if (h < 0.5)
                     h = 0.5;
                 g.BeginFigure(new Point(x + 0.5, mid - h), false);

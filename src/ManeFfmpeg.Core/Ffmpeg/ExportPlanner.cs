@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using ManeFfmpeg.Core.Media;
@@ -119,7 +120,7 @@ public static class ExportPlanner
         {
             if (SameFile(item.Source.Path, job.OutputPath))
                 throw new ExportPlanException("The output file is one of the source videos. Choose another name.");
-            if (item.Clip.ReplacedAudio is not null && SameFile(item.AudioFile.Path, job.OutputPath))
+            if (job.State.AudioSourceOf(item.Clip) is { } heard && heard.Id != item.Source.Id && SameFile(heard.Path, job.OutputPath))
                 throw new ExportPlanException("The output file is one of the audio files. Choose another name.");
         }
 
@@ -135,10 +136,12 @@ public static class ExportPlanner
         return plan with { Notes = [.. args.Warnings, .. plan.Notes], OutputPath = job.OutputPath, WorkDirectory = job.WorkDirectory };
     }
 
-    /// <param name="AudioFile">The file whose audio the clip plays: an audio file dropped on it, or <paramref name="Source"/>.</param>
-    /// <param name="Audio">The heard stream of <paramref name="AudioFile"/>, or null for silence.</param>
-    private sealed record Item(Clip Clip, SourceMedia Source, MediaInfo Media, VideoStreamInfo Video, AudioStreamInfo? Audio,
-        SourceMedia AudioFile, MediaInfo AudioMedia);
+    /// <param name="Heard">What the clip plays (an audio file dropped on it, or <paramref name="Source"/>), or null for silence.</param>
+    private sealed record Item(Clip Clip, SourceMedia Source, MediaInfo Media, VideoStreamInfo Video, HeardAudio? Heard)
+    {
+        /// <summary>The heard stream, or null for silence.</summary>
+        public AudioStreamInfo? Audio => Heard?.Stream;
+    }
 
     private sealed record Context(ExportJob Job, PresetArguments Args, IReadOnlyList<string> Fallback, List<Item> Items)
     {
@@ -154,7 +157,8 @@ public static class ExportPlanner
             throw new ExportPlanException($"\"{source.DisplayName}\" is missing or hasn't been analyzed yet.");
         var video = media.Video ?? throw new ExportPlanException($"\"{source.DisplayName}\" has no video stream.");
         if (clip.ReplacedAudio is not { } replaced)
-            return new Item(clip, source, media, video, args.NoAudio ? null : media.Audio(source.AudioStreamIndex), source, media);
+            return new Item(clip, source, media, video,
+                !args.NoAudio && media.Audio(source.AudioStreamIndex) is { } own ? new HeardAudio(source, media, own) : null);
         var file = job.State.AudioFile(replaced.FileId)
             ?? throw new ExportPlanException("A clip plays an audio file that is no longer in the project.");
         if (!job.Media.TryGetValue(file.Id, out var fileMedia))
@@ -162,7 +166,7 @@ public static class ExportPlanner
         var stream = fileMedia.Audio(file.AudioStreamIndex);
         if (stream is null && !args.NoAudio)
             throw new ExportPlanException($"\"{file.DisplayName}\" has no audio stream.");
-        return new Item(clip, source, media, video, args.NoAudio ? null : stream, file, fileMedia);
+        return new Item(clip, source, media, video, args.NoAudio ? null : new HeardAudio(file, fileMedia, stream!));
     }
 
     private static bool IsWholeFile(Item item) =>
@@ -415,10 +419,9 @@ public static class ExportPlanner
     private static ExportPlan? SingleClipAudioCopy(Context ctx)
     {
         var item = ctx.Items[0];
-        var audio = item.Audio!;
+        var heard = item.Heard!;
         var clip = item.Clip;
-        var placement = clip.AudioPlacement(item.Media.AudioEnd(audio));
-        if (placement.IsSilent)
+        if (heard.Layout(clip) is not AudioLayout.Placed { Placement: { IsSilent: false } placement })
             return null;
         var (lead, readFrom, readLength, _) = placement;
 
@@ -427,7 +430,7 @@ public static class ExportPlanner
 
         var extract = new List<string>(Prefix)
         {
-            "-ss", TimeFormat.Seconds(preSeek), "-i", item.Source.Path, "-map", $"0:{audio.Index}", "-c", "copy",
+            "-ss", TimeFormat.Seconds(preSeek), "-i", heard.File.Path, "-map", $"0:{heard.Stream.Index}", "-c", "copy",
             "-ss", TimeFormat.Seconds(readFrom - preSeek), "-t", TimeFormat.Seconds(readLength), "-f", "matroska", tmp,
         };
 
@@ -464,22 +467,21 @@ public static class ExportPlanner
     {
         var fmt = $"aformat=sample_rates={format.Rate}:channel_layouts={format.Layout}";
         var len = TimeFormat.Seconds(length);
-        if (item.Audio is null)
+        if (item.Heard is not { } heard)
             return $"anullsrc=r={format.Rate}:cl={format.Layout},atrim=duration={len},asetpts=N/SR/TB";
 
-        var end = item.AudioMedia.AudioEnd(item.Audio);
-        var loop = item.Clip.LoopsAudio && AudioLoop.CanLoop(end) ? AudioLoop.For(videoStart, length, item.Clip.AudioSlip, end) : (AudioLoop?)null;
-        if (loop is { Wraps: true } wrapping && Samples(wrapping.Period, format.Rate) <= int.MaxValue)
+        var layout = heard.Layout(item.Clip, videoStart, length);
+        if (layout is AudioLayout.Looped { Loop: { Wraps: true } loop } && Samples(loop.Period, format.Rate) <= int.MaxValue)
         {
             // One whole period of the file, padded or cut to exactly that many samples, repeated sample-exactly.
-            var period = Samples(wrapping.Period, format.Rate);
-            var phase = Samples(wrapping.Phase, format.Rate);
-            var loopTrim = Input(inputs, item.AudioFile.Path, item.AudioMedia, TimeSpan.Zero, wrapping.Period);
-            var looped = new StringBuilder($"[{nextInput}:{item.Audio.Index}]");
+            var period = Samples(loop.Period, format.Rate);
+            var phase = Samples(loop.Phase, format.Rate);
+            var loopTrim = Input(inputs, heard.File.Path, heard.Info, TimeSpan.Zero, loop.Period);
+            var looped = new StringBuilder($"[{nextInput}:{heard.Stream.Index}]");
             if (loopTrim.Length > 0)
-                looped.Append($"atrim={loopTrim}duration={TimeFormat.Seconds(wrapping.Period)},asetpts=PTS-STARTPTS,");
+                looped.Append($"atrim={loopTrim}duration={TimeFormat.Seconds(loop.Period)},asetpts=PTS-STARTPTS,");
             looped.Append(fmt).Append(CultureInfo.InvariantCulture,
-                $",apad=whole_dur={TimeFormat.Seconds(wrapping.Period)},atrim=end_sample={period},aloop=loop=-1:size={period}");
+                $",apad=whole_dur={TimeFormat.Seconds(loop.Period)},atrim=end_sample={period},aloop=loop=-1:size={period}");
             looped.Append(CultureInfo.InvariantCulture,
                 $",atrim=start_sample={phase}:end_sample={phase + Samples(length, format.Rate)},asetpts=N/SR/TB");
             nextInput++;
@@ -487,12 +489,17 @@ public static class ExportPlanner
         }
 
         // Looped audio that doesn't wrap is one plain read inside some repetition of the file.
-        var placement = loop is { Wraps: false } once ? once.AsPlacement() : AudioPlacement.For(videoStart, length, item.Clip.AudioSlip, end);
+        var placement = layout switch
+        {
+            AudioLayout.Looped repeated => repeated.Loop.AsPlacement(),
+            AudioLayout.Placed placed => placed.Placement,
+            _ => throw new UnreachableException(),
+        };
         if (placement.IsSilent)
             return $"anullsrc=r={format.Rate}:cl={format.Layout},atrim=duration={len},asetpts=N/SR/TB";
 
-        var trim = Input(inputs, item.AudioFile.Path, item.AudioMedia, placement.ReadFrom, placement.ReadLength);
-        var chain = new StringBuilder($"[{nextInput}:{item.Audio.Index}]");
+        var trim = Input(inputs, heard.File.Path, heard.Info, placement.ReadFrom, placement.ReadLength);
+        var chain = new StringBuilder($"[{nextInput}:{heard.Stream.Index}]");
         if (trim.Length > 0)
             chain.Append($"atrim={trim}duration={TimeFormat.Seconds(placement.ReadLength)},asetpts=PTS-STARTPTS,");
         chain.Append(fmt);

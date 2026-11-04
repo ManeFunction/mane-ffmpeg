@@ -34,32 +34,19 @@ public static class TimelineEdl
 
             // The heard file: an audio file dropped on the clip, or the clip's own video. One that isn't analyzed
             // yet plays silence until the catalog reports it and the preview reloads.
-            var heard = state.AudioSourceOf(clip);
-            var heardInfo = heard is null ? null : heard.Id == source.Id ? info : media.GetValueOrDefault(heard.Id);
-            var stream = heardInfo?.Audio(heard!.AudioStreamIndex);
-            if (stream is null)
+            if (state.HeardAudio(clip, media.GetValueOrDefault) is not { } heard)
             {
                 Silence(audio, silencePath, clip.Duration);
                 continue;
             }
             anyAudio = true;
-            var end = heardInfo!.AudioEnd(stream);
-            if (clip.LoopsAudio && AudioLoop.CanLoop(end))
+            foreach (var span in heard.Layout(clip).Spans())
             {
-                // Looped audio always plays, wrapping or not: a stretch inside a later repetition is one piece.
-                foreach (var (readFrom, length) in AudioLoop.For(clip.In, clip.Duration, clip.AudioSlip, end).Pieces())
-                    Segment(audio, heard!.Path, readFrom + heardInfo.StartTime, length);
-                continue;
+                if (span.ReadFrom is { } readFrom)
+                    Segment(audio, heard.File.Path, readFrom + heard.Info.StartTime, span.Length);
+                else
+                    Silence(audio, silencePath, span.Length);
             }
-            var placement = clip.AudioPlacement(end);
-            if (placement.IsSilent)
-            {
-                Silence(audio, silencePath, clip.Duration);
-                continue;
-            }
-            Silence(audio, silencePath, placement.Lead);
-            Segment(audio, heard!.Path, placement.ReadFrom + heardInfo.StartTime, placement.ReadLength);
-            Silence(audio, silencePath, placement.Tail);
         }
 
         if (count == 0)
