@@ -205,76 +205,58 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnAudioStreamChosen(SourceItemViewModel item, int index) =>
         Commit(State.ReplaceFile(item.Kind, item.Source, item.Source with { AudioStreamIndex = index }));
 
-    /// <summary>
-    /// Adds files by what they hold: videos as sources, each appended as a whole clip; files with only sound to the
-    /// Audio tab. With <paramref name="replaceAudioOf"/> (audio dropped on a clip), the first audio file replaces that
-    /// clip's sound in the same undo step.
-    /// </summary>
-    public async Task AddMediaAsync(IEnumerable<string> paths, string? replaceAudioOf = null)
+    /// <summary>Adds files by what they hold: videos as sources, each appended as a whole clip; files with only sound to the Audio tab.</summary>
+    public async Task AddMediaAsync(IEnumerable<string> paths)
     {
-        if (await ProbeFilesAsync(paths) is not { } results)
+        if (await AddProbedAsync(paths, AddRouting.ByContent) is not { } added)
             return;
-        var state = State;
-        var failed = new List<string>();
-        var audio = new List<string>();
-        foreach (var (path, info, error) in results)
-        {
-            if (info is { Video: null, AudioStreams.Length: > 0 })
-            {
-                (state, var id) = ProjectEditor.AddFile(state, FileKind.Audio, NewSource(path));
-                audio.Add(id);
-                continue;
-            }
-            if (info?.Video is null)
-            {
-                failed.Add($"{Path.GetFileName(path)}: {error ?? "no video or audio stream"}");
-                continue;
-            }
-            (state, var sourceId) = ProjectEditor.AddFile(state, FileKind.Video, NewSource(path));
-            state = ProjectEditor.AppendClip(state, sourceId, TimeSpan.Zero, info.Duration);
-        }
-        if (replaceAudioOf is not null && audio.Count > 0)
-            state = ProjectEditor.ReplaceClipAudio(state, replaceAudioOf, audio[0]);
-        CommitKeepingFit(state);
-        if (audio.Count > 0)
-            FilesTab = 1;
-        StatusMessage = failed.Count > 0 ? "Skipped: " + string.Join("; ", failed)
-            : replaceAudioOf is not null && audio.Count > 0 ? ReplacedMessage(audio[0])
-            : audio.Count > 0 ? AudioAddedMessage(audio.Count)
-            : null;
-        if (replaceAudioOf is not null && audio.Count > 0)
-            Timeline.SelectOnly(replaceAudioOf);
+        CommitKeepingFit(added.State);
+        ShowAdded(added, replacedClip: null);
     }
 
     /// <summary>Adds every file that has sound to the Audio tab, videos too (their sound can replace a clip's).</summary>
     public async Task AddAudioAsync(IEnumerable<string> paths)
     {
-        if (await ProbeFilesAsync(paths) is not { } results)
+        if (await AddProbedAsync(paths, AddRouting.AllAsAudio) is not { } added)
             return;
-        var state = State;
-        var failed = new List<string>();
-        var added = 0;
-        foreach (var (path, info, error) in results)
-        {
-            if (info is not { AudioStreams.Length: > 0 })
-            {
-                failed.Add($"{Path.GetFileName(path)}: {error ?? "no audio stream"}");
-                continue;
-            }
-            (state, _) = ProjectEditor.AddFile(state, FileKind.Audio, NewSource(path));
-            added++;
-        }
-        Commit(state);
-        if (added > 0)
+        Commit(added.State);
+        ShowAdded(added, replacedClip: null);
+    }
+
+    /// <summary>
+    /// Files dropped on a clip: added like <see cref="AddMediaAsync"/>, and the first audio file replaces the clip's
+    /// sound in the same undo step.
+    /// </summary>
+    public async Task ReplaceClipAudioFromFilesAsync(IEnumerable<string> paths, string clipId)
+    {
+        if (await AddProbedAsync(paths, AddRouting.ByContent) is not { } added)
+            return;
+        var state = added.AudioFiles.Count > 0 ? ProjectEditor.ReplaceClipAudio(added.State, clipId, added.AudioFiles[0]) : added.State;
+        CommitKeepingFit(state);
+        ShowAdded(added, replacedClip: ReferenceEquals(state, added.State) ? null : clipId);
+    }
+
+    private async Task<AddedFiles?> AddProbedAsync(IEnumerable<string> paths, AddRouting routing) =>
+        await ProbeFilesAsync(paths) is { } results ? ProjectEditor.AddProbed(State, results, routing, NewSource) : null;
+
+    /// <summary>Shows the Audio tab when audio files were added, and says what happened.</summary>
+    private void ShowAdded(AddedFiles added, string? replacedClip)
+    {
+        if (added.AudioFiles.Count > 0)
             FilesTab = 1;
-        StatusMessage = failed.Count > 0 ? "Skipped: " + string.Join("; ", failed) : added > 0 ? AudioAddedMessage(added) : null;
+        StatusMessage = added.Skipped.Count > 0 ? "Skipped: " + string.Join("; ", added.Skipped)
+            : replacedClip is not null ? ReplacedMessage(added.AudioFiles[0])
+            : added.AudioFiles.Count > 0 ? AudioAddedMessage(added.AudioFiles.Count)
+            : null;
+        if (replacedClip is not null)
+            Timeline.SelectOnly(replacedClip);
     }
 
     private static string AudioAddedMessage(int count) =>
         $"{(count == 1 ? "Audio file added" : $"{count} audio files added")}: drag one onto a clip to replace its sound.";
 
     /// <summary>Probes the files that exist, once ffmpeg is known; null when there's nothing to add.</summary>
-    private async Task<(string Path, MediaInfo? Info, string? Error)[]?> ProbeFilesAsync(IEnumerable<string> paths)
+    private async Task<ProbedFile[]?> ProbeFilesAsync(IEnumerable<string> paths)
     {
         var files = paths.Select(Path.GetFullPath).Where(File.Exists).Distinct().ToList();
         if (files.Count == 0)
@@ -290,11 +272,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         {
             try
             {
-                return (Path: f, Info: (MediaInfo?)await _app.ProbeAsync(f), Error: (string?)null);
+                return new ProbedFile(f, await _app.ProbeAsync(f), null);
             }
             catch (Exception ex)
             {
-                return (Path: f, Info: (MediaInfo?)null, Error: ex.Message);
+                return new ProbedFile(f, null, ex.Message);
             }
         }).ToList();
         return await Task.WhenAll(probes);

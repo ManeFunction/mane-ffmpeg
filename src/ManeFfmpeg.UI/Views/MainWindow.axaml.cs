@@ -358,8 +358,7 @@ public partial class MainWindow : Window, IMainWindowView
             // Onto a clip: audio files are added and the first replaces that clip's sound.
             if (ClipAt(e.GetPosition(TimelineView)) is { } clip && paths.Any(LooksLikeAudio))
             {
-                await AppServices.Instance.ToolsLocated;
-                await ViewModel.AddMediaAsync(paths, replaceAudioOf: clip);
+                await ViewModel.ReplaceClipAudioFromFilesAsync(paths, clip);
                 return;
             }
         }

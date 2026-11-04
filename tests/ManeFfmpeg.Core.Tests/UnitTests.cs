@@ -1032,6 +1032,44 @@ public class ProjectEditorTests
         Assert.Empty(ProjectEditor.AppendClip(State(), "gone", S(1), S(3)).Timeline.Clips);
     }
 
+    private static readonly MediaInfo Movie = new()
+    {
+        Duration = S(5),
+        Video = new VideoStreamInfo { Index = 0, Codec = "h264", Width = 640, Height = 360, FrameRate = new Rational(30, 1) },
+        AudioStreams = [new AudioStreamInfo { Index = 1, Codec = "aac", SampleRate = 48000, Channels = 2 }],
+    };
+
+    private static readonly MediaInfo Tune = new() { Duration = S(3), AudioStreams = [new AudioStreamInfo { Index = 0, Codec = "mp3", SampleRate = 44100, Channels = 2 }] };
+
+    private static readonly ProbedFile[] Dropped =
+    [
+        new("/in/movie.mp4", Movie, null), new("/in/tune.mp3", Tune, null),
+        new("/in/notes.txt", new MediaInfo { Duration = S(0) }, null), new("/in/broken.mov", null, "Invalid data"),
+    ];
+
+    private static SourceMedia New(string path) => new() { Id = "id:" + path, Path = path };
+
+    [Fact]
+    public void Added_files_go_where_their_content_belongs()
+    {
+        var added = ProjectEditor.AddProbed(State(), Dropped, AddRouting.ByContent, New);
+        Assert.Equal(["id:/in/movie.mp4"], added.Videos);
+        Assert.Equal(["id:/in/tune.mp3"], added.AudioFiles);
+        Assert.Equal(["notes.txt: no video or audio stream", "broken.mov: Invalid data"], added.Skipped);
+        Assert.Equal(S(5), added.State.Timeline.Clips.Single().Duration);
+        Assert.Equal(2, added.State.AudioFiles.Count);
+    }
+
+    [Fact]
+    public void Added_as_audio_every_file_with_sound_is_an_audio_file()
+    {
+        var added = ProjectEditor.AddProbed(State(), Dropped, AddRouting.AllAsAudio, New);
+        Assert.Empty(added.Videos);
+        Assert.Equal(["id:/in/movie.mp4", "id:/in/tune.mp3"], added.AudioFiles);
+        Assert.Equal(["notes.txt: no audio stream", "broken.mov: Invalid data"], added.Skipped);
+        Assert.Empty(added.State.Timeline.Clips);
+    }
+
     [Fact]
     public void Orphans_are_dropped_or_fall_back_to_their_own_sound()
     {
