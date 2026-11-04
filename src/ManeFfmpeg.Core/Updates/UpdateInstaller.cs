@@ -8,20 +8,17 @@ using ManeFfmpeg.Core.Persistence;
 namespace ManeFfmpeg.Core.Updates;
 
 /// <summary>A downloaded and unpacked release, waiting to replace the installed copy.</summary>
-/// <param name="Staged">The new "Mane FFmpeg.app" (macOS), or the unpacked "mane-ffmpeg" folder with app/ and install.sh (Linux).</param>
+/// <param name="Staged">The unpacked package (<see cref="ReleasePackage.StagedName"/>): the new "Mane FFmpeg.app" (macOS), or the
+/// "mane-ffmpeg" folder with app/ and install.sh (Linux).</param>
 public sealed record PreparedUpdate(Version Version, string Staged);
 
 /// <summary>
-/// Downloads a release in the form the release workflow packs it (a zipped .app on macOS, a tarball on Linux) and
-/// swaps it in for the running copy. The swap runs in a small shell script that waits for the app to quit first, so
+/// Downloads a release in the form the release workflow packs it (<see cref="ReleasePackage"/>) and swaps it in for the
+/// running copy. The swap runs in a small shell script that waits for the app to quit first, so
 /// nothing is replaced while it runs, and puts the old copy back if the new one can't be moved in.
 /// </summary>
 public static partial class UpdateInstaller
 {
-    private const string MacZipBundle = "Mane FFmpeg.app";
-    private const string LinuxFolder = "mane-ffmpeg";
-    private const string LinuxAppFolder = "app";
-
     /// <summary>How long the script waits for the app to quit before it gives up (in 0.1 s steps).</summary>
     private const int QuitWaitSteps = 600;
 
@@ -41,17 +38,13 @@ public static partial class UpdateInstaller
                 Architecture.Arm64 => "arm64",
                 _ => null,
             };
-            return arch is null ? null
-                : OperatingSystem.IsMacOS() ? $"osx-{arch}"
-                : OperatingSystem.IsLinux() ? $"linux-{arch}"
-                : null;
+            return arch is not null && ReleasePackage.Current is { } package ? $"{package.Platform}-{arch}" : null;
         }
     }
 
     /// <summary>The release asset for this machine, named like the release workflow names it.</summary>
-    public static string? AssetName(Version version) => RuntimeId is { } rid
-        ? $"mane-ffmpeg-{version.ToString(3)}-{rid}{(OperatingSystem.IsMacOS() ? ".zip" : ".tar.gz")}"
-        : null;
+    public static string? AssetName(Version version) =>
+        RuntimeId is { } rid && ReleasePackage.Current is { } package ? package.AssetName(version, rid) : null;
 
     /// <summary>
     /// What an update replaces: the .app bundle this process runs from (macOS) or the app/ folder of the Linux bundle.
@@ -62,14 +55,7 @@ public static partial class UpdateInstaller
         processPath ??= Environment.ProcessPath;
         if (processPath is null || Path.GetFileNameWithoutExtension(processPath) == "dotnet")
             return null;
-        var folder = Path.GetDirectoryName(processPath);
-        if (OperatingSystem.IsMacOS())
-        {
-            var bundle = Path.GetDirectoryName(Path.GetDirectoryName(folder));
-            return bundle is not null && bundle.EndsWith(".app", StringComparison.OrdinalIgnoreCase)
-                && File.Exists(Path.Combine(bundle, "Contents", "Info.plist")) ? bundle : null;
-        }
-        return OperatingSystem.IsLinux() && Path.GetFileName(folder) == LinuxAppFolder ? folder : null;
+        return ReleasePackage.Current?.InstalledPath(processPath);
     }
 
     /// <summary>Why the copy at <paramref name="installed"/> can't replace itself, or null when it can.</summary>
@@ -77,15 +63,11 @@ public static partial class UpdateInstaller
     {
         if (installed is null)
             return "This copy doesn't run from a release package, so it can't update itself.";
-        if (OperatingSystem.IsMacOS() && installed.Contains("/AppTranslocation/", StringComparison.Ordinal))
-            return "macOS runs this copy from a read-only location. Move Mane FFmpeg to Applications and open it from there to update it here.";
+        if (ReleasePackage.Current?.CannotReplaceReason(installed) is { } reason)
+            return reason;
         var parent = Path.GetDirectoryName(installed)!;
         return IsWritable(parent) ? null : $"{parent} isn't writable, so the update can't be put in place.";
     }
-
-    /// <summary>The Linux bundle's install.sh installs here; updating this copy runs the new install.sh.</summary>
-    private static string StandardLinuxInstall =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "opt", LinuxFolder, LinuxAppFolder);
 
     /// <summary>Removes leftovers of an update that was downloaded but never installed.</summary>
     public static void CleanUp()
@@ -108,26 +90,20 @@ public static partial class UpdateInstaller
     public static async Task<PreparedUpdate> PrepareAsync(HttpClient http, ReleaseAsset asset, Version version,
         IProgress<double>? progress = null, CancellationToken ct = default)
     {
+        var package = ReleasePackage.Current ?? throw new PlatformNotSupportedException("There are no releases for this system.");
         CleanUp();
         var work = Directory.CreateDirectory(WorkDirectory).FullName;
         var archive = Path.Combine(work, Path.GetFileName(asset.Name));
         await DownloadAsync(http, asset, archive, progress, ct);
 
         var unpacked = Directory.CreateDirectory(Path.Combine(work, "new")).FullName;
-        var command = OperatingSystem.IsMacOS()
-            // ditto keeps the bundle's symlinks, permissions and signature.
-            ? Cli.Wrap("/usr/bin/ditto").WithArguments(["-x", "-k", archive, unpacked])
-            : Cli.Wrap(Executables.Find("tar") ?? "tar").WithArguments(["-xzf", archive, "-C", unpacked]);
-        var result = await command.WithValidation(CommandResultValidation.None).ExecuteBufferedAsync(ct);
+        var result = await package.Unpack(archive, unpacked).WithValidation(CommandResultValidation.None).ExecuteBufferedAsync(ct);
         if (result.ExitCode != 0)
             throw new IOException($"Couldn't unpack {asset.Name}: {result.StandardError.Trim()}");
         File.Delete(archive);
 
-        var staged = OperatingSystem.IsMacOS() ? Path.Combine(unpacked, MacZipBundle) : Path.Combine(unpacked, LinuxFolder);
-        var executable = OperatingSystem.IsMacOS()
-            ? Path.Combine(staged, "Contents", "MacOS", "ManeFfmpeg")
-            : Path.Combine(staged, LinuxAppFolder, "ManeFfmpeg");
-        if (!File.Exists(executable))
+        var staged = Path.Combine(unpacked, package.StagedName);
+        if (!File.Exists(package.ExecutableIn(staged)))
             throw new IOException($"{asset.Name} doesn't hold the app where it should.");
         AppLog.Write($"Update: {version.ToString(3)} is ready in {staged}");
         return new PreparedUpdate(version, staged);
@@ -166,8 +142,9 @@ public static partial class UpdateInstaller
     /// </summary>
     public static void Apply(PreparedUpdate update, string installed, IReadOnlyList<int> waitFor, bool relaunch, IReadOnlyList<string> reopen)
     {
-        var plan = new ApplyPlan(OperatingSystem.IsMacOS(), installed, update.Staged, update.Version, waitFor, relaunch, reopen,
-            RunInstaller: OperatingSystem.IsLinux() && Path.GetFullPath(installed) == StandardLinuxInstall,
+        var package = ReleasePackage.Current ?? throw new PlatformNotSupportedException("There are no releases for this system.");
+        var plan = new ApplyPlan(package, installed, update.Staged, update.Version, waitFor, relaunch, reopen,
+            RunInstaller: package.RunsInstaller(installed),
             Log: LogPath, CleanUp: WorkDirectory);
         var script = WriteApplyScript(WorkDirectory, plan);
         AppLog.Write($"Update: installing {update.Version.ToString(3)} after quitting (relaunch: {relaunch}); log in {LogPath}");
@@ -176,10 +153,10 @@ public static partial class UpdateInstaller
         using var _ = Process.Start(start) ?? throw new IOException("Couldn't start the update script.");
     }
 
-    /// <param name="MacOS">Whether <see cref="Installed"/> is an app bundle (else the Linux app/ folder).</param>
-    /// <param name="RunInstaller">Linux: install with the new bundle's install.sh, which also refreshes the menu entry.</param>
+    /// <param name="Package">The kind of package <see cref="Installed"/> and <see cref="Staged"/> are.</param>
+    /// <param name="RunInstaller">Install with the new package's install.sh (<see cref="ReleasePackage.RunsInstaller"/>).</param>
     /// <param name="CleanUp">A folder to delete at the end (the downloaded update).</param>
-    internal sealed record ApplyPlan(bool MacOS, string Installed, string Staged, Version Version, IReadOnlyList<int> WaitFor,
+    internal sealed record ApplyPlan(ReleasePackage Package, string Installed, string Staged, Version Version, IReadOnlyList<int> WaitFor,
         bool Relaunch, IReadOnlyList<string> Reopen, bool RunInstaller, string Log, string? CleanUp);
 
     internal static string WriteApplyScript(string directory, ApplyPlan plan)
@@ -193,9 +170,7 @@ public static partial class UpdateInstaller
         var backup = Path.Combine(sibling, $".{name}.old");
         var reopen = string.Join(' ', plan.Reopen.Select(Quote));
 
-        var copyIn = plan.MacOS
-            ? "/usr/bin/ditto \"$staged\" \"$incoming\""
-            : "cp -R \"$staged/app\" \"$incoming\"";
+        var copyIn = plan.Package.CopyInScript;
         var install = plan.RunInstaller
             ? """
                 rm -rf "$backup"
@@ -223,11 +198,8 @@ public static partial class UpdateInstaller
                 fi
                 rm -rf "$backup"
               """;
-        var afterInstall = plan.MacOS ? "xattr -dr com.apple.quarantine \"$installed\" 2>/dev/null || true" : ":";
-        var relaunch = !plan.Relaunch ? ""
-            : plan.MacOS
-                ? plan.Reopen.Count > 0 ? $"open -a \"$installed\" {reopen}" : "open \"$installed\""
-                : $"nohup \"$installed/ManeFfmpeg\" {reopen} >/dev/null 2>&1 &";
+        var afterInstall = plan.Package.AfterInstallScript;
+        var relaunch = plan.Relaunch ? plan.Package.RelaunchScript(reopen) : "";
 
         var script = Path.Combine(directory, "apply-update.sh");
         File.WriteAllText(script, $$"""
