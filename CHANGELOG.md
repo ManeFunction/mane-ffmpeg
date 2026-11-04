@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Added
+- **Files** panel (was *Videos*) with *Video* and *Audio* tabs. Audio files get their own pastel colors. Add them with
+  *+ Add audio…* or *File → Add Audio…* (⇧⌘I), or drop them on the window. Dropped files without video go to the
+  *Audio* tab, and videos dropped on the *Audio* tab are added for their sound. Double-click an audio file to hear it.
+- Replace a clip's sound: drag an audio file from the *Audio* tab, or straight from Finder, onto a clip. It starts at
+  the clip's start and replaces only that clip; split a video first to replace the sound of just a part. Drag the
+  audio row to shift it, as with a clip's own audio. Splitting continues the sound on both halves.
+- *Loop audio* in *Selection* repeats a replaced sound so the clip has no silence, even when it is shifted.
+  *Use original audio* (also in the *Edit* menu) brings the clip's own sound back with its offset.
+- Replaced audio is exported sample-exactly, looped or not, and is re-encoded when the preset copies audio. Projects
+  that use audio files are saved as format 2, which older versions refuse to open instead of silently dropping the
+  replaced sound.
 
 ## [1.0.0] - 2026-11-02
 ### Added

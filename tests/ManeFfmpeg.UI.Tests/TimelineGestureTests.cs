@@ -79,6 +79,22 @@ public class TimelineGestureTests
     }
 
     [Fact]
+    public void Slipping_replaced_audio_moves_the_replacement_in_one_undo_step()
+    {
+        var host = new Host(TimelineEditor.ReplaceAudio(ThreeClips().Timeline, "a", "f"));
+        var gestures = new TimelineGestures(host);
+        gestures.Press(new TimelineHit(TimelineZone.Audio, S(1.0), "a"), command: false, shift: false);
+        gestures.Move(S(1.2), fine: false);
+        gestures.Move(S(1.5), fine: false);
+        gestures.Release(S(1.5));
+
+        Assert.Equal(TimeSpan.FromMilliseconds(500), host.Timeline.Clips[0].ReplacedAudio!.Offset);
+        Assert.Equal(TimeSpan.Zero, host.Timeline.Clips[0].AudioOffset);
+        host.History.Undo();
+        Assert.Equal(TimeSpan.Zero, host.Timeline.Clips[0].ReplacedAudio!.Offset);
+    }
+
+    [Fact]
     public void Shift_slips_at_a_tenth_of_the_speed()
     {
         var host = ThreeClips();

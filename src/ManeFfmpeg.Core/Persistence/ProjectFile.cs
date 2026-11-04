@@ -16,7 +16,8 @@ public static class ProjectFile
 {
     public const string Extension = "mfvp";
     public const string FormatName = "mane-ffmpeg-project";
-    public const int CurrentVersion = 1;
+    /// <summary>Version 2 adds audio files and replaced clip audio; projects without audio files are still written as 1.</summary>
+    public const int CurrentVersion = 2;
 
     public static async Task SaveAsync(Project project, string path, CancellationToken ct = default)
     {
@@ -32,19 +33,23 @@ public static class ProjectFile
     public static string Serialize(Project project, string projectPath)
     {
         var dir = Path.GetDirectoryName(Path.GetFullPath(projectPath))!;
+        SourceDto Source(SourceMedia s) => new()
+        {
+            Id = s.Id,
+            Path = s.Path,
+            RelativePath = Path.GetRelativePath(dir, s.Path),
+            FileSize = s.FileSize,
+            LastWriteUtc = s.LastWriteUtc,
+            AudioStream = s.AudioStreamIndex,
+        };
+        var hasAudioFiles = project.State.AudioFiles.Count > 0;
         var dto = new ProjectDto
         {
             Format = FormatName,
-            Version = CurrentVersion,
-            Sources = [.. project.State.Sources.Select(s => new SourceDto
-            {
-                Id = s.Id,
-                Path = s.Path,
-                RelativePath = Path.GetRelativePath(dir, s.Path),
-                FileSize = s.FileSize,
-                LastWriteUtc = s.LastWriteUtc,
-                AudioStream = s.AudioStreamIndex,
-            })],
+            // An older app would silently drop replaced audio, so it is told this file is newer.
+            Version = hasAudioFiles ? CurrentVersion : 1,
+            Sources = [.. project.State.Sources.Select(Source)],
+            AudioFiles = hasAudioFiles ? [.. project.State.AudioFiles.Select(Source)] : null,
             Clips = [.. project.State.Timeline.Clips.Select(c => new ClipDto
             {
                 Id = c.Id,
@@ -52,6 +57,9 @@ public static class ProjectFile
                 In = c.In,
                 Out = c.Out,
                 AudioOffset = c.AudioOffset,
+                ReplacedAudio = c.ReplacedAudio is { } r
+                    ? new ReplacementDto { File = r.FileId, Anchor = r.Anchor, Offset = r.Offset, Loop = r.Loop }
+                    : null,
             })],
             Export = project.Export,
             Layout = project.Layout,
@@ -90,23 +98,34 @@ public static class ProjectFile
 
         var dir = Path.GetDirectoryName(Path.GetFullPath(projectPath))!;
         // Hand-edited or damaged files may leave out lists or entries; skip what can't be used.
-        var sources = (dto.Sources ?? []).OfType<SourceDto>().Where(s => s is { Id.Length: > 0, Path.Length: > 0 }).Select(s => new SourceMedia
-        {
-            Id = s.Id,
-            Path = ResolvePath(s, dir),
-            FileSize = s.FileSize,
-            LastWriteUtc = s.LastWriteUtc,
-            AudioStreamIndex = Math.Max(0, s.AudioStream),
-        }).ToImmutableList();
+        ImmutableList<SourceMedia> Sources(List<SourceDto?>? list) =>
+            (list ?? []).OfType<SourceDto>().Where(s => s is { Id.Length: > 0, Path.Length: > 0 }).Select(s => new SourceMedia
+            {
+                Id = s.Id,
+                Path = ResolvePath(s, dir),
+                FileSize = s.FileSize,
+                LastWriteUtc = s.LastWriteUtc,
+                AudioStreamIndex = Math.Max(0, s.AudioStream),
+            }).ToImmutableList();
+        var sources = Sources(dto.Sources);
+        var audioFiles = Sources(dto.AudioFiles);
         var known = sources.Select(s => s.Id).ToHashSet();
+        var knownAudio = audioFiles.Select(s => s.Id).ToHashSet();
         var clips = (dto.Clips ?? []).OfType<ClipDto>()
             .Where(c => c is { Id.Length: > 0 } && known.Contains(c.Source) && c.Out > c.In)
-            .Select(c => new Clip { Id = c.Id, SourceId = c.Source, In = c.In, Out = c.Out, AudioOffset = c.AudioOffset })
+            .Select(c => new Clip
+            {
+                Id = c.Id, SourceId = c.Source, In = c.In, Out = c.Out, AudioOffset = c.AudioOffset,
+                // A replacement whose audio file is gone leaves the clip with its own audio.
+                ReplacedAudio = c.ReplacedAudio is { File: { } file } r && knownAudio.Contains(file)
+                    ? new AudioReplacement { FileId = file, Anchor = r.Anchor, Offset = r.Offset, Loop = r.Loop }
+                    : null,
+            })
             .ToImmutableList();
 
         return new Project
         {
-            State = new ProjectState(sources, new Timeline(clips)),
+            State = new ProjectState(sources, new Timeline(clips)) { AudioFiles = audioFiles },
             Export = dto.Export ?? new ExportSettings(),
             Layout = dto.Layout ?? new ProjectLayout(),
         };
@@ -131,6 +150,7 @@ public static class ProjectFile
         public string Format { get; set; } = "";
         public int Version { get; set; }
         public List<SourceDto?>? Sources { get; set; } = [];
+        public List<SourceDto?>? AudioFiles { get; set; }
         public List<ClipDto?>? Clips { get; set; } = [];
         public ExportSettings? Export { get; set; }
         public ProjectLayout? Layout { get; set; }
@@ -153,6 +173,15 @@ public static class ProjectFile
         public TimeSpan In { get; set; }
         public TimeSpan Out { get; set; }
         public TimeSpan AudioOffset { get; set; }
+        public ReplacementDto? ReplacedAudio { get; set; }
+    }
+
+    internal sealed class ReplacementDto
+    {
+        public string? File { get; set; }
+        public TimeSpan Anchor { get; set; }
+        public TimeSpan Offset { get; set; }
+        public bool Loop { get; set; }
     }
 }
 

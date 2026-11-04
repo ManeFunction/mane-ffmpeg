@@ -12,6 +12,12 @@ public static class TimelineEditor
     /// <summary>Largest audio slip in either direction.</summary>
     public static readonly TimeSpan MaxAudioOffset = TimeSpan.FromSeconds(60);
 
+    /// <summary>Largest slip of replaced audio, enough to reach any point in a long track.</summary>
+    public static readonly TimeSpan MaxReplacedAudioOffset = TimeSpan.FromHours(24);
+
+    /// <summary>The slip limit of the clip's active audio.</summary>
+    public static TimeSpan MaxAudioOffsetFor(Clip clip) => clip.ReplacedAudio is null ? MaxAudioOffset : MaxReplacedAudioOffset;
+
     public static Timeline Append(Timeline timeline, Clip clip) => timeline with { Clips = timeline.Clips.Add(clip) };
 
     /// <summary>
@@ -88,17 +94,57 @@ public static class TimelineEditor
         return newOut == clip.Out ? timeline : timeline with { Clips = timeline.Clips.SetItem(index, clip with { Out = newOut }) };
     }
 
+    /// <summary>Sets the offset of each clip's active audio: the replacement's when replaced, else its own.</summary>
     public static Timeline SetAudioOffset(Timeline timeline, IReadOnlySet<string> clipIds, TimeSpan offset) =>
-        Map(timeline, clipIds, c => c with { AudioOffset = Clamp(offset, -MaxAudioOffset, MaxAudioOffset) });
+        Map(timeline, clipIds, c => WithActiveOffset(c, offset));
 
     public static Timeline NudgeAudioOffset(Timeline timeline, IReadOnlySet<string> clipIds, TimeSpan delta) =>
-        Map(timeline, clipIds, c => c with { AudioOffset = Clamp(c.AudioOffset + delta, -MaxAudioOffset, MaxAudioOffset) });
+        Map(timeline, clipIds, c => WithActiveOffset(c, c.ActiveAudioOffset + delta));
 
-    /// <summary>Gives every clip of <paramref name="sourceId"/> the same audio offset.</summary>
+    private static Clip WithActiveOffset(Clip clip, TimeSpan offset)
+    {
+        var max = MaxAudioOffsetFor(clip);
+        offset = Clamp(offset, -max, max);
+        return clip.ReplacedAudio is { } r ? clip with { ReplacedAudio = r with { Offset = offset } } : clip with { AudioOffset = offset };
+    }
+
+    /// <summary>Gives every clip of <paramref name="sourceId"/> the same own audio offset (replaced clips keep it for later).</summary>
     public static Timeline SetAudioOffsetForSource(Timeline timeline, string sourceId, TimeSpan offset)
     {
         var ids = timeline.Clips.Where(c => c.SourceId == sourceId).Select(c => c.Id).ToHashSet();
+        return Map(timeline, ids, c => c with { AudioOffset = Clamp(offset, -MaxAudioOffset, MaxAudioOffset) });
+    }
+
+    /// <summary>Gives every clip playing <paramref name="fileId"/> the same replacement offset.</summary>
+    public static Timeline SetReplacedAudioOffsetForFile(Timeline timeline, string fileId, TimeSpan offset)
+    {
+        var ids = timeline.Clips.Where(c => c.ReplacedAudio?.FileId == fileId).Select(c => c.Id).ToHashSet();
         return SetAudioOffset(timeline, ids, offset);
+    }
+
+    /// <summary>
+    /// Plays audio file <paramref name="fileId"/> instead of the clip's sound, starting at its in point. A clip that
+    /// already had replaced audio keeps its loop choice.
+    /// </summary>
+    public static Timeline ReplaceAudio(Timeline timeline, string clipId, string fileId) =>
+        Map(timeline, new HashSet<string> { clipId }, c => c with
+        {
+            ReplacedAudio = new AudioReplacement { FileId = fileId, Anchor = c.In, Loop = c.ReplacedAudio?.Loop ?? false },
+        });
+
+    /// <summary>The clips play their own audio again, with their own offsets.</summary>
+    public static Timeline RestoreOriginalAudio(Timeline timeline, IReadOnlySet<string> clipIds) =>
+        Map(timeline, clipIds, c => c with { ReplacedAudio = null });
+
+    /// <summary>Turns looping of replaced audio on or off (clips with their own audio are left alone).</summary>
+    public static Timeline SetAudioLoop(Timeline timeline, IReadOnlySet<string> clipIds, bool loop) =>
+        Map(timeline, clipIds, c => c.ReplacedAudio is { } r ? c with { ReplacedAudio = r with { Loop = loop } } : c);
+
+    /// <summary>Clips playing an audio file that is removed go back to their own audio.</summary>
+    public static Timeline RemoveAudioFile(Timeline timeline, string fileId)
+    {
+        var ids = timeline.Clips.Where(c => c.ReplacedAudio?.FileId == fileId).Select(c => c.Id).ToHashSet();
+        return RestoreOriginalAudio(timeline, ids);
     }
 
     public static Timeline RemoveSource(Timeline timeline, string sourceId) =>

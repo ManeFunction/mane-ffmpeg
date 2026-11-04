@@ -121,3 +121,70 @@ public class ExportPlannerTests
             """, plan.CommandText("ffmpeg"));
     }
 }
+
+/// <summary>The planner with clips whose audio is replaced by an audio file.</summary>
+public class ReplacedAudioPlannerTests
+{
+    private static TimeSpan S(double seconds) => TimeSpan.FromSeconds(seconds);
+
+    private static readonly MediaInfo Video = new()
+    {
+        Duration = S(10), FormatName = "mov,mp4,m4a,3gp,3g2,mj2",
+        Video = new VideoStreamInfo { Index = 0, Codec = "h264", Width = 1920, Height = 1080, FrameRate = new Rational(30, 1), PixelFormat = "yuv420p" },
+        AudioStreams = [new AudioStreamInfo { Index = 1, Codec = "aac", SampleRate = 48000, Channels = 2, ChannelLayout = "stereo", Duration = S(10) }],
+    };
+
+    private static readonly MediaInfo Tone = new()
+    {
+        Duration = S(3), FormatName = "mov,mp4,m4a,3gp,3g2,mj2",
+        AudioStreams = [new AudioStreamInfo { Index = 0, Codec = "aac", SampleRate = 44100, Channels = 2, ChannelLayout = "stereo", Duration = S(3) }],
+    };
+
+    private static readonly Preset Encode = new() { Id = "e", Name = "encode", Arguments = "-c:v libx264 -crf 20 -c:a copy", Extension = "mp4" };
+
+    private static Clip C(double inS, double outS, bool loop = false, double offset = 0) =>
+        Clip.Create("a", S(inS), S(outS)) with { ReplacedAudio = new AudioReplacement { FileId = "t", Anchor = S(inS), Offset = S(offset), Loop = loop } };
+
+    private static ExportJob Job(Preset preset, IReadOnlyDictionary<string, MediaInfo> media, params Clip[] clips) => new()
+    {
+        State = new ProjectState([new SourceMedia { Id = "a", Path = "/m/a.src" }], new Timeline([.. clips]))
+        {
+            AudioFiles = [new SourceMedia { Id = "t", Path = "/m/t.m4a" }],
+        },
+        Media = media,
+        Preset = preset,
+        OutputPath = "/out/edit.mp4",
+        WorkDirectory = "/work",
+        Keyframes = new Dictionary<string, KeyframeIndex> { ["a"] = new([.. Enumerable.Range(0, 10).Select(i => S(i))], TimeSpan.Zero) },
+    };
+
+    private static readonly Dictionary<string, MediaInfo> Both = new() { ["a"] = Video, ["t"] = Tone };
+
+    [Fact]
+    public void Replaced_audio_is_never_copied()
+    {
+        Assert.Equal(ExportMode.Encode, ExportPlanner.Plan(Job(Encode, Both, C(0, 10))).Mode);
+        var single = ExportPlanner.Plan(Job(Encode, Both, C(1, 4)));
+        Assert.Equal(ExportMode.Encode, single.Mode);
+        Assert.Contains(single.Notes, n => n.Contains("replaced audio"));
+        var copy = ExportPlanner.Plan(Job(Preset.PlaneCopy, Both, C(1, 4), C(5, 6)));
+        Assert.NotNull(copy.Steps[^1].Shift);
+        Assert.Contains(copy.Steps[^1].Arguments, a => a == "/m/t.m4a");
+    }
+
+    [Fact]
+    public void Refuses_an_audio_file_that_is_not_analyzed()
+    {
+        var ex = Assert.Throws<ExportPlanException>(() => ExportPlanner.Plan(Job(Encode, new Dictionary<string, MediaInfo> { ["a"] = Video }, C(1, 4))));
+        Assert.Contains("t.m4a", ex.Message);
+    }
+
+    [Fact]
+    public void Looped_snapshot()
+    {
+        var plan = ExportPlanner.Plan(Job(Encode, Both, C(1, 8, loop: true, offset: 0.5)));
+        Assert.Equal("""
+            ffmpeg -nostdin -hide_banner -loglevel error -nostats -stats_period 0.5 -progress pipe:1 -y -ss 1.000000 -t 7.000000 -i /m/a.src -t 3.000000 -i /m/t.m4a -filter_complex '[0:0]trim=duration=7.000000,setpts=PTS-STARTPTS[v0];[1:0]aformat=sample_rates=44100:channel_layouts=stereo,apad=whole_dur=3.000000,atrim=end_sample=132300,aloop=loop=-1:size=132300,atrim=start_sample=110250:end_sample=418950,asetpts=N/SR/TB[a0];[v0][a0]concat=n=1:v=1:a=1[vout][aout]' -map '[vout]' -map '[aout]' -c:v libx264 -crf 20 -c:a aac -b:a 256k -movflags +faststart /out/edit.mp4
+            """, plan.CommandText("ffmpeg"));
+    }
+}

@@ -64,6 +64,36 @@ internal static class DebugAutomation
                     case "add":
                         await vm.AddMediaAsync(arg.Split('|'));
                         break;
+                    case "add-audio":
+                        await vm.AddAudioAsync(arg.Split('|'));
+                        break;
+                    case "files-tab":
+                        vm.FilesTab = arg == "audio" ? 1 : 0;
+                        break;
+                    case "replace-audio":
+                    {
+                        // replace-audio <clip index> <audio file index>
+                        var parts = arg.Split(' ');
+                        vm.ReplaceClipAudio(vm.State.Timeline.Clips[int.Parse(parts[0], CultureInfo.InvariantCulture)].Id,
+                            vm.AudioFiles[int.Parse(parts[1], CultureInfo.InvariantCulture)].Id);
+                        break;
+                    }
+                    case "drag-audio":
+                    {
+                        // drag-audio <audio file index> <timeline seconds>: a pointer drag from the Audio tab to the A1 row
+                        var parts = arg.Split(' ');
+                        await DragAudioAsync(window, int.Parse(parts[0], CultureInfo.InvariantCulture), double.Parse(parts[1], CultureInfo.InvariantCulture));
+                        break;
+                    }
+                    case "loop":
+                        vm.LoopAudio = arg == "on";
+                        break;
+                    case "original-audio":
+                        vm.RestoreOriginalAudioCommand.Execute(null);
+                        break;
+                    case "preview-audio":
+                        vm.Preview.PreviewSourceCommand.Execute(vm.AudioFiles[int.Parse(arg, CultureInfo.InvariantCulture)]);
+                        break;
                     case "open":
                         await WindowManager.Instance.OpenProjectAsync(arg, window);
                         break;
@@ -478,6 +508,32 @@ internal static class DebugAutomation
             new PointerPointProperties(raw, PointerUpdateKind.LeftButtonReleased), mods, MouseButton.Left));
     }
 
+    /// <summary>Synthetic drag of an Audio tab item onto the timeline's audio row at <paramref name="at"/> seconds.</summary>
+    private static async Task DragAudioAsync(MainWindow window, int index, double at)
+    {
+        window.ViewModel.FilesTab = 1;
+        await Task.Delay(300);
+        var list = window.AudioList;
+        var item = list.ContainerFromIndex(index) ?? throw new InvalidOperationException("no such audio file");
+        var vm = window.ViewModel.Timeline;
+        var from = item.TranslatePoint(new Point(40, 10), window) ?? default;
+        var to = window.TimelineView.TranslatePoint(new Point(TimelineLayout.X(vm.Zoom, vm.Scroll, TimeSpan.FromSeconds(at)), TimelineLayout.AudioCenter), window) ?? default;
+        var pointer = new Pointer(Pointer.GetNextFreeId(), PointerType.Mouse, true);
+        ulong ts = 1;
+        var pressed = new PointerPointProperties(RawInputModifiers.LeftMouseButton, PointerUpdateKind.LeftButtonPressed);
+        item.RaiseEvent(new PointerPressedEventArgs(item, pointer, window, from, ts++, pressed, KeyModifiers.None));
+        for (var i = 1; i <= 10; i++)
+        {
+            var p = from + (to - from) * (i / 10.0);
+            list.RaiseEvent(new PointerEventArgs(InputElement.PointerMovedEvent, list, pointer, window, p, ts++,
+                new PointerPointProperties(RawInputModifiers.LeftMouseButton, PointerUpdateKind.Other), KeyModifiers.None));
+            await Task.Delay(16);
+        }
+        Console.WriteLine($"[drag-audio] target={vm.AudioDrop?.ClipId ?? "none"}");
+        list.RaiseEvent(new PointerReleasedEventArgs(list, pointer, window, to, ts,
+            new PointerPointProperties(RawInputModifiers.None, PointerUpdateKind.LeftButtonReleased), KeyModifiers.None, MouseButton.Left));
+    }
+
     private static async Task SnapshotWindowAsync(Avalonia.Controls.Window dialog, string path)
     {
         dialog.Show();
@@ -505,8 +561,12 @@ internal static class DebugAutomation
         Console.WriteLine($"[state] video counters={window.Video.Counters} center={window.Video.CenterPixel()}");
         foreach (var s in vm.Sources)
             Console.WriteLine($"[state]   source {s.Name} {s.Status} {s.Details}");
+        foreach (var s in vm.AudioFiles)
+            Console.WriteLine($"[state]   audio {s.Name} {s.Status} {s.Details}");
         foreach (var c in vm.State.Timeline.Clips)
-            Console.WriteLine($"[state]   clip {c.Id} {vm.State.Source(c.SourceId)?.DisplayName} {c.In}–{c.Out} offset={c.AudioOffset.TotalMilliseconds}ms{(vm.Timeline.Selection.Contains(c.Id) ? " *" : "")}");
+            Console.WriteLine($"[state]   clip {c.Id} {vm.State.Source(c.SourceId)?.DisplayName} {c.In}–{c.Out} offset={c.AudioOffset.TotalMilliseconds}ms" +
+                              (c.ReplacedAudio is { } r ? $" audio={vm.State.AudioFile(r.FileId)?.DisplayName} anchor={r.Anchor} offset={r.Offset.TotalMilliseconds}ms loop={r.Loop}" : "") +
+                              (vm.Timeline.Selection.Contains(c.Id) ? " *" : ""));
     }
 }
 #endif

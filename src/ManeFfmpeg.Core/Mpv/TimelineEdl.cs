@@ -32,21 +32,32 @@ public static class TimelineEdl
             // EDL segment starts are file timestamps, which begin at the container start time, not at 0.
             Segment(video, source.Path, clip.In + info.StartTime, clip.Duration);
 
-            var stream = info.Audio(source.AudioStreamIndex);
+            // The heard file: an audio file dropped on the clip, or the clip's own video. One that isn't analyzed
+            // yet plays silence until the catalog reports it and the preview reloads.
+            var heard = state.AudioSourceOf(clip);
+            var heardInfo = heard is null ? null : heard.Id == source.Id ? info : media.GetValueOrDefault(heard.Id);
+            var stream = heardInfo?.Audio(heard!.AudioStreamIndex);
             if (stream is null)
             {
                 Silence(audio, silencePath, clip.Duration);
                 continue;
             }
             anyAudio = true;
-            var placement = clip.AudioPlacement(info.AudioEnd(stream));
+            var end = heardInfo!.AudioEnd(stream);
+            if (clip.LoopsAudio && AudioLoop.CanLoop(end) && AudioLoop.For(clip.In, clip.Duration, clip.AudioSlip, end) is { Wraps: true } loop)
+            {
+                foreach (var (readFrom, length) in loop.Pieces())
+                    Segment(audio, heard!.Path, readFrom + heardInfo.StartTime, length);
+                continue;
+            }
+            var placement = clip.AudioPlacement(end);
             if (placement.IsSilent)
             {
                 Silence(audio, silencePath, clip.Duration);
                 continue;
             }
             Silence(audio, silencePath, placement.Lead);
-            Segment(audio, source.Path, placement.ReadFrom + info.StartTime, placement.ReadLength);
+            Segment(audio, heard!.Path, placement.ReadFrom + heardInfo.StartTime, placement.ReadLength);
             Silence(audio, silencePath, placement.Tail);
         }
 

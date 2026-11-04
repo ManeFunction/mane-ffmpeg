@@ -15,6 +15,7 @@ namespace ManeFfmpeg.UI.ViewModels;
 public interface IMainWindowView
 {
     Task<IReadOnlyList<string>> PickMediaAsync();
+    Task<IReadOnlyList<string>> PickAudioAsync();
     Task<string?> PickProjectToOpenAsync();
     Task<string?> PickProjectSavePathAsync(string suggestedName);
     Task<string?> PickOutputPathAsync(string suggestedPath);
@@ -42,6 +43,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         Timeline = new TimelineViewModel(this);
         _app.ToolsChanged += OnToolsChanged;
         Sources.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasNoSources));
+        AudioFiles.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasNoAudioFiles));
         Export = new ExportViewModel(this);
         Preview = new PreviewViewModel(this);
     }
@@ -62,6 +64,18 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     public event EventHandler? StateChanged;
 
     public ObservableCollection<SourceItemViewModel> Sources { get; } = [];
+
+    /// <summary>The Audio tab: imported audio files that can replace clips' sound.</summary>
+    public ObservableCollection<SourceItemViewModel> AudioFiles { get; } = [];
+
+    /// <summary>The Files panel's tab: 0 is Video, 1 is Audio.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsVideoTab), nameof(IsAudioTab))]
+    public partial int FilesTab { get; set; }
+
+    public bool IsVideoTab => FilesTab == 0;
+
+    public bool IsAudioTab => FilesTab == 1;
 
     /// <summary>What's known about each source: status, probe result, waveform, keyframes.</summary>
     public SourceCatalog Catalog => _catalog;
@@ -85,11 +99,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     public string Title => $"{(IsDirty ? "• " : "")}{ProjectName} — Mane FFmpeg";
 
-    public bool IsEmpty => FilePath is null && State.Sources.Count == 0;
+    public bool IsEmpty => FilePath is null && State.Sources.Count == 0 && State.AudioFiles.Count == 0;
 
     public bool HasClips => State.Timeline.Clips.Count > 0;
 
     public bool HasNoSources => Sources.Count == 0;
+
+    public bool HasNoAudioFiles => AudioFiles.Count == 0;
 
     public string? ToolsError => _app.ToolsError;
 
@@ -139,34 +155,44 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     // ---- Sources ----------------------------------------------------------------------------------
 
-    /// <summary>Keeps the media bin and the catalog in step with the project state (after edits, undo, load).</summary>
+    /// <summary>Keeps the Files panel and the catalog in step with the project state (after edits, undo, load).</summary>
     private void SyncSources()
     {
-        var ids = State.Sources.Select(s => s.Id).ToHashSet();
-        for (var i = Sources.Count - 1; i >= 0; i--)
-            if (!ids.Contains(Sources[i].Id))
-                Sources.RemoveAt(i);
-        foreach (var source in State.Sources)
+        SyncList(Sources, State.Sources, audio: false);
+        SyncList(AudioFiles, State.AudioFiles, audio: true);
+        _catalog.Sync(State.Sources, State.AudioFiles);
+    }
+
+    private void SyncList(ObservableCollection<SourceItemViewModel> items, IReadOnlyList<SourceMedia> sources, bool audio)
+    {
+        var ids = sources.Select(s => s.Id).ToHashSet();
+        for (var i = items.Count - 1; i >= 0; i--)
+            if (!ids.Contains(items[i].Id))
+                items.RemoveAt(i);
+        foreach (var source in sources)
         {
-            var item = Sources.FirstOrDefault(s => s.Id == source.Id);
+            var item = items.FirstOrDefault(s => s.Id == source.Id);
             if (item is null)
             {
-                var color = Enumerable.Range(0, int.MaxValue).First(c => Sources.All(s => s.ColorIndex != c));
-                item = new SourceItemViewModel(source, color);
+                var color = Enumerable.Range(0, int.MaxValue).First(c => items.All(s => s.ColorIndex != c));
+                item = new SourceItemViewModel(source, color, audio);
                 item.AudioStreamChosen += OnAudioStreamChosen;
-                Sources.Add(item);
+                items.Add(item);
             }
             else if (item.Source != source)
             {
                 item.Update(source);
             }
         }
-        _catalog.Sync(State.Sources);
     }
+
+    /// <summary>A video or audio file in the Files panel, by id.</summary>
+    public SourceItemViewModel? FileItem(string id) =>
+        Sources.FirstOrDefault(s => s.Id == id) ?? AudioFiles.FirstOrDefault(s => s.Id == id);
 
     private void OnSourceAnalyzed(string sourceId)
     {
-        if (Sources.FirstOrDefault(s => s.Id == sourceId) is { } item)
+        if (FileItem(sourceId) is { } item)
         {
             item.Info = _catalog.Info(sourceId);
             item.Status = _catalog.Status(sourceId);
@@ -176,41 +202,37 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     private void OnAudioStreamChosen(SourceItemViewModel item, int index) =>
-        Commit(State with { Sources = State.Sources.Replace(item.Source, item.Source with { AudioStreamIndex = index }) });
+        Commit(ReplaceFile(State, item, item.Source with { AudioStreamIndex = index }));
 
-    /// <summary>Adds files as sources and appends each as a whole clip.</summary>
-    public async Task AddMediaAsync(IEnumerable<string> paths)
+    /// <summary>The state with a video or audio file changed (relinked, another stream).</summary>
+    private static ProjectState ReplaceFile(ProjectState state, SourceItemViewModel item, SourceMedia updated) =>
+        item.IsAudioFile
+            ? state with { AudioFiles = state.AudioFiles.Replace(item.Source, updated) }
+            : state with { Sources = state.Sources.Replace(item.Source, updated) };
+
+    /// <summary>
+    /// Adds files by what they hold: videos as sources, each appended as a whole clip; files with only sound to the
+    /// Audio tab. With <paramref name="replaceAudioOf"/> (audio dropped on a clip), the first audio file replaces that
+    /// clip's sound in the same undo step.
+    /// </summary>
+    public async Task AddMediaAsync(IEnumerable<string> paths, string? replaceAudioOf = null)
     {
-        var files = paths.Select(Path.GetFullPath).Where(File.Exists).Distinct().ToList();
-        if (files.Count == 0)
+        if (await ProbeFilesAsync(paths) is not { } results)
             return;
-        await _app.ToolsLocated;
-        if (_app.Tools is null)
-        {
-            StatusMessage = _app.ToolsError;
-            return;
-        }
-        StatusMessage = files.Count == 1 ? $"Adding {Path.GetFileName(files[0])}…" : $"Adding {files.Count} files…";
-        var probes = files.Select(async f =>
-        {
-            try
-            {
-                return (Path: f, Info: await _app.ProbeAsync(f), Error: (string?)null);
-            }
-            catch (Exception ex)
-            {
-                return (Path: f, Info: (MediaInfo?)null, Error: ex.Message);
-            }
-        }).ToList();
-        var results = await Task.WhenAll(probes);
-
         var state = State;
         var failed = new List<string>();
+        var audio = new List<string>();
         foreach (var (path, info, error) in results)
         {
+            if (info is { Video: null, AudioStreams.Length: > 0 })
+            {
+                (state, var id) = AddAudioFile(state, path);
+                audio.Add(id);
+                continue;
+            }
             if (info?.Video is null)
             {
-                failed.Add($"{Path.GetFileName(path)}: {error ?? "no video stream"}");
+                failed.Add($"{Path.GetFileName(path)}: {error ?? "no video or audio stream"}");
                 continue;
             }
             var existing = state.Sources.Find(s => s.Path == path);
@@ -219,8 +241,80 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
                 state = state with { Sources = state.Sources.Add(source) };
             state = state with { Timeline = TimelineEditor.Append(state.Timeline, Clip.Create(source.Id, TimeSpan.Zero, info.Duration)) };
         }
+        if (replaceAudioOf is not null && audio.Count > 0)
+            state = state with { Timeline = TimelineEditor.ReplaceAudio(state.Timeline, replaceAudioOf, audio[0]) };
         CommitKeepingFit(state);
-        StatusMessage = failed.Count == 0 ? null : "Skipped: " + string.Join("; ", failed);
+        if (audio.Count > 0)
+            FilesTab = 1;
+        StatusMessage = failed.Count > 0 ? "Skipped: " + string.Join("; ", failed)
+            : replaceAudioOf is not null && audio.Count > 0 ? ReplacedMessage(audio[0])
+            : audio.Count > 0 ? AudioAddedMessage(audio.Count)
+            : null;
+        if (replaceAudioOf is not null && audio.Count > 0)
+            Timeline.SelectOnly(replaceAudioOf);
+    }
+
+    /// <summary>Adds every file that has sound to the Audio tab, videos too (their sound can replace a clip's).</summary>
+    public async Task AddAudioAsync(IEnumerable<string> paths)
+    {
+        if (await ProbeFilesAsync(paths) is not { } results)
+            return;
+        var state = State;
+        var failed = new List<string>();
+        var added = 0;
+        foreach (var (path, info, error) in results)
+        {
+            if (info is not { AudioStreams.Length: > 0 })
+            {
+                failed.Add($"{Path.GetFileName(path)}: {error ?? "no audio stream"}");
+                continue;
+            }
+            (state, _) = AddAudioFile(state, path);
+            added++;
+        }
+        Commit(state);
+        if (added > 0)
+            FilesTab = 1;
+        StatusMessage = failed.Count > 0 ? "Skipped: " + string.Join("; ", failed) : added > 0 ? AudioAddedMessage(added) : null;
+    }
+
+    private static string AudioAddedMessage(int count) =>
+        $"{(count == 1 ? "Audio file added" : $"{count} audio files added")}: drag one onto a clip to replace its sound.";
+
+    /// <summary>The state with <paramref name="path"/> as an audio file (once), and its id.</summary>
+    private static (ProjectState State, string Id) AddAudioFile(ProjectState state, string path)
+    {
+        if (state.AudioFiles.Find(s => s.Path == path) is { } existing)
+            return (state, existing.Id);
+        var file = NewSource(path);
+        return (state with { AudioFiles = state.AudioFiles.Add(file) }, file.Id);
+    }
+
+    /// <summary>Probes the files that exist, once ffmpeg is known; null when there's nothing to add.</summary>
+    private async Task<(string Path, MediaInfo? Info, string? Error)[]?> ProbeFilesAsync(IEnumerable<string> paths)
+    {
+        var files = paths.Select(Path.GetFullPath).Where(File.Exists).Distinct().ToList();
+        if (files.Count == 0)
+            return null;
+        await _app.ToolsLocated;
+        if (_app.Tools is null)
+        {
+            StatusMessage = _app.ToolsError;
+            return null;
+        }
+        StatusMessage = files.Count == 1 ? $"Adding {Path.GetFileName(files[0])}…" : $"Adding {files.Count} files…";
+        var probes = files.Select(async f =>
+        {
+            try
+            {
+                return (Path: f, Info: (MediaInfo?)await _app.ProbeAsync(f), Error: (string?)null);
+            }
+            catch (Exception ex)
+            {
+                return (Path: f, Info: (MediaInfo?)null, Error: ex.Message);
+            }
+        }).ToList();
+        return await Task.WhenAll(probes);
     }
 
     private static SourceMedia NewSource(string path)
@@ -239,6 +333,15 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     [RelayCommand]
+    private async Task AddAudio()
+    {
+        if (View is null)
+            return;
+        var files = await View.PickAudioAsync();
+        await AddAudioAsync(files);
+    }
+
+    [RelayCommand]
     private void AppendSource(SourceItemViewModel? item)
     {
         if (item?.Info is not { Video: not null } info)
@@ -251,6 +354,16 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         if (item is null || View is null)
             return;
+        if (item.IsAudioFile)
+        {
+            var playing = State.Timeline.Clips.Count(c => c.ReplacedAudio?.FileId == item.Id);
+            if (playing > 0 && await View.AskAsync("Remove audio file?",
+                    $"\"{item.Name}\" plays on {playing} clip(s). They will go back to their own audio (you can undo).",
+                    "Remove", "Cancel") != 0)
+                return;
+            Commit(State with { AudioFiles = State.AudioFiles.Remove(item.Source), Timeline = TimelineEditor.RemoveAudioFile(State.Timeline, item.Id) });
+            return;
+        }
         var used = State.Timeline.Clips.Count(c => c.SourceId == item.Id);
         if (used > 0)
         {
@@ -260,7 +373,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
             if (answer != 0)
                 return;
         }
-        Commit(new ProjectState(State.Sources.Remove(item.Source), TimelineEditor.RemoveSource(State.Timeline, item.Id)));
+        Commit(State with { Sources = State.Sources.Remove(item.Source), Timeline = TimelineEditor.RemoveSource(State.Timeline, item.Id) });
     }
 
     [RelayCommand]
@@ -273,7 +386,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         var file = new FileInfo(path);
         var updated = item.Source with { Path = file.FullName, FileSize = file.Length, LastWriteUtc = file.LastWriteTimeUtc };
-        Commit(State with { Sources = State.Sources.Replace(item.Source, updated) });
+        Commit(ReplaceFile(State, item, updated));
     }
 
     // ---- Files ------------------------------------------------------------------------------------
@@ -283,6 +396,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         var project = await ProjectFile.LoadAsync(path);
         var preset = await Export.ResolvePresetAsync(project.Export);
         Sources.Clear();
+        AudioFiles.Clear();
+        FilesTab = 0;
         FilePath = path;
         Layout = project.Layout;
         Export.ApplyExportSettings(project.Export, preset);

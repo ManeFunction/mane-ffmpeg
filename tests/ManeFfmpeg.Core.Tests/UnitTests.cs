@@ -675,3 +675,167 @@ public class TimelineEdlTests
             edl);
     }
 }
+
+public class AudioLoopTests
+{
+    private static TimeSpan S(double seconds) => TimeSpan.FromSeconds(seconds);
+
+    [Theory]
+    // video start, length, slip, period → phase, wraps
+    [InlineData(1.0, 1.0, 1.0, 3.0, 0.0, false)] // starts where it was dropped
+    [InlineData(1.0, 7.0, 1.0, 3.0, 0.0, true)] // longer than the file
+    [InlineData(1.0, 2.0, 1.5, 3.0, 2.5, true)] // slipped later: the lead comes from the file's end
+    [InlineData(4.0, 1.0, 1.0, 3.0, 0.0, false)] // a split half, one period later
+    [InlineData(1.0, 1.5, -1.0, 3.0, 2.0, true)] // slipped earlier, into the file
+    public void Loops_from_the_slipped_phase(double videoStart, double length, double slip, double period, double phase, bool wraps)
+    {
+        var loop = AudioLoop.For(S(videoStart), S(length), S(slip), S(period));
+        Assert.Equal(phase, loop.Phase.TotalSeconds, 6);
+        Assert.Equal(wraps, loop.Wraps);
+        Assert.Equal(S(length), loop.Pieces().Aggregate(TimeSpan.Zero, (sum, p) => sum + p.Length));
+    }
+
+    [Fact]
+    public void Pieces_run_to_the_end_then_whole_files_then_the_rest()
+    {
+        var pieces = new AudioLoop(S(2.5), S(3), S(7)).Pieces().ToList();
+        Assert.Equal([(S(2.5), S(0.5)), (S(0), S(3)), (S(0), S(3)), (S(0), S(0.5))], pieces);
+        Assert.False(AudioLoop.CanLoop(TimeSpan.FromMilliseconds(50)));
+    }
+}
+
+public class AudioReplacementTests
+{
+    private static TimeSpan S(double seconds) => TimeSpan.FromSeconds(seconds);
+
+    private static Clip C(string id, double inS, double outS, double offsetMs = 0) => new()
+    {
+        Id = id, SourceId = "s", In = S(inS), Out = S(outS), AudioOffset = TimeSpan.FromMilliseconds(offsetMs),
+    };
+
+    private static HashSet<string> Ids(params string[] ids) => [.. ids];
+
+    [Fact]
+    public void Replacing_starts_the_file_at_the_in_point_and_keeps_the_own_offset()
+    {
+        var t = TimelineEditor.ReplaceAudio(new Timeline([C("a", 2, 8, 120)]), "a", "f");
+        var clip = t.Clips[0];
+        Assert.Equal(new AudioReplacement { FileId = "f", Anchor = S(2) }, clip.ReplacedAudio);
+        Assert.Equal(S(2), clip.AudioSlip);
+        Assert.Equal(TimeSpan.Zero, clip.AudioIn);
+        Assert.Equal(TimeSpan.Zero, clip.ActiveAudioOffset);
+
+        var nudged = TimelineEditor.NudgeAudioOffset(t, Ids("a"), S(90));
+        Assert.Equal(S(90), nudged.Clips[0].ReplacedAudio!.Offset);
+        Assert.Equal(TimeSpan.FromMilliseconds(120), nudged.Clips[0].AudioOffset);
+
+        var restored = TimelineEditor.RestoreOriginalAudio(nudged, Ids("a"));
+        Assert.Null(restored.Clips[0].ReplacedAudio);
+        Assert.Equal(TimeSpan.FromMilliseconds(120), restored.Clips[0].ActiveAudioOffset);
+    }
+
+    [Fact]
+    public void Limits_differ_for_own_and_replaced_audio()
+    {
+        var t = new Timeline([C("a", 0, 5), C("b", 5, 9)]);
+        t = TimelineEditor.ReplaceAudio(t, "b", "f");
+        t = TimelineEditor.SetAudioOffset(t, Ids("a", "b"), TimeSpan.FromHours(30));
+        Assert.Equal(TimelineEditor.MaxAudioOffset, t.Clips[0].AudioOffset);
+        Assert.Equal(TimelineEditor.MaxReplacedAudioOffset, t.Clips[1].ReplacedAudio!.Offset);
+    }
+
+    [Fact]
+    public void A_new_drop_resets_the_offset_but_keeps_the_loop()
+    {
+        var t = TimelineEditor.ReplaceAudio(new Timeline([C("a", 1, 8)]), "a", "f");
+        t = TimelineEditor.SetAudioLoop(TimelineEditor.NudgeAudioOffset(t, Ids("a"), S(1)), Ids("a"), true);
+        var again = TimelineEditor.ReplaceAudio(t, "a", "g").Clips[0].ReplacedAudio!;
+        Assert.Equal(("g", TimeSpan.Zero, true), (again.FileId, again.Offset, again.Loop));
+    }
+
+    [Fact]
+    public void Splitting_continues_the_sound_on_both_halves()
+    {
+        var t = TimelineEditor.ReplaceAudio(new Timeline([C("a", 1, 8)]), "a", "f");
+        var (split, _) = TimelineEditor.Split(t, S(3), _ => null);
+        Assert.All(split.Clips, c => Assert.Equal(S(1), c.ReplacedAudio!.Anchor));
+        // The right half starts 3 s into the file, where the left half stopped.
+        Assert.Equal(S(3), split.Clips[1].AudioIn);
+    }
+
+    [Fact]
+    public void Source_wide_offsets_leave_replacements_alone_and_removed_files_restore_clips()
+    {
+        var t = TimelineEditor.ReplaceAudio(new Timeline([C("a", 0, 5), C("b", 5, 9)]), "b", "f");
+        t = TimelineEditor.SetReplacedAudioOffsetForFile(TimelineEditor.SetAudioOffsetForSource(t, "s", S(0.2)), "f", S(4));
+        Assert.All(t.Clips, c => Assert.Equal(S(0.2), c.AudioOffset));
+        Assert.Equal(S(4), t.Clips[1].ReplacedAudio!.Offset);
+        Assert.All(TimelineEditor.RemoveAudioFile(t, "f").Clips, c => Assert.Null(c.ReplacedAudio));
+    }
+
+    [Fact]
+    public void Project_files_keep_audio_files_and_replacements()
+    {
+        var dir = Directory.CreateTempSubdirectory("mfvp-audio");
+        try
+        {
+            var song = Path.Combine(dir.FullName, "audio", "song.m4a");
+            Directory.CreateDirectory(Path.GetDirectoryName(song)!);
+            File.WriteAllText(song, "x");
+            var clip = C("c", 1, 4) with { ReplacedAudio = new AudioReplacement { FileId = "f", Anchor = S(1), Offset = S(-2.5), Loop = true } };
+            var state = new ProjectState([new SourceMedia { Id = "s", Path = "/m/a.mp4" }], new Timeline([clip]))
+            {
+                AudioFiles = [new SourceMedia { Id = "f", Path = song, AudioStreamIndex = 1 }],
+            };
+            var path = Path.Combine(dir.FullName, "p.mfvp");
+            var json = ProjectFile.Serialize(new Project { State = state }, path);
+            Assert.Contains("\"version\": 2", json);
+            Assert.Contains("\"relativePath\": \"audio/song.m4a\"", json);
+            var loaded = ProjectFile.Deserialize(json, path);
+            Assert.Equal(state, loaded.State);
+
+            // Without audio files the file stays readable by 1.0.0.
+            Assert.Contains("\"version\": 1", ProjectFile.Serialize(new Project { State = state with { AudioFiles = [], Timeline = new Timeline([C("c", 1, 4)]) } }, path));
+            // A replacement whose audio file is gone falls back to the clip's own audio.
+            var orphan = ProjectFile.Deserialize(json.Replace("\"id\": \"f\"", "\"id\": \"g\""), path);
+            Assert.Null(orphan.State.Timeline.Clips[0].ReplacedAudio);
+            Assert.Throws<ProjectFileException>(() => ProjectFile.Deserialize(json.Replace("\"version\": 2", "\"version\": 3"), path));
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    private static readonly MediaInfo Video = new()
+    {
+        Duration = S(10),
+        Video = new VideoStreamInfo { Index = 0, Codec = "h264", Width = 640, Height = 360, FrameRate = new Rational(30, 1) },
+        AudioStreams = [new AudioStreamInfo { Index = 1, Codec = "aac", SampleRate = 48000, Channels = 2 }],
+    };
+
+    private static readonly MediaInfo Tone = new()
+    {
+        Duration = S(3),
+        AudioStreams = [new AudioStreamInfo { Index = 0, Codec = "aac", SampleRate = 44100, Channels = 2, Duration = S(3) }],
+    };
+
+    private static ProjectState Replaced(Clip clip) =>
+        new ProjectState([new SourceMedia { Id = "s", Path = "/m/a.mp4" }], new Timeline([clip])) { AudioFiles = [new SourceMedia { Id = "f", Path = "/m/t.m4a" }] };
+
+    [Fact]
+    public void Edl_plays_the_replacement_slipped_or_looped()
+    {
+        var media = new Dictionary<string, MediaInfo> { ["s"] = Video, ["f"] = Tone };
+        var later = C("c", 1, 5) with { ReplacedAudio = new AudioReplacement { FileId = "f", Anchor = S(1), Offset = S(0.5) } };
+        Assert.EndsWith("!new_stream;!track_meta,title=mane-audio;%14%/c/silence.mka,0.000000,0.500000;%8%/m/t.m4a,0.000000,3.000000;%14%/c/silence.mka,0.000000,0.500000",
+            TimelineEdl.Build(Replaced(later), media, "/c/silence.mka"));
+
+        var looped = later with { ReplacedAudio = later.ReplacedAudio! with { Loop = true } };
+        Assert.EndsWith("!new_stream;!track_meta,title=mane-audio;%8%/m/t.m4a,2.500000,0.500000;%8%/m/t.m4a,0.000000,3.000000;%8%/m/t.m4a,0.000000,0.500000",
+            TimelineEdl.Build(Replaced(looped), media, "/c/silence.mka"));
+
+        // Not analyzed yet: silence, until the catalog reports it and the preview reloads.
+        Assert.DoesNotContain("/m/t.m4a", TimelineEdl.Build(Replaced(later), new Dictionary<string, MediaInfo> { ["s"] = Video }, "/c/silence.mka"));
+    }
+}

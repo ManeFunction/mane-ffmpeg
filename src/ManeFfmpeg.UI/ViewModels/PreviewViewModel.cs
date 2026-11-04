@@ -44,11 +44,11 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
     public partial string? PreviewMessage { get; private set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsSourceMode), nameof(Position), nameof(PositionText), nameof(PreviewTitle))]
+    [NotifyPropertyChangedFor(nameof(IsSourceMode), nameof(CanMark), nameof(Position), nameof(PositionText), nameof(PreviewTitle))]
     public partial PreviewMode Mode { get; private set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(PreviewTitle))]
+    [NotifyPropertyChangedFor(nameof(PreviewTitle), nameof(CanMark))]
     public partial SourceItemViewModel? PreviewedSource { get; private set; }
 
     [ObservableProperty]
@@ -88,7 +88,12 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
 
     public bool IsSourceMode => Mode == PreviewMode.Source;
 
-    public string PreviewTitle => Mode == PreviewMode.Source && PreviewedSource is { } s ? $"Source: {s.Name}" : "Preview";
+    /// <summary>A video is previewed on its own: In/Out marks can pick a range of it (audio files have none).</summary>
+    public bool CanMark => IsSourceMode && PreviewedSource is { IsAudioFile: false };
+
+    public string PreviewTitle => Mode == PreviewMode.Source && PreviewedSource is { } s
+        ? $"{(s.IsAudioFile ? "Audio" : "Source")}: {s.Name}"
+        : "Preview";
 
     /// <summary>Where the preview is: in the previewed source, or the playhead on the timeline.</summary>
     public TimeSpan Position => Mode == PreviewMode.Source ? SourcePosition : Timeline.Playhead;
@@ -213,7 +218,7 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
         var url = TimelineEdl.Build(State, _owner.Media, _silencePath);
         if (url is null)
         {
-            PreviewMessage = _owner.Sources.Any(s => s.IsProblem) ? "Some videos are missing; relink them in the media list." : "Analyzing videos…";
+            PreviewMessage = _owner.Sources.Any(s => s.IsProblem) ? "Some videos are missing; relink them in the Files panel." : "Analyzing videos…";
             return;
         }
         PreviewMessage = null;
@@ -404,7 +409,7 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private void AddMarkedRange()
     {
-        if (PreviewedSource is not { Info: { } info } item)
+        if (!CanMark || PreviewedSource is not { Info: { } info } item)
             return;
         var start = MarkIn ?? TimeSpan.Zero;
         var end = MarkOut ?? info.Duration;

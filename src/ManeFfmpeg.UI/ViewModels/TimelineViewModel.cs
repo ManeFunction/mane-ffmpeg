@@ -5,6 +5,9 @@ using ManeFfmpeg.Core.Model;
 
 namespace ManeFfmpeg.UI.ViewModels;
 
+/// <summary>An audio file dragged over the timeline: its name and color, and the clip it would replace the sound of.</summary>
+public readonly record struct AudioDropTarget(string Name, Avalonia.Media.Color Color, string? ClipId);
+
 /// <summary>What the timeline control draws (zoom, scroll, playhead, selection) and the edits it performs.</summary>
 public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureHost
 {
@@ -70,6 +73,22 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
     public CutGrid? GridOf(string sourceId) => owner.GridOf(sourceId);
 
     public int ColorIndex(string sourceId) => owner.Sources.FirstOrDefault(s => s.Id == sourceId)?.ColorIndex ?? 0;
+
+    public int AudioColorIndex(string fileId) => owner.AudioFiles.FirstOrDefault(s => s.Id == fileId)?.ColorIndex ?? 0;
+
+    /// <summary>The audio file is missing or can't be read (or isn't in the Audio tab at all).</summary>
+    public bool AudioFileHasProblem(string fileId) => owner.AudioFiles.FirstOrDefault(s => s.Id == fileId)?.IsProblem ?? true;
+
+    /// <summary>Where an audio file being dragged would land, drawn by the control; null when nothing is dragged.</summary>
+    public AudioDropTarget? AudioDrop { get; private set; }
+
+    public void ShowAudioDrop(AudioDropTarget? target)
+    {
+        if (AudioDrop == target)
+            return;
+        AudioDrop = target;
+        Invalidate();
+    }
 
     /// <summary>The source is missing or can't be read (or isn't in the bin at all).</summary>
     public bool HasProblem(string sourceId) => owner.Sources.FirstOrDefault(s => s.Id == sourceId)?.IsProblem ?? true;

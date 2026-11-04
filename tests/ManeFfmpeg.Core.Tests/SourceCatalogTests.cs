@@ -88,4 +88,22 @@ public class SourceCatalogTests(FfmpegFixture media) : IClassFixture<FfmpegFixtu
         Assert.Empty(catalog.Media);
         Assert.Null(catalog.Info("s"));
     }
+
+    [FfmpegFact]
+    public async Task An_audio_file_is_ready_with_a_waveform_and_no_keyframes()
+    {
+        var catalog = Catalog();
+        catalog.WantKeyframes = true;
+        var tone = new SourceMedia { Id = "t", Path = media.Tone };
+        catalog.Sync([], [tone]);
+        await Wait.Until(() => catalog.Waveform(tone) is not null, "the audio file's waveform");
+        Assert.Equal(SourceStatus.Ready, catalog.Status("t"));
+        Assert.Contains("t", catalog.Media.Keys);
+        Assert.Null(catalog.Keyframes(tone));
+
+        // As a video source the same file isn't usable.
+        catalog.Sync([tone with { Id = "v" }], [tone]);
+        await Wait.Until(() => catalog.Status("v") == SourceStatus.Failed, "the audio file used as a video");
+        Assert.Equal("No video stream", catalog.Error("v"));
+    }
 }

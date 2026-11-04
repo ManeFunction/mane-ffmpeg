@@ -37,10 +37,12 @@ public static class TimeFormat
             : string.Create(CultureInfo.InvariantCulture, $"{sign}{m:D2}:{s:D2}.{f:D3}");
     }
 
-    /// <summary>Signed milliseconds for offsets, e.g. "+120 ms".</summary>
+    /// <summary>Signed milliseconds for offsets, e.g. "+120 ms"; seconds from 10 s up, e.g. "−83.5 s".</summary>
     public static string Offset(TimeSpan offset)
     {
         var ms = offset.TotalMilliseconds;
+        if (Math.Abs(ms) >= 10_000)
+            return string.Create(CultureInfo.InvariantCulture, $"{(ms > 0 ? "+" : "−")}{Math.Abs(ms) / 1000:0.###} s");
         return ms switch
         {
             > 0 => string.Create(CultureInfo.InvariantCulture, $"+{ms:0.#} ms"),

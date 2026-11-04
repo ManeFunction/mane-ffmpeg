@@ -1,4 +1,5 @@
 using System.Globalization;
+using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ManeFfmpeg.Core.Editing;
@@ -87,13 +88,13 @@ public sealed partial class MainWindowViewModel
     public string AudioOffsetText
     {
         get => PrimaryClip is { } c
-            ? Math.Round(c.AudioOffset.TotalMilliseconds, 1).ToString("0.#", CultureInfo.InvariantCulture)
+            ? Math.Round(c.ActiveAudioOffset.TotalMilliseconds, 1).ToString("0.#", CultureInfo.InvariantCulture)
             : "";
         set
         {
-            if (Timeline.Selection.Count > 0 && Arithmetic.TryEvaluate(value, out var ms))
+            if (Timeline.Selection.Count > 0 && PrimaryClip is { } primary && Arithmetic.TryEvaluate(value, out var ms))
             {
-                var max = TimelineEditor.MaxAudioOffset.TotalMilliseconds;
+                var max = TimelineEditor.MaxAudioOffsetFor(primary).TotalMilliseconds;
                 var offset = TimeSpan.FromTicks((long)Math.Round(Math.Clamp(ms, -max, max) * TimeSpan.TicksPerMillisecond));
                 CommitTimeline(t => TimelineEditor.SetAudioOffset(t, Timeline.Selection, offset));
             }
@@ -101,14 +102,68 @@ public sealed partial class MainWindowViewModel
         }
     }
 
-    public string AudioOffsetHint => PrimaryClip is { } c && FrameDuration(c) is { } frame && frame > TimeSpan.Zero
+    public string AudioOffsetHint => PrimaryClip is { ReplacedAudio: { } r }
+        ? r.Offset == TimeSpan.Zero
+            ? "Starts where it was dropped."
+            : r.Offset > TimeSpan.Zero
+                ? $"Starts {Seconds(r.Offset)} later."
+                : $"Starts {Seconds(-r.Offset)} into the file."
+        : PrimaryClip is { } c && FrameDuration(c) is { } frame && frame > TimeSpan.Zero
         ? c.AudioOffset == TimeSpan.Zero
             ? "Audio in sync with its video."
             : $"≈ {c.AudioOffset.TotalMilliseconds / frame.TotalMilliseconds:+0.0;−0.0} frames · audio plays {(c.AudioOffset > TimeSpan.Zero ? "later" : "earlier")}"
         : "";
 
+    private static string Seconds(TimeSpan t) => string.Create(CultureInfo.InvariantCulture, $"{t.TotalSeconds:0.###} s");
+
+    // ---- Replaced audio ---------------------------------------------------------------------------
+
+    /// <summary>The selected clip plays an audio file instead of its own sound.</summary>
+    public bool HasReplacedAudio => PrimaryClip?.ReplacedAudio is not null;
+
+    public string ReplacedAudioName => PrimaryClip?.ReplacedAudio is { } r
+        ? $"Audio: {State.AudioFile(r.FileId)?.DisplayName ?? "missing file"}"
+        : "";
+
+    public IBrush? ReplacedAudioBrush => PrimaryClip?.ReplacedAudio is { } r && FileItem(r.FileId) is { } item ? item.Brush : null;
+
+    /// <summary>Repeat the replaced audio of the selected clips so they have no silence.</summary>
+    public bool LoopAudio
+    {
+        get => PrimaryClip?.LoopsAudio ?? false;
+        set
+        {
+            if (value != LoopAudio)
+                CommitTimeline(t => TimelineEditor.SetAudioLoop(t, Timeline.Selection, value));
+            OnPropertyChanged(nameof(LoopAudio));
+        }
+    }
+
+    public string ApplyOffsetText => HasReplacedAudio ? "Use this offset for all clips with this audio" : "Use this offset for all clips of this video";
+
+    /// <summary>Plays audio file <paramref name="fileId"/> instead of the clip's sound (an audio file dropped on it).</summary>
+    public void ReplaceClipAudio(string clipId, string fileId)
+    {
+        if (State.Timeline.IndexOf(clipId) < 0 || State.AudioFile(fileId) is null)
+            return;
+        CommitTimeline(t => TimelineEditor.ReplaceAudio(t, clipId, fileId));
+        Timeline.SelectOnly(clipId);
+        StatusMessage = ReplacedMessage(fileId);
+    }
+
+    private string ReplacedMessage(string fileId) =>
+        $"{State.AudioFile(fileId)?.DisplayName} replaces the clip's sound. Drag its audio row to move it; Selection has Loop audio.";
+
+    [RelayCommand]
+    private void RestoreOriginalAudio() => CommitTimeline(t => TimelineEditor.RestoreOriginalAudio(t, TargetClips()));
+
     internal void OnSelectionChanged()
     {
+        OnPropertyChanged(nameof(HasReplacedAudio));
+        OnPropertyChanged(nameof(ReplacedAudioName));
+        OnPropertyChanged(nameof(ReplacedAudioBrush));
+        OnPropertyChanged(nameof(LoopAudio));
+        OnPropertyChanged(nameof(ApplyOffsetText));
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(SelectionTitle));
         OnPropertyChanged(nameof(SelectionDetails));
@@ -200,6 +255,12 @@ public sealed partial class MainWindowViewModel
     {
         if (PrimaryClip is not { } clip)
             return;
+        if (clip.ReplacedAudio is { } r)
+        {
+            CommitTimeline(t => TimelineEditor.SetReplacedAudioOffsetForFile(t, r.FileId, r.Offset));
+            StatusMessage = $"Audio offset {TimeFormat.Offset(r.Offset)} applied to every clip playing {State.AudioFile(r.FileId)?.DisplayName}.";
+            return;
+        }
         CommitTimeline(t => TimelineEditor.SetAudioOffsetForSource(t, clip.SourceId, clip.AudioOffset));
         StatusMessage = $"Audio offset {TimeFormat.Offset(clip.AudioOffset)} applied to every clip of {State.Source(clip.SourceId)?.DisplayName}.";
     }

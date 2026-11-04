@@ -28,17 +28,46 @@ public sealed record Clip
     public required TimeSpan Out { get; init; }
     public TimeSpan AudioOffset { get; init; }
 
+    /// <summary>An audio file played instead of the clip's own audio; null plays its own.</summary>
+    public AudioReplacement? ReplacedAudio { get; init; }
+
     /// <summary>A new clip of <paramref name="sourceId"/> from <paramref name="in"/> to <paramref name="out"/>, with a fresh id.</summary>
     public static Clip Create(string sourceId, TimeSpan @in, TimeSpan @out) => new() { Id = Ids.New(), SourceId = sourceId, In = @in, Out = @out };
 
     public TimeSpan Duration => Out - In;
 
-    public TimeSpan AudioIn => In - AudioOffset;
+    /// <summary>
+    /// How far the heard file is slipped against the clip's video source time: file time = video time − slip.
+    /// For replaced audio that is where it was dropped plus its offset.
+    /// </summary>
+    public TimeSpan AudioSlip => ReplacedAudio is { } r ? r.Anchor + r.Offset : AudioOffset;
 
-    public TimeSpan AudioOut => Out - AudioOffset;
+    /// <summary>The offset the user edits: the replacement's when the audio is replaced, else the clip's own.</summary>
+    public TimeSpan ActiveAudioOffset => ReplacedAudio?.Offset ?? AudioOffset;
 
-    /// <summary>Where the whole clip's audio comes from, given where its file's audio stream ends.</summary>
-    public AudioPlacement AudioPlacement(TimeSpan audioEnd) => Model.AudioPlacement.For(In, Duration, AudioOffset, audioEnd);
+    /// <summary>The replaced audio repeats so the clip has no silence.</summary>
+    public bool LoopsAudio => ReplacedAudio?.Loop == true;
+
+    public TimeSpan AudioIn => In - AudioSlip;
+
+    public TimeSpan AudioOut => Out - AudioSlip;
+
+    /// <summary>Where the whole clip's audio comes from, given where the heard file's audio stream ends.</summary>
+    public AudioPlacement AudioPlacement(TimeSpan audioEnd) => Model.AudioPlacement.For(In, Duration, AudioSlip, audioEnd);
+}
+
+/// <summary>
+/// An audio file that replaces a clip's sound. <see cref="Anchor"/> is the clip's video source time where the
+/// file starts (its in point when dropped), so splits continue the sound and trims don't move it against the
+/// picture; <see cref="Offset"/> slips it like a clip's own audio offset.
+/// </summary>
+public sealed record AudioReplacement
+{
+    /// <summary>An id in <see cref="ProjectState.AudioFiles"/>.</summary>
+    public required string FileId { get; init; }
+    public TimeSpan Anchor { get; init; }
+    public TimeSpan Offset { get; init; }
+    public bool Loop { get; init; }
 }
 
 /// <summary>Clips played back to back, without gaps.</summary>
@@ -109,10 +138,19 @@ public sealed record ProjectState(ImmutableList<SourceMedia> Sources, Timeline T
 {
     public static readonly ProjectState Empty = new([], Timeline.Empty);
 
+    /// <summary>Imported audio files that can replace clips' sound.</summary>
+    public ImmutableList<SourceMedia> AudioFiles { get; init; } = [];
+
     public SourceMedia? Source(string id) => Sources.Find(s => s.Id == id);
 
-    public bool Equals(ProjectState? other) =>
-        other is not null && Sources.SequenceEqual(other.Sources) && Timeline.Equals(other.Timeline);
+    public SourceMedia? AudioFile(string id) => AudioFiles.Find(s => s.Id == id);
 
-    public override int GetHashCode() => HashCode.Combine(Sources.Count, Timeline.Clips.Count);
+    /// <summary>The file whose audio the clip plays: its replacement audio file, or its own video.</summary>
+    public SourceMedia? AudioSourceOf(Clip clip) => clip.ReplacedAudio is { } r ? AudioFile(r.FileId) : Source(clip.SourceId);
+
+    public bool Equals(ProjectState? other) =>
+        other is not null && Sources.SequenceEqual(other.Sources) && AudioFiles.SequenceEqual(other.AudioFiles)
+        && Timeline.Equals(other.Timeline);
+
+    public override int GetHashCode() => HashCode.Combine(Sources.Count, AudioFiles.Count, Timeline.Clips.Count);
 }

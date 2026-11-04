@@ -41,6 +41,12 @@ public sealed class TimelineControl : Control
     private static readonly IPen WavePen = new Pen(WaveBrush, 1);
     private static readonly IPen KeyframePen = new Pen(new SolidColorBrush(Color.FromArgb(200, 255, 255, 255)), 1);
     private static readonly IPen HatchPen = new Pen(new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)), 1);
+    // Replaced audio is drawn on its pastel color with dark ink.
+    private static readonly Color Ink = Color.FromArgb(185, 29, 30, 34);
+    private static readonly IBrush InkBrush = new SolidColorBrush(Ink);
+    private static readonly IPen InkPen = new Pen(InkBrush, 1);
+    private static readonly IPen InkHatchPen = new Pen(new SolidColorBrush(Color.FromArgb(70, 29, 30, 34)), 1);
+    private static readonly IPen SeamPen = new Pen(new SolidColorBrush(Color.FromArgb(150, 29, 30, 34)), 1, new DashStyle([2, 2], 0));
     private static readonly Cursor ResizeCursor = new(StandardCursorType.SizeWestEast);
     private static readonly Cursor SlipCursor = new(StandardCursorType.SizeWestEast);
     private static readonly Cursor HandCursor = new(StandardCursorType.Hand);
@@ -221,26 +227,60 @@ public sealed class TimelineControl : Control
                 new Point(Math.Max(videoRect.Left, Header) + 6, videoRect.Top + 24), LabelBrush, 10);
         }
 
-        // Audio row
-        var audioFill = new SolidColorBrush(Darken(color, 0.55), dragged ? 0.4 : 0.9);
-        context.DrawRectangle(missing ? MissingBrush : audioFill, ClipPen, audioRect, 4, 4);
-        if (source is not null && vm.Info(source.Id) is { } info)
+        // Audio row: the clip's own sound, or an audio file dropped on it (pastel, dark ink)
+        var replaced = clip.ReplacedAudio;
+        var heard = vm.State.AudioSourceOf(clip);
+        var audioMissing = replaced is null ? missing : heard is null || vm.AudioFileHasProblem(replaced.FileId);
+        IBrush audioFill = replaced is null
+            ? new SolidColorBrush(Darken(color, 0.55), dragged ? 0.4 : 0.9)
+            : new SolidColorBrush(SourceItemViewModel.AudioColor(vm.AudioColorIndex(replaced.FileId)), dragged ? 0.4 : 0.92);
+        context.DrawRectangle(audioMissing ? MissingBrush : audioFill, ClipPen, audioRect, 4, 4);
+        using (context.PushClip(audioRect))
         {
-            using (context.PushClip(audioRect))
+            var textX = Math.Max(audioRect.Left, Header) + 5;
+            if (clip.ActiveAudioOffset != TimeSpan.Zero)
             {
-                var audio = vm.Audio(source);
+                var badge = DrawBadge(context, $"♪ {TimeFormat.Offset(clip.ActiveAudioOffset)}", new Point(textX, audioRect.Top + (audioRect.Height - 16) / 2));
+                textX += badge + 6;
+            }
+            if (heard is not null && vm.Info(heard.Id) is { } info)
+            {
+                var audio = vm.Audio(heard);
                 if (audio is null)
                 {
-                    DrawText(context, "no audio", new Point(Math.Max(audioRect.Left, Header) + 6, audioRect.Top + (audioRect.Height - 14) / 2), TextBrush, 11);
+                    DrawText(context, "no audio", new Point(textX + 1, audioRect.Top + (audioRect.Height - 14) / 2), TextBrush, 11);
                 }
                 else
                 {
-                    DrawSilence(context, vm, clip, start, audioRect, clip.AudioPlacement(info.AudioEnd(audio)));
-                    DrawWaveform(context, vm, clip, start, audioRect, vm.Waveform(source), width);
+                    var end = info.AudioEnd(audio);
+                    var loops = clip.LoopsAudio && AudioLoop.CanLoop(end);
+                    if (loops)
+                        DrawSeams(context, vm, clip, start, audioRect, end);
+                    else
+                        DrawSilence(context, vm, clip, start, audioRect, clip.AudioPlacement(end), replaced is null ? HatchPen : InkHatchPen);
+                    DrawWaveform(context, vm, clip, start, audioRect, vm.Waveform(heard), width, loops ? end : null,
+                        replaced is null ? WavePen : InkPen);
                 }
-                if (clip.AudioOffset != TimeSpan.Zero)
-                    DrawBadge(context, $"♪ {TimeFormat.Offset(clip.AudioOffset)}", new Point(Math.Max(audioRect.Left, Header) + 5, audioRect.Top + (audioRect.Height - 16) / 2));
             }
+            if (replaced is not null)
+            {
+                // On a chip of the file's color, so the name stays readable over the waveform.
+                var label = Text($"♫ {heard?.DisplayName ?? "missing audio file"}{(clip.LoopsAudio ? "  ⟳" : "")}",
+                    audioMissing ? LabelBrush : InkBrush, 10, FontWeight.SemiBold);
+                var chip = new Rect(textX, audioRect.Top + (audioRect.Height - label.Height - 2) / 2, label.Width + 10, label.Height + 2);
+                if (!audioMissing)
+                    context.DrawRectangle(audioFill, InkHatchPen, chip, 6, 6);
+                context.DrawText(label, new Point(chip.X + 5, chip.Y + 1));
+            }
+        }
+
+        if (vm.AudioDrop is { } drop && drop.ClipId == clip.Id)
+        {
+            context.DrawRectangle(new SolidColorBrush(drop.Color, 0.95), DropPen, audioRect, 4, 4);
+            context.DrawRectangle(null, DropPen, videoRect, 4, 4);
+            using (context.PushClip(audioRect))
+                DrawText(context, $"♫ {drop.Name}", new Point(Math.Max(audioRect.Left, Header) + 6, audioRect.Top + (audioRect.Height - 14) / 2),
+                    InkBrush, 11, FontWeight.SemiBold);
         }
 
         if (selected)
@@ -251,7 +291,7 @@ public sealed class TimelineControl : Control
     }
 
     /// <summary>Hatches the parts of the clip where the slipped audio runs past the file (silence on export).</summary>
-    private void DrawSilence(DrawingContext context, TimelineViewModel vm, Clip clip, TimeSpan start, Rect rect, AudioPlacement placement)
+    private void DrawSilence(DrawingContext context, TimelineViewModel vm, Clip clip, TimeSpan start, Rect rect, AudioPlacement placement, IPen hatchPen)
     {
         void Hatch(double a, double b)
         {
@@ -261,7 +301,7 @@ public sealed class TimelineControl : Control
             context.FillRectangle(SilenceBrush, r);
             using (context.PushClip(r))
                 for (var x = a - rect.Height; x < b; x += 8)
-                    context.DrawLine(HatchPen, new Point(x, rect.Bottom), new Point(x + rect.Height, rect.Top));
+                    context.DrawLine(hatchPen, new Point(x, rect.Bottom), new Point(x + rect.Height, rect.Top));
         }
         if (placement.Lead > TimeSpan.Zero)
             Hatch(X(vm, start), X(vm, start + placement.Lead));
@@ -269,8 +309,26 @@ public sealed class TimelineControl : Control
             Hatch(X(vm, start + placement.Lead + placement.ReadLength), X(vm, start + clip.Duration));
     }
 
+    /// <summary>Marks where a looped audio file starts again.</summary>
+    private void DrawSeams(DrawingContext context, TimelineViewModel vm, Clip clip, TimeSpan start, Rect rect, TimeSpan period)
+    {
+        var loop = AudioLoop.For(clip.In, clip.Duration, clip.AudioSlip, period);
+        // The file starts again at Period − Phase into the clip, then every period.
+        for (var at = period - loop.Phase; at < clip.Duration; at += period)
+        {
+            var x = Math.Round(X(vm, start + at)) + 0.5;
+            if (x > rect.Right)
+                break;
+            if (x >= rect.Left)
+                context.DrawLine(SeamPen, new Point(x, rect.Top + 2), new Point(x, rect.Bottom - 2));
+            if (period.TotalSeconds * vm.Zoom < 2)
+                break;
+        }
+    }
+
+    /// <param name="loopPeriod">Looped audio: the waveform repeats every this long.</param>
     private void DrawWaveform(DrawingContext context, TimelineViewModel vm, Clip clip, TimeSpan start, Rect rect,
-        Core.Media.Waveform? waveform, double width)
+        Core.Media.Waveform? waveform, double width, TimeSpan? loopPeriod, IPen pen)
     {
         if (waveform is null)
             return;
@@ -286,6 +344,11 @@ public sealed class TimelineControl : Control
             {
                 var local = T(vm, x) - start;
                 var sourceTime = clip.AudioIn + local;
+                if (loopPeriod is { Ticks: > 0 } period)
+                {
+                    var ticks = sourceTime.Ticks % period.Ticks;
+                    sourceTime = TimeSpan.FromTicks(ticks < 0 ? ticks + period.Ticks : ticks);
+                }
                 if (sourceTime + perPixel < TimeSpan.Zero || sourceTime > waveform.Duration)
                     continue;
                 var h = waveform.Max(sourceTime, sourceTime + perPixel) / 255.0 * half;
@@ -296,15 +359,17 @@ public sealed class TimelineControl : Control
                 g.EndFigure(false);
             }
         }
-        context.DrawGeometry(null, WavePen, geometry);
+        context.DrawGeometry(null, pen, geometry);
     }
 
-    private static void DrawBadge(DrawingContext context, string text, Point at)
+    /// <returns>The badge's width.</returns>
+    private static double DrawBadge(DrawingContext context, string text, Point at)
     {
         var formatted = Text(text, BadgeTextBrush, 10, FontWeight.SemiBold);
         var rect = new Rect(at.X, at.Y, formatted.Width + 10, formatted.Height + 2);
         context.DrawRectangle(BadgeBrush, null, rect, 6, 6);
         context.DrawText(formatted, new Point(at.X + 5, at.Y + 1));
+        return rect.Width;
     }
 
     private static Color Darken(Color c, double factor) =>

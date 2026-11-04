@@ -226,6 +226,88 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
         AssertCopyTimes([0.9, 2.9], [1.02, 3.02], flashes, beeps);
     }
 
+    /// <summary>Clip <c>a in–out</c> of the sync file playing the tone file instead, dropped at its in point.</summary>
+    private static Clip T(double inS, double outS, double offsetMs = 0, bool loop = false, double? anchor = null) => C("a", inS, outS) with
+    {
+        ReplacedAudio = new AudioReplacement
+        {
+            FileId = "t", Anchor = TimeSpan.FromSeconds(anchor ?? inS), Offset = TimeSpan.FromMilliseconds(offsetMs), Loop = loop,
+        },
+    };
+
+    /// <summary>Exports clips of the sync file with the tone file available as replacement audio.</summary>
+    private async Task<(ExportPlan Plan, string Output)> ExportReplacedAsync(Preset preset, params Clip[] clips)
+    {
+        var infos = new Dictionary<string, MediaInfo> { ["a"] = await media.ProbeAsync(media.Sync30), ["t"] = await media.ProbeAsync(media.Tone) };
+        var keyframes = new Dictionary<string, KeyframeIndex> { ["a"] = await new KeyframeService(FfmpegFixture.Tools!).GetAsync(media.Sync30, infos["a"]) };
+        var output = Path.Combine(media.Directory, $"out-{Guid.NewGuid():N}.mp4");
+        var work = Path.Combine(media.Directory, "work-" + Guid.NewGuid().ToString("N"));
+        var plan = ExportPlanner.Plan(new ExportJob
+        {
+            State = new ProjectState([new SourceMedia { Id = "a", Path = media.Sync30 }], new Timeline([.. clips]))
+            {
+                AudioFiles = [new SourceMedia { Id = "t", Path = media.Tone }],
+            },
+            Media = infos, Preset = preset, OutputPath = output, WorkDirectory = work, Keyframes = keyframes,
+        });
+        var result = await new ExportRunner(FfmpegFixture.Tools!).RunAsync(plan, null, CancellationToken.None);
+        Assert.True(result.Outcome == ExportOutcome.Succeeded, $"{result.Message}\n{result.Log}\n{plan.CommandText("ffmpeg")}");
+        return (plan, output);
+    }
+
+    [FfmpegFact]
+    public async Task Replaced_audio_plays_once_from_where_it_was_dropped()
+    {
+        // The video's own beeps (output 1, 3, 5) are gone; the tone beeps once at 0.3 s.
+        var (_, output) = await ExportReplacedAsync(FastEncode, T(1.0, 8.0));
+        var (flashes, beeps, duration) = await media.MeasureAsync(output);
+        Assert.InRange(duration, 6.95, 7.1);
+        AssertTimes([1, 3, 5], flashes, FrameTolerance, "flashes");
+        AssertTimes([0.3], beeps, BeepTolerance, "beeps");
+    }
+
+    [Theory]
+    [InlineData(0, new[] { 0.3, 3.3, 6.3 })]
+    [InlineData(500, new[] { 0.8, 3.8, 6.8 })]
+    [InlineData(-1000, new[] { 2.3, 5.3 })]
+    public async Task Looped_audio_repeats_from_its_slipped_phase(double offsetMs, double[] expected)
+    {
+        if (FfmpegFixture.Tools is null)
+            return;
+        var (plan, output) = await ExportReplacedAsync(FastEncode, T(1.0, 8.0, offsetMs, loop: true));
+        Assert.Contains(plan.Steps[0].Arguments, a => a.Contains("aloop"));
+        var (_, beeps, _) = await media.MeasureAsync(output);
+        AssertTimes(expected, beeps, BeepTolerance, "beeps");
+    }
+
+    [FfmpegFact]
+    public async Task Split_halves_continue_the_looped_audio()
+    {
+        var (_, output) = await ExportReplacedAsync(FastEncode, T(1.0, 4.0, loop: true), T(4.0, 8.0, loop: true, anchor: 1.0));
+        var (_, beeps, _) = await media.MeasureAsync(output);
+        AssertTimes([0.3, 3.3, 6.3], beeps, BeepTolerance, "beeps");
+    }
+
+    [FfmpegFact]
+    public async Task Plane_copy_keeps_replaced_audio_in_sync_with_copied_video()
+    {
+        var (plan, output) = await ExportReplacedAsync(Preset.PlaneCopy, T(1.0, 8.0));
+        Assert.Equal(ExportMode.StreamCopy, plan.Mode);
+        Assert.Contains(plan.Notes, n => n.Contains("replaced audio"));
+        var (flashes, beeps, _) = await media.MeasureAsync(output);
+        AssertCopyTimes([1, 3, 5], [0.3], flashes, beeps);
+    }
+
+    [FfmpegFact]
+    public async Task Own_and_replaced_audio_mix_on_one_timeline()
+    {
+        // a 3.5–7.0 with its own beeps (0.5, 2.5), then a 1.0–3.5 playing the tone from 3.5 s.
+        var (_, output) = await ExportReplacedAsync(FastEncode, C("a", 3.5, 7.0), T(1.0, 3.5));
+        var (flashes, beeps, _) = await media.MeasureAsync(output);
+        AssertTimes([0.5, 2.5, 4.5], flashes, FrameTolerance, "flashes");
+        AssertTimes([0.5, 2.5, 3.8], beeps, BeepTolerance, "beeps");
+    }
+
     /// <summary>A plan for <see cref="FfmpegFixture.Sync30"/>, writing <paramref name="name"/>.mp4 without running it.</summary>
     private async Task<ExportPlan> PlanAsync(Preset preset, string name, params Clip[] clips)
     {

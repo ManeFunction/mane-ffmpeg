@@ -116,21 +116,29 @@ public static class ExportPlanner
 
         var items = clips.Select(c => Resolve(job, c, args)).ToList();
         foreach (var item in items)
+        {
             if (SameFile(item.Source.Path, job.OutputPath))
                 throw new ExportPlanException("The output file is one of the source videos. Choose another name.");
+            if (item.Clip.ReplacedAudio is not null && SameFile(item.AudioFile.Path, job.OutputPath))
+                throw new ExportPlanException("The output file is one of the audio files. Choose another name.");
+        }
 
         var ctx = new Context(job, args, fallback, items);
         var plan = items.Count == 1 && IsWholeFile(items[0])
             ? Passthrough(ctx)
             : args.VideoCopy
                 ? StreamCopy(ctx)
-                : items.Count == 1 && args.AudioCopy && items[0].Audio is not null
+                // Replaced audio is always re-encoded: the audio file's codec may not fit the output container.
+                : items.Count == 1 && args.AudioCopy && items[0].Audio is not null && items[0].Clip.ReplacedAudio is null
                     ? SingleClipAudioCopy(ctx) ?? Encode(ctx)
                     : Encode(ctx);
         return plan with { Notes = [.. args.Warnings, .. plan.Notes], OutputPath = job.OutputPath, WorkDirectory = job.WorkDirectory };
     }
 
-    private sealed record Item(Clip Clip, SourceMedia Source, MediaInfo Media, VideoStreamInfo Video, AudioStreamInfo? Audio);
+    /// <param name="AudioFile">The file whose audio the clip plays: an audio file dropped on it, or <paramref name="Source"/>.</param>
+    /// <param name="Audio">The heard stream of <paramref name="AudioFile"/>, or null for silence.</param>
+    private sealed record Item(Clip Clip, SourceMedia Source, MediaInfo Media, VideoStreamInfo Video, AudioStreamInfo? Audio,
+        SourceMedia AudioFile, MediaInfo AudioMedia);
 
     private sealed record Context(ExportJob Job, PresetArguments Args, IReadOnlyList<string> Fallback, List<Item> Items)
     {
@@ -145,12 +153,21 @@ public static class ExportPlanner
         if (!job.Media.TryGetValue(source.Id, out var media))
             throw new ExportPlanException($"\"{source.DisplayName}\" is missing or hasn't been analyzed yet.");
         var video = media.Video ?? throw new ExportPlanException($"\"{source.DisplayName}\" has no video stream.");
-        var audio = args.NoAudio ? null : media.Audio(source.AudioStreamIndex);
-        return new Item(clip, source, media, video, audio);
+        if (clip.ReplacedAudio is not { } replaced)
+            return new Item(clip, source, media, video, args.NoAudio ? null : media.Audio(source.AudioStreamIndex), source, media);
+        var file = job.State.AudioFile(replaced.FileId)
+            ?? throw new ExportPlanException("A clip plays an audio file that is no longer in the project.");
+        if (!job.Media.TryGetValue(file.Id, out var fileMedia))
+            throw new ExportPlanException($"\"{file.DisplayName}\" is missing or hasn't been analyzed yet.");
+        var stream = fileMedia.Audio(file.AudioStreamIndex);
+        if (stream is null && !args.NoAudio)
+            throw new ExportPlanException($"\"{file.DisplayName}\" has no audio stream.");
+        return new Item(clip, source, media, video, args.NoAudio ? null : stream, file, fileMedia);
     }
 
     private static bool IsWholeFile(Item item) =>
-        item.Clip.In <= Tolerance && item.Clip.Out >= item.Media.Duration - Tolerance && item.Clip.AudioOffset == TimeSpan.Zero;
+        item.Clip.In <= Tolerance && item.Clip.Out >= item.Media.Duration - Tolerance && item.Clip.AudioOffset == TimeSpan.Zero
+        && item.Clip.ReplacedAudio is null;
 
     // ---- Passthrough -----------------------------------------------------------------------------------
 
@@ -208,7 +225,9 @@ public static class ExportPlanner
         a.AddRange(["-filter_complex", graph.ToString(), "-map", "[vout]"]);
         if (ctx.AnyAudio)
             a.AddRange(["-map", "[aout]"]);
-        a.AddRange(AudioTokens(ctx, ctx.AnyAudio, notes, "the edit has cuts or audio offsets"));
+        a.AddRange(AudioTokens(ctx, ctx.AnyAudio, notes, ctx.Items.Any(i => i.Clip.ReplacedAudio is not null)
+            ? "clips have replaced audio"
+            : "the edit has cuts or audio offsets"));
         a.AddRange(ContainerFlags(ctx, IsHevc(ctx.Args, ctx.Items[0])));
         a.Add(ctx.Out);
 
@@ -260,7 +279,8 @@ public static class ExportPlanner
             i.Audio!.Codec == first.Audio!.Codec && i.Audio.SampleRate == first.Audio.SampleRate
             && i.Audio.Channels == first.Audio.Channels && i.Audio.Index == first.Audio.Index);
         var noOffsets = ctx.Items.All(i => i.Clip.AudioOffset == TimeSpan.Zero);
-        var copyAudio = ctx.AnyAudio && ctx.Args.AudioCopy && sameAudio && noOffsets;
+        var noReplaced = ctx.Items.All(i => i.Clip.ReplacedAudio is null);
+        var copyAudio = ctx.AnyAudio && ctx.Args.AudioCopy && sameAudio && noOffsets && noReplaced;
 
         // Where the container seeks unreliably (MPEG-TS…), the concat demuxer's inpoint lands early, so each
         // clip is first cut into an exact temporary segment and the segments are joined.
@@ -341,7 +361,8 @@ public static class ExportPlanner
                 graph.Append(AudioChain(item, starts[i], item.Clip.Out - starts[i], audioFormat, ref audioInput, inputs)).Append($"[a{i}];");
             }
             AppendConcat(graph, ctx.Items.Count, video: false, audio: true, ctx.Args, audioOut: "ashift");
-            var reason = !noOffsets ? "clips have audio offsets"
+            var reason = !noReplaced ? "clips have replaced audio"
+                : !noOffsets ? "clips have audio offsets"
                 : !allHaveAudio ? "some clips have no audio"
                 : "the clips' audio formats differ";
             outputTokens = AudioTokens(ctx, true, notes, reason);
@@ -434,8 +455,9 @@ public static class ExportPlanner
     // ---- Shared pieces ---------------------------------------------------------------------------------
 
     /// <summary>
-    /// Audio for one clip: the slipped source range, padded with silence where it runs past the file, and
-    /// trimmed to exactly <paramref name="length"/> so clips never drift. Adds an input when audio is read.
+    /// Audio for one clip: the slipped range of the heard file, padded with silence where it runs past the file
+    /// (or looped, for replaced audio that loops), and trimmed to exactly <paramref name="length"/> so clips never
+    /// drift. Adds an input when audio is read.
     /// </summary>
     private static string AudioChain(Item item, TimeSpan videoStart, TimeSpan length, (int Rate, string Layout) format,
         ref int nextInput, List<string> inputs)
@@ -445,11 +467,31 @@ public static class ExportPlanner
         if (item.Audio is null)
             return $"anullsrc=r={format.Rate}:cl={format.Layout},atrim=duration={len},asetpts=N/SR/TB";
 
-        var placement = AudioPlacement.For(videoStart, length, item.Clip.AudioOffset, item.Media.AudioEnd(item.Audio));
+        var end = item.AudioMedia.AudioEnd(item.Audio);
+        if (item.Clip.LoopsAudio && AudioLoop.CanLoop(end)
+            && AudioLoop.For(videoStart, length, item.Clip.AudioSlip, end) is { Wraps: true } loop
+            && Samples(loop.Period, format.Rate) <= int.MaxValue)
+        {
+            // One whole period of the file, padded or cut to exactly that many samples, repeated sample-exactly.
+            var period = Samples(loop.Period, format.Rate);
+            var phase = Samples(loop.Phase, format.Rate);
+            var loopTrim = Input(inputs, item.AudioFile.Path, item.AudioMedia, TimeSpan.Zero, loop.Period);
+            var looped = new StringBuilder($"[{nextInput}:{item.Audio.Index}]");
+            if (loopTrim.Length > 0)
+                looped.Append($"atrim={loopTrim}duration={TimeFormat.Seconds(loop.Period)},asetpts=PTS-STARTPTS,");
+            looped.Append(fmt).Append(CultureInfo.InvariantCulture,
+                $",apad=whole_dur={TimeFormat.Seconds(loop.Period)},atrim=end_sample={period},aloop=loop=-1:size={period}");
+            looped.Append(CultureInfo.InvariantCulture,
+                $",atrim=start_sample={phase}:end_sample={phase + Samples(length, format.Rate)},asetpts=N/SR/TB");
+            nextInput++;
+            return looped.ToString();
+        }
+
+        var placement = AudioPlacement.For(videoStart, length, item.Clip.AudioSlip, end);
         if (placement.IsSilent)
             return $"anullsrc=r={format.Rate}:cl={format.Layout},atrim=duration={len},asetpts=N/SR/TB";
 
-        var trim = Input(inputs, item, placement.ReadFrom, placement.ReadLength);
+        var trim = Input(inputs, item.AudioFile.Path, item.AudioMedia, placement.ReadFrom, placement.ReadLength);
         var chain = new StringBuilder($"[{nextInput}:{item.Audio.Index}]");
         if (trim.Length > 0)
             chain.Append($"atrim={trim}duration={TimeFormat.Seconds(placement.ReadLength)},asetpts=PTS-STARTPTS,");
@@ -457,26 +499,40 @@ public static class ExportPlanner
         nextInput++;
         if (placement.Lead > TimeSpan.Zero)
         {
-            var samples = (long)Math.Round(placement.Lead.TotalSeconds * format.Rate);
+            var samples = Samples(placement.Lead, format.Rate);
             chain.Append(CultureInfo.InvariantCulture, $",adelay=delays={samples}S:all=1");
         }
         chain.Append($",apad=whole_dur={len},atrim=duration={len},asetpts=N/SR/TB");
         return chain.ToString();
     }
 
+    private static long Samples(TimeSpan time, int rate) => (long)Math.Round(time.TotalSeconds * rate);
+
     /// <summary>
     /// Adds an input reading [start, start+length) of the clip's file. Where seeking is unreliable it seeks
     /// <see cref="PreRoll"/> early and returns the "start=…:" part of a trim that cuts exactly.
     /// </summary>
-    private static string Input(List<string> inputs, Item item, TimeSpan start, TimeSpan length)
+    private static string Input(List<string> inputs, Item item, TimeSpan start, TimeSpan length) =>
+        Input(inputs, item.Source.Path, item.Media, start, length);
+
+    /// <summary>
+    /// Like the clip's file, for any file. Audio-only files are read from their start and trimmed in the graph:
+    /// seeking in MP3 or ADTS lands on estimated timestamps, and decoding audio up to the cut is cheap.
+    /// </summary>
+    private static string Input(List<string> inputs, string path, MediaInfo media, TimeSpan start, TimeSpan length)
     {
-        if (!item.Media.HasUnreliableSeeking)
+        if (media.Video is null)
         {
-            inputs.AddRange(["-ss", TimeFormat.Seconds(start), "-t", TimeFormat.Seconds(length), "-i", item.Source.Path]);
+            inputs.AddRange(["-t", TimeFormat.Seconds(start + length), "-i", path]);
+            return start > TimeSpan.Zero ? $"start={TimeFormat.Seconds(start)}:" : "";
+        }
+        if (!media.HasUnreliableSeeking)
+        {
+            inputs.AddRange(["-ss", TimeFormat.Seconds(start), "-t", TimeFormat.Seconds(length), "-i", path]);
             return "";
         }
         var seek = start > PreRoll ? start - PreRoll : TimeSpan.Zero;
-        inputs.AddRange(["-ss", TimeFormat.Seconds(seek), "-t", TimeFormat.Seconds(start - seek + length), "-i", item.Source.Path]);
+        inputs.AddRange(["-ss", TimeFormat.Seconds(seek), "-t", TimeFormat.Seconds(start - seek + length), "-i", path]);
         return $"start={TimeFormat.Seconds(start - seek)}:";
     }
 

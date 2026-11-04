@@ -6,14 +6,26 @@ using ManeFfmpeg.Core.Model;
 
 namespace ManeFfmpeg.UI.ViewModels;
 
-/// <summary>A row in the media bin.</summary>
-public sealed partial class SourceItemViewModel(SourceMedia source, int colorIndex) : ViewModelBase
+/// <summary>A row in the Files panel: a video on the Video tab, or an audio file on the Audio tab.</summary>
+public sealed partial class SourceItemViewModel(SourceMedia source, int colorIndex, bool isAudioFile = false) : ViewModelBase
 {
     public static readonly Color[] Palette =
     [
         Color.Parse("#4F8EF7"), Color.Parse("#43B581"), Color.Parse("#F5A623"), Color.Parse("#B46EF5"),
         Color.Parse("#F25F5C"), Color.Parse("#2EC4B6"), Color.Parse("#E84E9D"), Color.Parse("#9CCC65"),
     ];
+
+    /// <summary>Audio files' colors: softer, and starting on a hue the first video doesn't use.</summary>
+    public static readonly Color[] AudioPalette =
+    [
+        Color.Parse("#D9C2FF"), Color.Parse("#FFD6A0"), Color.Parse("#A8E6C1"), Color.Parse("#FFB3B0"),
+        Color.Parse("#A9C7FF"), Color.Parse("#F9B8DA"), Color.Parse("#9FE5DD"), Color.Parse("#DDEBA6"),
+    ];
+
+    public static Color AudioColor(int colorIndex) => AudioPalette[colorIndex % AudioPalette.Length];
+
+    /// <summary>An imported audio file (Audio tab) rather than a video.</summary>
+    public bool IsAudioFile { get; } = isAudioFile;
 
     public SourceMedia Source { get; private set; } = source;
 
@@ -25,7 +37,9 @@ public sealed partial class SourceItemViewModel(SourceMedia source, int colorInd
 
     public int ColorIndex { get; } = colorIndex;
 
-    public IBrush Brush => new SolidColorBrush(Palette[ColorIndex % Palette.Length]);
+    public Color Color => IsAudioFile ? AudioColor(ColorIndex) : Palette[ColorIndex % Palette.Length];
+
+    public IBrush Brush => new SolidColorBrush(Color);
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Details), nameof(AudioChoices), nameof(HasAudioChoice), nameof(StatusText), nameof(IsProblem))]
@@ -56,6 +70,11 @@ public sealed partial class SourceItemViewModel(SourceMedia source, int colorInd
             if (Info is not { } info)
                 return "";
             var parts = new List<string> { TimeFormat.Display(info.Duration) };
+            if (IsAudioFile)
+            {
+                parts.Add(info.Audio(Source.AudioStreamIndex) is { } stream ? stream.Describe() : "no audio");
+                return string.Join(" · ", parts);
+            }
             if (info.Video is { } v)
             {
                 parts.Add($"{v.DisplayWidth}×{v.DisplayHeight}");
@@ -96,5 +115,7 @@ public sealed partial class SourceItemViewModel(SourceMedia source, int colorInd
             OnPropertyChanged(nameof(Name));
             OnPropertyChanged(nameof(Path));
         }
+        if (IsAudioFile)
+            OnPropertyChanged(nameof(Details));
     }
 }

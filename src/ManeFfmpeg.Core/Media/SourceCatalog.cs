@@ -31,9 +31,12 @@ public interface IMediaAnalyzers
 /// </summary>
 public sealed class SourceCatalog(IMediaAnalyzers analyzers)
 {
-    private sealed class Entry(SourceMedia source)
+    private sealed class Entry(SourceMedia source, bool isAudioFile)
     {
         public SourceMedia Source { get; set; } = source;
+
+        /// <summary>An imported audio file: it needs an audio stream rather than video, and has no keyframes.</summary>
+        public bool IsAudioFile { get; } = isAudioFile;
         public SourceStatus Status { get; set; } = SourceStatus.Analyzing;
         public MediaInfo? Info { get; set; }
         public string? Error { get; set; }
@@ -58,12 +61,12 @@ public sealed class SourceCatalog(IMediaAnalyzers analyzers)
                 return;
             _wantKeyframes = value;
             if (value)
-                foreach (var entry in _entries.Values.Where(e => e.Status == SourceStatus.Ready))
+                foreach (var entry in _entries.Values.Where(e => e.Status == SourceStatus.Ready && !e.IsAudioFile))
                     _ = LoadAnalysisAsync(entry, entry.Generation);
         }
     }
 
-    /// <summary>Probe results of the ready sources, by source id.</summary>
+    /// <summary>Probe results of the ready sources and audio files, by id.</summary>
     public IReadOnlyDictionary<string, MediaInfo> Media =>
         _entries.Where(e => e.Value.Info is not null).ToDictionary(e => e.Key, e => e.Value.Info!);
 
@@ -98,17 +101,18 @@ public sealed class SourceCatalog(IMediaAnalyzers analyzers)
     /// Brings the catalog in line with the project's sources (after edits, undo or loading): new sources are
     /// analyzed, removed ones forgotten, a moved file is probed again and a new audio stream gets its waveform.
     /// </summary>
-    public void Sync(IEnumerable<SourceMedia> sources)
+    public void Sync(IEnumerable<SourceMedia> sources, IEnumerable<SourceMedia>? audioFiles = null)
     {
-        var current = sources.ToList();
-        var ids = current.Select(s => s.Id).ToHashSet();
+        var current = sources.Select(s => (Source: s, Audio: false))
+            .Concat((audioFiles ?? []).Select(s => (Source: s, Audio: true))).ToList();
+        var ids = current.Select(s => s.Source.Id).ToHashSet();
         foreach (var id in _entries.Keys.Where(id => !ids.Contains(id)).ToList())
             _entries.Remove(id);
-        foreach (var source in current)
+        foreach (var (source, isAudio) in current)
         {
             if (!_entries.TryGetValue(source.Id, out var entry))
             {
-                entry = _entries[source.Id] = new Entry(source);
+                entry = _entries[source.Id] = new Entry(source, isAudio);
                 _ = ProbeAsync(entry);
             }
             else if (entry.Source != source)
@@ -149,9 +153,9 @@ public sealed class SourceCatalog(IMediaAnalyzers analyzers)
         try
         {
             var info = await analyzers.ProbeAsync(path);
-            if (info.Video is null)
+            if (entry.IsAudioFile ? info.AudioStreams.Length == 0 : info.Video is null)
             {
-                Update(entry, generation, SourceStatus.Failed, info, "No video stream");
+                Update(entry, generation, SourceStatus.Failed, info, entry.IsAudioFile ? "No audio stream" : "No video stream");
                 return;
             }
             Update(entry, generation, SourceStatus.Ready, info, null);
@@ -173,7 +177,7 @@ public sealed class SourceCatalog(IMediaAnalyzers analyzers)
             var tasks = new List<Task>();
             if (info.Audio(entry.Source.AudioStreamIndex) is { } audio && analyzers.Waveforms is { } waveforms)
                 tasks.Add(waveforms.GetAsync(entry.Source.Path, info, audio.Index));
-            if (_wantKeyframes && analyzers.Keyframes is { } keyframes)
+            if (_wantKeyframes && !entry.IsAudioFile && analyzers.Keyframes is { } keyframes)
                 tasks.Add(keyframes.GetAsync(entry.Source.Path, info));
             foreach (var task in tasks)
             {

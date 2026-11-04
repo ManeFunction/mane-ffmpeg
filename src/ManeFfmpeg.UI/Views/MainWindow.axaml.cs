@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using CommunityToolkit.Mvvm.Input;
+using ManeFfmpeg.UI.Controls;
 using ManeFfmpeg.UI.Services;
 using ManeFfmpeg.UI.ViewModels;
 using ManeFfmpeg.Core.Model;
@@ -16,6 +17,16 @@ public partial class MainWindow : Window, IMainWindowView
 {
     private static readonly string[] VideoPatterns =
         ["*.mp4", "*.mov", "*.m4v", "*.mkv", "*.webm", "*.avi", "*.mts", "*.m2ts", "*.ts", "*.mpg", "*.mpeg", "*.wmv", "*.flv", "*.3gp", "*.mxf", "*.ogv"];
+
+    private static readonly string[] AudioPatterns =
+        ["*.mp3", "*.m4a", "*.aac", "*.wav", "*.aif", "*.aiff", "*.flac", "*.ogg", "*.oga", "*.opus", "*.wma", "*.mka", "*.ac3", "*.eac3", "*.dts", "*.caf"];
+
+    // An audio file pressed in the Audio tab, and whether it is being dragged towards the timeline.
+    private SourceItemViewModel? _audioPressed;
+    private Point _audioPressPoint;
+    private bool _audioDragging;
+    private static readonly Cursor DropCursor = new(StandardCursorType.DragCopy);
+    private static readonly Cursor NoDropCursor = new(StandardCursorType.No);
 
     private bool _closeConfirmed;
 
@@ -44,6 +55,7 @@ public partial class MainWindow : Window, IMainWindowView
         BuildMenu();
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DropEvent, OnDrop);
+        AddHandler(DragDrop.DragLeaveEvent, (_, _) => ViewModel.Timeline.ShowAudioDrop(null));
         AddHandler(KeyDownEvent, OnWindowKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, OnWindowKeyUp, RoutingStrategies.Tunnel);
         AudioOffsetBox.AddHandler(KeyDownEvent, OnAudioOffsetKeyDown, RoutingStrategies.Tunnel);
@@ -102,6 +114,7 @@ public partial class MainWindow : Window, IMainWindowView
             recentItem,
             new NativeMenuItemSeparator(),
             Item("Add Videos…", vm.AddMediaCommand, Key.I, Cmd),
+            Item("Add Audio…", vm.AddAudioCommand, Key.I, Cmd | KeyModifiers.Shift),
             new NativeMenuItemSeparator(),
             Item("Save Project", vm.SaveCommand, Key.S, Cmd),
             Item("Save Project As…", vm.SaveAsCommand, Key.S, Cmd | KeyModifiers.Shift),
@@ -137,6 +150,7 @@ public partial class MainWindow : Window, IMainWindowView
             Item("Audio 1 Frame Earlier", vm.NudgeAudioFrameEarlierCommand),
             Item("Audio 1 Frame Later", vm.NudgeAudioFrameLaterCommand),
             Item("Reset Audio Offset", vm.ResetAudioOffsetCommand),
+            Item("Use Original Audio", vm.RestoreOriginalAudioCommand),
         })
             edit.Items.Add(item);
 
@@ -242,17 +256,19 @@ public partial class MainWindow : Window, IMainWindowView
             case Key.Back:
                 vm.DeleteSelectionCommand.Execute(null);
                 break;
-            case Key.I when vm.Preview.IsSourceMode:
+            case Key.I when vm.Preview.CanMark:
                 vm.Preview.SetMarkInCommand.Execute(null);
                 break;
-            case Key.O when vm.Preview.IsSourceMode:
+            case Key.O when vm.Preview.CanMark:
                 vm.Preview.SetMarkOutCommand.Execute(null);
                 break;
-            case Key.Enter when vm.Preview.IsSourceMode:
+            case Key.Enter when vm.Preview.CanMark:
                 vm.Preview.AddMarkedRangeCommand.Execute(null);
                 break;
             case Key.Escape:
-                if (vm.Preview.IsSourceMode)
+                if (_audioDragging)
+                    EndAudioDrag(drop: false);
+                else if (vm.Preview.IsSourceMode)
                     vm.Preview.BackToTimelineCommand.Execute(null);
                 else
                     vm.Timeline.ClearSelection();
@@ -305,18 +321,120 @@ public partial class MainWindow : Window, IMainWindowView
 
     // ---- Drag and drop ----------------------------------------------------------------------------
 
+    private static List<string>? DroppedPaths(DragEventArgs e) =>
+        e.DataTransfer.TryGetFiles()?.Select(f => f.TryGetLocalPath()).OfType<string>().ToList();
+
+    private static bool LooksLikeAudio(string path) =>
+        AudioPatterns.Any(p => string.Equals(Path.GetExtension(path), p[1..], StringComparison.OrdinalIgnoreCase));
+
     private void OnDragOver(object? sender, DragEventArgs e)
     {
-        e.DragEffects = e.DataTransfer.TryGetFiles() is { Length: > 0 } ? DragDropEffects.Copy : DragDropEffects.None;
+        var paths = DroppedPaths(e);
+        e.DragEffects = paths is { Count: > 0 } ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
+        // Audio files from Finder over a clip replace its sound when dropped: show which clip.
+        var audio = paths?.FirstOrDefault(LooksLikeAudio);
+        var clip = audio is null ? null : ClipAt(e.GetPosition(TimelineView));
+        ViewModel.Timeline.ShowAudioDrop(audio is null || clip is null
+            ? null
+            : new AudioDropTarget(Path.GetFileName(audio), SourceItemViewModel.AudioColor(ViewModel.AudioFiles.Count), clip));
     }
 
     private async void OnDrop(object? sender, DragEventArgs e)
     {
-        var paths = e.DataTransfer.TryGetFiles()?.Select(f => f.TryGetLocalPath()).OfType<string>().ToList();
+        var paths = DroppedPaths(e);
         e.Handled = true;
-        if (paths is { Count: > 0 })
-            await WindowManager.Instance.OpenFilesAsync(paths, this);
+        ViewModel.Timeline.ShowAudioDrop(null);
+        if (paths is not { Count: > 0 })
+            return;
+        if (!paths.Any(WindowManager.IsProject))
+        {
+            // Onto the Audio tab: everything with sound becomes an audio file, videos too.
+            if (ViewModel.IsAudioTab && IsOver(BinPanel, e.GetPosition(BinPanel)))
+            {
+                await ViewModel.AddAudioAsync(paths);
+                return;
+            }
+            // Onto a clip: audio files are added and the first replaces that clip's sound.
+            if (ClipAt(e.GetPosition(TimelineView)) is { } clip && paths.Any(LooksLikeAudio))
+            {
+                await AppServices.Instance.ToolsLocated;
+                await ViewModel.AddMediaAsync(paths, replaceAudioOf: clip);
+                return;
+            }
+        }
+        await WindowManager.Instance.OpenFilesAsync(paths, this);
+    }
+
+    private static bool IsOver(Control control, Point p) => p.X >= 0 && p.Y >= 0 && p.X < control.Bounds.Width && p.Y < control.Bounds.Height;
+
+    /// <summary>The clip under a point of the timeline control (either row), or null.</summary>
+    private string? ClipAt(Point p)
+    {
+        var vm = ViewModel.Timeline;
+        if (vm.Zoom <= 0 || !IsOver(TimelineView, p) || p.X < TimelineLayout.Header)
+            return null;
+        return TimelineLayout.HitTest(vm.Timeline, vm.Zoom, vm.Scroll, p.X, p.Y) is { ClipId: { } id, Zone: not (ViewModels.TimelineZone.Ruler or ViewModels.TimelineZone.Empty) } ? id : null;
+    }
+
+    // ---- Dragging an audio file onto a clip -------------------------------------------------------
+    // An in-app pointer drag (captured by the list) rather than the platform's drag and drop: it can't get stuck
+    // in a native drag session, draws its own feedback on the timeline and can be scripted.
+
+    private void OnAudioListPressed(object? sender, PointerPressedEventArgs e)
+    {
+        _audioPressed = null;
+        if (!e.GetCurrentPoint(AudioList).Properties.IsLeftButtonPressed)
+            return;
+        if ((e.Source as Control)?.DataContext is SourceItemViewModel { IsProblem: false } item)
+        {
+            _audioPressed = item;
+            _audioPressPoint = e.GetPosition(this);
+        }
+    }
+
+    private void OnAudioListMoved(object? sender, PointerEventArgs e)
+    {
+        if (_audioPressed is not { } item)
+            return;
+        if (!_audioDragging)
+        {
+            var p = e.GetPosition(this);
+            if (Math.Abs(p.X - _audioPressPoint.X) + Math.Abs(p.Y - _audioPressPoint.Y) <= TimelineGestures.DragThreshold)
+                return;
+            _audioDragging = true;
+            e.Pointer.Capture(AudioList);
+            ViewModel.StatusMessage = $"Drop {item.Name} on a clip to replace its sound.";
+        }
+        var clip = ClipAt(e.GetPosition(TimelineView));
+        AudioList.Cursor = clip is null ? NoDropCursor : DropCursor;
+        ViewModel.Timeline.ShowAudioDrop(new AudioDropTarget(item.Name, item.Color, clip));
+        e.Handled = true;
+    }
+
+    private void OnAudioListReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_audioDragging)
+        {
+            _audioPressed = null;
+            return;
+        }
+        EndAudioDrag(drop: true);
+        e.Pointer.Capture(null);
+        e.Handled = true;
+    }
+
+    private void EndAudioDrag(bool drop)
+    {
+        var item = _audioPressed;
+        var clip = ViewModel.Timeline.AudioDrop?.ClipId;
+        _audioPressed = null;
+        _audioDragging = false;
+        AudioList.Cursor = Cursor.Default;
+        ViewModel.Timeline.ShowAudioDrop(null);
+        ViewModel.StatusMessage = null;
+        if (drop && item is not null && clip is not null)
+            ViewModel.ReplaceClipAudio(clip, item.Id);
     }
 
     // ---- Media bin context menu -------------------------------------------------------------------
@@ -335,6 +453,15 @@ public partial class MainWindow : Window, IMainWindowView
     {
         base.OnLoaded(e);
         SourcesList.DoubleTapped += (_, _) => ViewModel.Preview.PreviewSourceCommand.Execute(SourcesList.SelectedItem as SourceItemViewModel);
+        AudioList.DoubleTapped += (_, _) => ViewModel.Preview.PreviewSourceCommand.Execute(AudioList.SelectedItem as SourceItemViewModel);
+        AudioList.AddHandler(PointerPressedEvent, OnAudioListPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AudioList.AddHandler(PointerMovedEvent, OnAudioListMoved, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
+        AudioList.AddHandler(PointerReleasedEvent, OnAudioListReleased, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
+        AudioList.PointerCaptureLost += (_, _) =>
+        {
+            if (_audioDragging)
+                EndAudioDrag(drop: false);
+        };
     }
 
     // ---- Closing ----------------------------------------------------------------------------------
@@ -515,6 +642,26 @@ public partial class MainWindow : Window, IMainWindowView
             AllowMultiple = true,
             SuggestedStartLocation = await FolderAsync(AppServices.Instance.Settings.Current.LastMediaFolder),
             FileTypeFilter = [new FilePickerFileType("Videos") { Patterns = VideoPatterns }, FilePickerFileTypes.All],
+        });
+        var paths = files.Select(f => f.TryGetLocalPath()).OfType<string>().ToList();
+        if (paths.Count > 0)
+            AppServices.Instance.Settings.Update(s => s with { LastMediaFolder = Path.GetDirectoryName(paths[0]) });
+        return paths;
+    }
+
+    public async Task<IReadOnlyList<string>> PickAudioAsync()
+    {
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Add audio",
+            AllowMultiple = true,
+            SuggestedStartLocation = await FolderAsync(AppServices.Instance.Settings.Current.LastMediaFolder),
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Audio") { Patterns = AudioPatterns },
+                new FilePickerFileType("Videos (use their sound)") { Patterns = VideoPatterns },
+                FilePickerFileTypes.All,
+            ],
         });
         var paths = files.Select(f => f.TryGetLocalPath()).OfType<string>().ToList();
         if (paths.Count > 0)

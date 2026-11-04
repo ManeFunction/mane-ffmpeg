@@ -12,6 +12,18 @@ Built with C#, .NET 10 and Avalonia 12.
   - A video row (V1) and a linked audio row (A1) with waveforms.
   - Split at the playhead (S), delete, drag clips to reorder, and drag clip edges to trim. Cuts land on whole frames.
   - Undo and redo, zoom, and scroll.
+- **Files**
+  - The *Video* tab lists videos. The *Audio* tab lists audio files, each in its own pastel color. Files are sorted
+    into tabs by what they contain. Videos dropped on the *Audio* tab, or picked in *Add audio…*, are added for their
+    sound.
+  - Double-click a file to preview it on its own.
+- **Audio replacement**
+  - Drag an audio file from the *Audio* tab, or from Finder, onto a clip to play it instead of the clip's sound. It
+    starts at the clip's start and affects only that clip. To replace the sound of part of a video, split it first.
+  - Drag the audio row to shift the new sound, the same as a clip's own audio. Splitting a clip continues the sound
+    across both halves.
+  - *Loop audio* (in *Selection*) repeats the file, so the clip has no silence even when the sound is shifted.
+    *Use original audio* restores the clip's own sound.
 - **Audio offset**
   - Drag a clip on the audio row, use Alt+←/→, or type milliseconds in the inspector.
   - The offset *slips* the clip's audio. Clip edges stay put, and the sound comes from slightly earlier or later in the same file, so cuts never open gaps.
@@ -97,12 +109,15 @@ The planner (`src/ManeFfmpeg.Core/Ffmpeg/ExportPlanner.cs`) picks one of four st
 | One untouched clip (whole file, no offset) | Your preset as-is: `ffmpeg -i SRC <preset> OUT` |
 | One trimmed or offset clip, preset copies audio | The audio is cut losslessly first, then muxed with the encoded video, so `-c:a copy` is kept |
 | Several clips or offsets, video encoded | One `-filter_complex` with trimmed inputs, per-clip audio slip (`adelay`/`apad`/`atrim`) and `concat`. `-c:a copy` falls back to the preset's audio fallback (default `-c:a aac -b:a 256k`) |
-| Video copied ("plane copy") | ffconcat stream copy. Cuts start on the keyframe at or before each in point (turn on *Snap to keyframes* to see exact cuts). With audio offsets, only the audio is re-encoded |
+| Video copied ("plane copy") | ffconcat stream copy. Cuts start on the keyframe at or before each in point (turn on *Snap to keyframes* to see exact cuts). With audio offsets or replaced audio, only the audio is re-encoded |
 
 Some details:
 - Clips from differently sized sources are scaled and padded to the first clip's size and frame rate.
 - `-tag:v hvc1` and `-movflags +faststart` are added for HEVC in MP4/MOV, so QuickTime can play the file.
 - MPEG-TS and other containers with unreliable seeking are handled by seeking early and trimming exactly.
+- Replaced audio is always re-encoded, using the preset's audio fallback when the preset copies audio. Audio-only files
+  are decoded from their start and trimmed by sample, because MP3 seeks land on estimated times. Looped audio repeats
+  exactly one file length with `aloop`.
 
 The integration tests check A/V sync of real exports. They use synthetic video with a flash and a beep every 2 s, then measure where the flashes and beeps land after cutting, reordering and offsetting.
 
@@ -131,6 +146,7 @@ Mouse:
 - Click the ruler or a clip to seek; drag on the ruler to scrub.
 - Click a clip to select it; Shift extends the selection, ⌘/Ctrl toggles a clip in or out of it.
 - Drag a clip to reorder it, drag its edges to trim, and drag on the audio row to slip its audio (hold Shift for fine steps).
+- Drag an audio file from *Files → Audio* (or Finder) onto a clip to replace its sound.
 
 ## Project layout
 

@@ -29,3 +29,43 @@ public readonly record struct AudioPlacement(TimeSpan Lead, TimeSpan ReadFrom, T
         return new AudioPlacement(lead, readFrom, readLength, length);
     }
 }
+
+/// <summary>
+/// A stretch of a looped audio file: <see cref="Length"/> of the file read from <see cref="Phase"/>, starting again
+/// from its beginning every <see cref="Period"/>. Like <see cref="AudioPlacement"/>, the preview, the export and the
+/// timeline all loop through this.
+/// </summary>
+public readonly record struct AudioLoop(TimeSpan Phase, TimeSpan Period, TimeSpan Length)
+{
+    /// <summary>Files shorter than this play once instead of looping.</summary>
+    public static readonly TimeSpan MinPeriod = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>The stretch runs past the file's end, so the file repeats in it.</summary>
+    public bool Wraps => Phase + Length > Period;
+
+    /// <summary>Whether a file whose audio ends at <paramref name="audioEnd"/> can loop.</summary>
+    public static bool CanLoop(TimeSpan audioEnd) => audioEnd >= MinPeriod;
+
+    /// <summary>The looped audio under the video <c>[videoStart, videoStart + length)</c> of a clip slipped by <paramref name="slip"/>.</summary>
+    public static AudioLoop For(TimeSpan videoStart, TimeSpan length, TimeSpan slip, TimeSpan audioEnd)
+    {
+        var start = (videoStart - slip).Ticks % audioEnd.Ticks;
+        if (start < 0)
+            start += audioEnd.Ticks;
+        return new AudioLoop(TimeSpan.FromTicks(start), audioEnd, length);
+    }
+
+    /// <summary>The pieces of the file to play in order: from the phase to the end, whole files, then the rest.</summary>
+    public IEnumerable<(TimeSpan ReadFrom, TimeSpan Length)> Pieces()
+    {
+        var left = Length;
+        var from = Phase;
+        while (left > TimeSpan.Zero)
+        {
+            var piece = Period - from < left ? Period - from : left;
+            yield return (from, piece);
+            left -= piece;
+            from = TimeSpan.Zero;
+        }
+    }
+}

@@ -36,6 +36,10 @@ public sealed partial class FfmpegFixture : IDisposable
         Sync25 = Generate("sync25.mp4", 8, "1280x720", "25", "-c:v libx264 -preset veryfast -g 25 -pix_fmt yuv420p -c:a aac -b:a 128k");
         NoAudio = Generate("noaudio.mp4", 6, "640x360", "30", "-c:v libx264 -preset veryfast -g 30 -pix_fmt yuv420p", audio: false);
         TransportStream = Generate("sync.ts", 8, "640x360", "30", "-c:v libx264 -preset veryfast -g 30 -pix_fmt yuv420p -c:a aac -b:a 128k -f mpegts");
+        Tone = Path.Combine(Directory, "tone.m4a");
+        Cli.Wrap(Tools!.Ffmpeg).WithArguments(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-t", "3",
+            "-i", "aevalsrc='if(between(t\\,0.3\\,0.4)\\,0.5*sin(2*PI*880*t)\\,0)':s=44100:c=stereo", "-c:a", "aac", "-b:a", "128k", Tone])
+            .ExecuteAsync().GetAwaiter().GetResult();
     }
 
     public string Directory { get; }
@@ -43,6 +47,9 @@ public sealed partial class FfmpegFixture : IDisposable
     public string Sync25 { get; } = "";
     public string NoAudio { get; } = "";
     public string TransportStream { get; } = "";
+
+    /// <summary>3 s of audio only (AAC, 44.1 kHz) with one 880 Hz beep at 0.3–0.4 s.</summary>
+    public string Tone { get; } = "";
 
     private string Generate(string name, int seconds, string size, string rate, string codecArgs, bool audio = true)
     {
