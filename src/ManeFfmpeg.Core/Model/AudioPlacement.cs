@@ -55,6 +55,12 @@ public readonly record struct AudioLoop(TimeSpan Phase, TimeSpan Period, TimeSpa
         return new AudioLoop(TimeSpan.FromTicks(start), audioEnd, length);
     }
 
+    /// <summary>
+    /// The stretch as a plain read, for a loop that doesn't wrap: <see cref="Length"/> of the file from <see cref="Phase"/>,
+    /// with no silence around it.
+    /// </summary>
+    public AudioPlacement AsPlacement() => new(TimeSpan.Zero, Phase, Length, Length);
+
     /// <summary>The pieces of the file to play in order: from the phase to the end, whole files, then the rest.</summary>
     public IEnumerable<(TimeSpan ReadFrom, TimeSpan Length)> Pieces()
     {

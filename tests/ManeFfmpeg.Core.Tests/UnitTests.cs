@@ -884,6 +884,11 @@ public class AudioReplacementTests
         Assert.EndsWith("!new_stream;!track_meta,title=mane-audio;%8%/m/t.m4a,2.500000,0.500000;%8%/m/t.m4a,0.000000,3.000000;%8%/m/t.m4a,0.000000,0.500000",
             TimelineEdl.Build(Replaced(looped), media, "/c/silence.mka"));
 
+        // A split half inside a later repetition doesn't wrap, but still plays the file, not silence.
+        var half = C("c", 4.5, 5.5) with { ReplacedAudio = new AudioReplacement { FileId = "f", Anchor = S(1), Loop = true } };
+        Assert.EndsWith("!new_stream;!track_meta,title=mane-audio;%8%/m/t.m4a,0.500000,1.000000",
+            TimelineEdl.Build(Replaced(half), media, "/c/silence.mka"));
+
         // Not analyzed yet: silence, until the catalog reports it and the preview reloads.
         Assert.DoesNotContain("/m/t.m4a", TimelineEdl.Build(Replaced(later), new Dictionary<string, MediaInfo> { ["s"] = Video }, "/c/silence.mka"));
     }

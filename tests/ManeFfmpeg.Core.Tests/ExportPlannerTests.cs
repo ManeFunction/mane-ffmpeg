@@ -179,6 +179,18 @@ public class ReplacedAudioPlannerTests
         Assert.Contains("t.m4a", ex.Message);
     }
 
+    [Theory]
+    [InlineData(7.5, 8.5, 1.0)] // a split half inside the third repetition
+    [InlineData(1.0, 2.0, 3.5)] // dropped later, so the clip plays the end of an earlier repetition
+    public void Looped_audio_that_does_not_wrap_is_read_not_silenced(double inS, double outS, double anchor)
+    {
+        var clip = Clip.Create("a", S(inS), S(outS)) with { ReplacedAudio = new AudioReplacement { FileId = "t", Anchor = S(anchor), Loop = true } };
+        var args = ExportPlanner.Plan(Job(Encode, Both, clip)).CommandText("ffmpeg");
+        Assert.DoesNotContain("anullsrc", args);
+        Assert.Contains("-t 1.500000 -i /m/t.m4a", args);
+        Assert.Contains("[1:0]atrim=start=0.500000:duration=1.000000,asetpts=PTS-STARTPTS,aformat=sample_rates=44100:channel_layouts=stereo,apad=whole_dur=1.000000", args);
+    }
+
     [Fact]
     public void Looped_snapshot()
     {

@@ -468,26 +468,26 @@ public static class ExportPlanner
             return $"anullsrc=r={format.Rate}:cl={format.Layout},atrim=duration={len},asetpts=N/SR/TB";
 
         var end = item.AudioMedia.AudioEnd(item.Audio);
-        if (item.Clip.LoopsAudio && AudioLoop.CanLoop(end)
-            && AudioLoop.For(videoStart, length, item.Clip.AudioSlip, end) is { Wraps: true } loop
-            && Samples(loop.Period, format.Rate) <= int.MaxValue)
+        var loop = item.Clip.LoopsAudio && AudioLoop.CanLoop(end) ? AudioLoop.For(videoStart, length, item.Clip.AudioSlip, end) : (AudioLoop?)null;
+        if (loop is { Wraps: true } wrapping && Samples(wrapping.Period, format.Rate) <= int.MaxValue)
         {
             // One whole period of the file, padded or cut to exactly that many samples, repeated sample-exactly.
-            var period = Samples(loop.Period, format.Rate);
-            var phase = Samples(loop.Phase, format.Rate);
-            var loopTrim = Input(inputs, item.AudioFile.Path, item.AudioMedia, TimeSpan.Zero, loop.Period);
+            var period = Samples(wrapping.Period, format.Rate);
+            var phase = Samples(wrapping.Phase, format.Rate);
+            var loopTrim = Input(inputs, item.AudioFile.Path, item.AudioMedia, TimeSpan.Zero, wrapping.Period);
             var looped = new StringBuilder($"[{nextInput}:{item.Audio.Index}]");
             if (loopTrim.Length > 0)
-                looped.Append($"atrim={loopTrim}duration={TimeFormat.Seconds(loop.Period)},asetpts=PTS-STARTPTS,");
+                looped.Append($"atrim={loopTrim}duration={TimeFormat.Seconds(wrapping.Period)},asetpts=PTS-STARTPTS,");
             looped.Append(fmt).Append(CultureInfo.InvariantCulture,
-                $",apad=whole_dur={TimeFormat.Seconds(loop.Period)},atrim=end_sample={period},aloop=loop=-1:size={period}");
+                $",apad=whole_dur={TimeFormat.Seconds(wrapping.Period)},atrim=end_sample={period},aloop=loop=-1:size={period}");
             looped.Append(CultureInfo.InvariantCulture,
                 $",atrim=start_sample={phase}:end_sample={phase + Samples(length, format.Rate)},asetpts=N/SR/TB");
             nextInput++;
             return looped.ToString();
         }
 
-        var placement = AudioPlacement.For(videoStart, length, item.Clip.AudioSlip, end);
+        // Looped audio that doesn't wrap is one plain read inside some repetition of the file.
+        var placement = loop is { Wraps: false } once ? once.AsPlacement() : AudioPlacement.For(videoStart, length, item.Clip.AudioSlip, end);
         if (placement.IsSilent)
             return $"anullsrc=r={format.Rate}:cl={format.Layout},atrim=duration={len},asetpts=N/SR/TB";
 

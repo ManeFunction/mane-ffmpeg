@@ -44,9 +44,10 @@ public static class TimelineEdl
             }
             anyAudio = true;
             var end = heardInfo!.AudioEnd(stream);
-            if (clip.LoopsAudio && AudioLoop.CanLoop(end) && AudioLoop.For(clip.In, clip.Duration, clip.AudioSlip, end) is { Wraps: true } loop)
+            if (clip.LoopsAudio && AudioLoop.CanLoop(end))
             {
-                foreach (var (readFrom, length) in loop.Pieces())
+                // Looped audio always plays, wrapping or not: a stretch inside a later repetition is one piece.
+                foreach (var (readFrom, length) in AudioLoop.For(clip.In, clip.Duration, clip.AudioSlip, end).Pieces())
                     Segment(audio, heard!.Path, readFrom + heardInfo.StartTime, length);
                 continue;
             }
