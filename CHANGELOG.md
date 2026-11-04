@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Replaced audio is exported sample-exactly, looped or not, and is re-encoded when the preset copies audio. Projects
   that use audio files are saved as format 2, which older versions refuse to open instead of silently dropping the
   replaced sound.
+- Hold Shift while dragging the playhead to snap it to clip edges and audio edges: where a clip's sound starts or runs
+  out inside it (shifted audio, or audio shorter than the clip) and where looped audio starts again. Pressing or
+  releasing Shift mid-drag snaps or lets go at once.
 
 ## [1.0.0] - 2026-11-02
 ### Added

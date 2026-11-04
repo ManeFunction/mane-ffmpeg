@@ -333,6 +333,55 @@ public class TimelineEditorTests
     }
 }
 
+public class TimelineSnapTests
+{
+    private static TimeSpan S(double seconds) => TimeSpan.FromSeconds(seconds);
+
+    private static Clip C(string id, double inS, double outS, double offsetS = 0) => new()
+    {
+        Id = id, SourceId = "s", In = S(inS), Out = S(outS), AudioOffset = S(offsetS),
+    };
+
+    private static TimeSpan? Snap(Timeline timeline, double at, double radius, Func<Clip, TimeSpan?> audioEnd) =>
+        TimelineSnap.Nearest(timeline, S(at), S(radius), audioEnd);
+
+    [Fact]
+    public void Snaps_to_the_nearest_edge_within_the_radius_only()
+    {
+        var timeline = new Timeline([C("a", 0, 2), C("b", 0, 2)]);
+        Func<Clip, TimeSpan?> none = _ => null;
+        Assert.Equal(S(0), Snap(timeline, 0.05, 0.1, none));
+        Assert.Equal(S(2), Snap(timeline, 1.95, 0.1, none));
+        Assert.Equal(S(4), Snap(timeline, 4.08, 0.1, none));
+        Assert.Null(Snap(timeline, 1, 0.1, none));
+        Assert.Null(Snap(timeline, 4.2, 0.1, none));
+    }
+
+    [Fact]
+    public void Audio_edges_inside_a_clip_compete_with_its_edges()
+    {
+        // Audio heard 0.1 s late from a file ending at 1.5 s: it starts 0.1 s and runs out 1.6 s into the 2 s clip.
+        var timeline = new Timeline([C("a", 0, 2, offsetS: 0.1)]);
+        Assert.Equal(S(0.1), Snap(timeline, 0.08, 0.3, _ => S(1.5)));
+        Assert.Equal(S(1.6), Snap(timeline, 1.75, 0.3, _ => S(1.5)));
+        Assert.Equal(S(2), Snap(timeline, 1.85, 0.3, _ => S(1.5)));
+        // Not analyzed yet (or no audio): only the clip edges.
+        Assert.Equal(S(2), Snap(timeline, 1.75, 0.3, _ => null));
+    }
+
+    [Fact]
+    public void Only_edges_between_sound_and_silence_count()
+    {
+        // Heard 0.6 s late from a long file: silence for the first 0.4 s, then sound to the end.
+        var late = new Timeline([C("a", 0.2, 2.2, offsetS: 0.6)]);
+        Assert.Equal(S(0.4), Snap(late, 0.5, 0.3, _ => S(60)));
+        Assert.Null(Snap(late, 1.5, 0.3, _ => S(60)));
+        // The file's audio ends before the clip starts: all silence, so no edge inside.
+        var silent = new Timeline([C("b", 5, 7)]);
+        Assert.Null(Snap(silent, 1, 0.3, _ => S(0.5)));
+    }
+}
+
 public class ProjectFileTests
 {
     private const string Header = "\"format\": \"mane-ffmpeg-project\", \"version\": 1";

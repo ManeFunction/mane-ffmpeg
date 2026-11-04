@@ -72,6 +72,10 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
 
     public CutGrid? GridOf(string sourceId) => owner.GridOf(sourceId);
 
+    /// <summary>Where the clip's heard audio stream ends (as drawn on A1); null when it has none or isn't analyzed yet.</summary>
+    public TimeSpan? AudioEnd(Clip clip) =>
+        State.AudioSourceOf(clip) is { } heard && Info(heard.Id) is { } info && Audio(heard) is { } audio ? info.AudioEnd(audio) : null;
+
     public int ColorIndex(string sourceId) => owner.Sources.FirstOrDefault(s => s.Id == sourceId)?.ColorIndex ?? 0;
 
     public int AudioColorIndex(string fileId) => owner.AudioFiles.FirstOrDefault(s => s.Id == fileId)?.ColorIndex ?? 0;

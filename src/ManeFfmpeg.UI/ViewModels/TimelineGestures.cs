@@ -50,21 +50,29 @@ public interface ITimelineGestureHost
 
     /// <summary>Live audio feedback while an offset is being dragged.</summary>
     void PreviewAudioDrag(TimeSpan delta);
+
+    /// <summary>Where the clip's heard audio stream ends; null when it has none or isn't analyzed yet.</summary>
+    TimeSpan? AudioEnd(Clip clip);
 }
 
 /// <summary>
 /// The timeline's pointer gestures in timeline terms: a press on a zone, moves to a time, a release. Clicks
 /// select and seek; drags scrub, reorder clips, trim edges or slip audio, each drag one undo step.
+/// Scrubbing with Shift held snaps the playhead to clip edges and audio edges.
 /// </summary>
 public sealed class TimelineGestures(ITimelineGestureHost host)
 {
     /// <summary>How far (pixels) the pointer must move before a press on a clip becomes a drag.</summary>
     public const double DragThreshold = 4;
 
+    /// <summary>How close (pixels) a Shift-scrub must come to a clip or audio edge to snap to it.</summary>
+    public const double SnapRadius = 8;
+
     private enum Drag { None, Scrub, PendingClip, Reorder, TrimIn, TrimOut, PendingSlip, Slip }
 
     private Drag _drag;
     private TimeSpan _pressTime;
+    private TimeSpan _lastTime;
     private Clip? _clip;
     private Timeline? _gestureStart;
     private bool _command;
@@ -78,11 +86,11 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
     public int InsertIndex { get; private set; } = -1;
 
     /// <param name="command">Cmd/Ctrl was held: a click toggles the clip in the selection.</param>
-    /// <param name="shift">Shift was held: a click extends the selection to the clip.</param>
+    /// <param name="shift">Shift was held: a click extends the selection to the clip, a scrub snaps to edges.</param>
     public void Press(TimelineHit hit, bool command, bool shift)
     {
         Reset();
-        _pressTime = hit.Time;
+        _pressTime = _lastTime = hit.Time;
         _command = command;
         _shift = shift;
         var index = hit.ClipId is { } id ? host.Timeline.IndexOf(id) : -1;
@@ -91,7 +99,7 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
             _drag = Drag.Scrub;
             if (hit.Zone == TimelineZone.Empty)
                 host.ClearSelection();
-            host.Seek(hit.Time, scrubbing: true);
+            host.Seek(shift ? Snap(hit.Time) : hit.Time, scrubbing: true);
             return;
         }
         _clip = host.Timeline.Clips[index];
@@ -108,15 +116,16 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
     }
 
     /// <param name="time">Timeline time now under the pointer.</param>
-    /// <param name="fine">Slip at a tenth of the pointer's speed (Shift held).</param>
-    public void Move(TimeSpan time, bool fine)
+    /// <param name="shift">Shift is held: a scrub snaps to clip and audio edges, a slip goes at a tenth of the pointer's speed.</param>
+    public void Move(TimeSpan time, bool shift)
     {
+        _lastTime = time;
         var delta = time - _pressTime;
         var dragged = Math.Abs(delta.TotalSeconds * host.Zoom) > DragThreshold;
         switch (_drag)
         {
             case Drag.Scrub:
-                host.Seek(time, scrubbing: true);
+                host.Seek(shift ? Snap(time) : time, scrubbing: true);
                 break;
             case Drag.PendingClip when dragged:
                 SelectPressedClip();
@@ -139,12 +148,19 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
                 break;
             case Drag.Slip:
             {
-                var slip = TimeSpan.FromMilliseconds(Math.Round(delta.TotalMilliseconds * (fine ? 0.1 : 1)));
+                var slip = TimeSpan.FromMilliseconds(Math.Round(delta.TotalMilliseconds * (shift ? 0.1 : 1)));
                 host.PreviewTimeline(TimelineEditor.NudgeAudioOffset(_gestureStart!, host.Selection, slip));
                 host.PreviewAudioDrag(slip);
                 break;
             }
         }
+    }
+
+    /// <summary>Shift was pressed or released while the pointer stood still: a scrub snaps (or lets go) at once.</summary>
+    public void ShiftChanged(bool shift)
+    {
+        if (_drag == Drag.Scrub)
+            host.Seek(shift ? Snap(_lastTime) : _lastTime, scrubbing: true);
     }
 
     /// <param name="time">Timeline time under the pointer at release.</param>
@@ -193,6 +209,10 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
         if (!host.Selection.Contains(_clip!.Id))
             host.Select(_clip.Id, toggle: false, range: false);
     }
+
+    /// <summary>The clip or audio edge within <see cref="SnapRadius"/> pixels of <paramref name="time"/>, else the time itself.</summary>
+    private TimeSpan Snap(TimeSpan time) =>
+        TimelineSnap.Nearest(host.Timeline, time, TimeSpan.FromSeconds(SnapRadius / Math.Max(host.Zoom, 1e-9)), host.AudioEnd) ?? time;
 
     /// <summary>The clip boundary (index 0…count) nearest to <paramref name="time"/>.</summary>
     private int NearestCut(TimeSpan time)
