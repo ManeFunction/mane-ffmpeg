@@ -275,7 +275,8 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
         if (FfmpegFixture.Tools is null)
             return;
         var (plan, output) = await ExportReplacedAsync(FastEncode, T(1.0, 8.0, offsetMs, loop: true));
-        Assert.Contains(plan.Steps[0].Arguments, a => a.Contains("aloop"));
+        // A few repetitions of a long file: read piece by piece, not held in memory by aloop.
+        Assert.DoesNotContain(plan.Steps[0].Arguments, a => a.Contains("aloop"));
         var (_, beeps, _) = await media.MeasureAsync(output);
         AssertTimes(expected, beeps, BeepTolerance, "beeps");
     }

@@ -473,21 +473,12 @@ public static class ExportPlanner
             return $"anullsrc=r={format.Rate}:cl={format.Layout},atrim=duration={len},asetpts=N/SR/TB";
 
         var layout = heard.Layout(item.Clip, videoStart, length);
-        if (layout is AudioLayout.Looped { Loop: { Wraps: true } loop } && Samples(loop.Period, format.Rate) <= int.MaxValue)
+        if (layout is AudioLayout.Looped { Loop: { Wraps: true } loop })
         {
-            // One whole period of the file, padded or cut to exactly that many samples, repeated sample-exactly.
-            var period = Samples(loop.Period, format.Rate);
-            var phase = Samples(loop.Phase, format.Rate);
-            var loopTrim = Input(inputs, heard.File.Path, heard.Info, TimeSpan.Zero, loop.Period);
-            var looped = new StringBuilder($"[{nextInput}:{heard.Stream.Index}]");
-            if (loopTrim.Length > 0)
-                looped.Append($"atrim={loopTrim}duration={TimeFormat.Seconds(loop.Period)},asetpts=PTS-STARTPTS,");
-            looped.Append(fmt).Append(CultureInfo.InvariantCulture,
-                $",apad=whole_dur={TimeFormat.Seconds(loop.Period)},atrim=end_sample={period},aloop=loop=-1:size={period}");
-            looped.Append(CultureInfo.InvariantCulture,
-                $",atrim=start_sample={phase}:end_sample={phase + Samples(length, format.Rate)},asetpts=N/SR/TB");
-            nextInput++;
-            return looped.ToString();
+            var pieces = loop.Pieces().ToList();
+            return pieces.Count <= MaxLoopPieces || Samples(loop.Period, format.Rate) > int.MaxValue
+                ? LoopByPieces(heard, pieces, fmt, format.Rate, ref nextInput, inputs)
+                : LoopByRepeating(heard, loop, length, fmt, format.Rate, ref nextInput, inputs);
         }
 
         // Looped audio that doesn't wrap is one plain read inside some repetition of the file.
@@ -513,6 +504,55 @@ public static class ExportPlanner
         }
         chain.Append($",apad=whole_dur={len},atrim=duration={len},asetpts=N/SR/TB");
         return chain.ToString();
+    }
+
+    /// <summary>
+    /// Looped audio that repeats at most this many times is read piece by piece; shorter files that repeat more often
+    /// are repeated in the graph, which holds one whole file of decoded audio in memory.
+    /// </summary>
+    private const int MaxLoopPieces = 16;
+
+    /// <summary>
+    /// Each piece of the loop read on its own and cut to the samples between its start and end in the stretch, then
+    /// joined: sample-exact seams that never drift, and memory that doesn't grow with the file's length.
+    /// </summary>
+    private static string LoopByPieces(HeardAudio heard, List<(TimeSpan ReadFrom, TimeSpan Length)> pieces, string fmt, int rate,
+        ref int nextInput, List<string> inputs)
+    {
+        var graph = new StringBuilder();
+        var labels = new StringBuilder();
+        var at = TimeSpan.Zero;
+        foreach (var (readFrom, length) in pieces)
+        {
+            var samples = Samples(at + length, rate) - Samples(at, rate);
+            at += length;
+            var trim = Input(inputs, heard.File.Path, heard.Info, readFrom, length);
+            graph.Append($"[{nextInput}:{heard.Stream.Index}]");
+            if (trim.Length > 0)
+                graph.Append($"atrim={trim}duration={TimeFormat.Seconds(length)},asetpts=PTS-STARTPTS,");
+            graph.Append(fmt).Append(CultureInfo.InvariantCulture, $",apad=whole_len={samples},atrim=end_sample={samples}[lp{nextInput}];");
+            labels.Append($"[lp{nextInput}]");
+            nextInput++;
+        }
+        return graph.Append(labels).Append($"concat=n={pieces.Count}:v=0:a=1,asetpts=N/SR/TB").ToString();
+    }
+
+    /// <summary>One whole period of the file, padded or cut to exactly that many samples, repeated sample-exactly.</summary>
+    private static string LoopByRepeating(HeardAudio heard, AudioLoop loop, TimeSpan length, string fmt, int rate,
+        ref int nextInput, List<string> inputs)
+    {
+        var period = Samples(loop.Period, rate);
+        var phase = Samples(loop.Phase, rate);
+        var loopTrim = Input(inputs, heard.File.Path, heard.Info, TimeSpan.Zero, loop.Period);
+        var looped = new StringBuilder($"[{nextInput}:{heard.Stream.Index}]");
+        if (loopTrim.Length > 0)
+            looped.Append($"atrim={loopTrim}duration={TimeFormat.Seconds(loop.Period)},asetpts=PTS-STARTPTS,");
+        looped.Append(fmt).Append(CultureInfo.InvariantCulture,
+            $",apad=whole_dur={TimeFormat.Seconds(loop.Period)},atrim=end_sample={period},aloop=loop=-1:size={period}");
+        looped.Append(CultureInfo.InvariantCulture,
+            $",atrim=start_sample={phase}:end_sample={phase + Samples(length, rate)},asetpts=N/SR/TB");
+        nextInput++;
+        return looped.ToString();
     }
 
     private static long Samples(TimeSpan time, int rate) => (long)Math.Round(time.TotalSeconds * rate);

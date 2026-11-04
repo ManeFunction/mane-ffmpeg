@@ -207,11 +207,24 @@ public class ReplacedAudioPlannerTests
     }
 
     [Fact]
+    public void A_short_file_looped_many_times_is_repeated_in_the_graph()
+    {
+        var blip = new MediaInfo
+        {
+            Duration = S(0.25), FormatName = "mov,mp4,m4a,3gp,3g2,mj2",
+            AudioStreams = [new AudioStreamInfo { Index = 0, Codec = "aac", SampleRate = 44100, Channels = 2, ChannelLayout = "stereo", Duration = S(0.25) }],
+        };
+        var args = ExportPlanner.Plan(Job(Encode, new Dictionary<string, MediaInfo> { ["a"] = Video, ["t"] = blip }, C(1, 8, loop: true))).CommandText("ffmpeg");
+        Assert.Contains("aloop=loop=-1:size=11025", args);
+        Assert.Single(args.Split(" -i /m/t.m4a").Skip(1));
+    }
+
+    [Fact]
     public void Looped_snapshot()
     {
         var plan = ExportPlanner.Plan(Job(Encode, Both, C(1, 8, loop: true, offset: 0.5)));
         Assert.Equal("""
-            ffmpeg -nostdin -hide_banner -loglevel error -nostats -stats_period 0.5 -progress pipe:1 -y -ss 1.000000 -t 7.000000 -i /m/a.src -t 3.000000 -i /m/t.m4a -filter_complex '[0:0]trim=duration=7.000000,setpts=PTS-STARTPTS[v0];[1:0]aformat=sample_rates=44100:channel_layouts=stereo,apad=whole_dur=3.000000,atrim=end_sample=132300,aloop=loop=-1:size=132300,atrim=start_sample=110250:end_sample=418950,asetpts=N/SR/TB[a0];[v0][a0]concat=n=1:v=1:a=1[vout][aout]' -map '[vout]' -map '[aout]' -c:v libx264 -crf 20 -c:a aac -b:a 256k -movflags +faststart /out/edit.mp4
+            ffmpeg -nostdin -hide_banner -loglevel error -nostats -stats_period 0.5 -progress pipe:1 -y -ss 1.000000 -t 7.000000 -i /m/a.src -t 3.000000 -i /m/t.m4a -t 3.000000 -i /m/t.m4a -t 3.000000 -i /m/t.m4a -t 0.500000 -i /m/t.m4a -filter_complex '[0:0]trim=duration=7.000000,setpts=PTS-STARTPTS[v0];[1:0]atrim=start=2.500000:duration=0.500000,asetpts=PTS-STARTPTS,aformat=sample_rates=44100:channel_layouts=stereo,apad=whole_len=22050,atrim=end_sample=22050[lp1];[2:0]aformat=sample_rates=44100:channel_layouts=stereo,apad=whole_len=132300,atrim=end_sample=132300[lp2];[3:0]aformat=sample_rates=44100:channel_layouts=stereo,apad=whole_len=132300,atrim=end_sample=132300[lp3];[4:0]aformat=sample_rates=44100:channel_layouts=stereo,apad=whole_len=22050,atrim=end_sample=22050[lp4];[lp1][lp2][lp3][lp4]concat=n=4:v=0:a=1,asetpts=N/SR/TB[a0];[v0][a0]concat=n=1:v=1:a=1[vout][aout]' -map '[vout]' -map '[aout]' -c:v libx264 -crf 20 -c:a aac -b:a 256k -movflags +faststart /out/edit.mp4
             """, plan.CommandText("ffmpeg"));
     }
 }
