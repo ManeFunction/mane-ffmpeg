@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Exports that join clips with different audio formats keep the best of them: the highest sample rate and the widest
   channel layout. Before, everything was converted to the first clip's format, so a mono or low-rate first clip (or an
   audio file dropped on it) downgraded the sound of the whole export.
+- *Check for Updates…* could stay greyed out for the rest of the session when something failed at launch between
+  finding an update and showing it.
 
 ## [1.0.0] - 2026-11-02
 ### Added

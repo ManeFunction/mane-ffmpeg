@@ -56,20 +56,27 @@ public partial class App : Application
 
     private static async Task StartAsync(string[] args, MainWindow first)
     {
-        // Looked up while the startup dialogs are open; offered after them.
-        var update = Updater.Instance.CheckAsync();
-        await AppServices.Instance.LocateToolsAsync();
-        AppLog.Write(AppServices.Instance.Tools is { } tools ? $"ffmpeg: {tools.VersionText} ({tools.Ffmpeg})" : $"ffmpeg: {AppServices.Instance.ToolsError}");
-        // Before opening files, so they can be read with what gets installed.
-        if (SetupViewModel.ShouldAskAtStartup)
-            await new SetupWindow().ShowDialog(first);
-        await OfferProjectFileAssociationAsync(first);
-        // macOS turns file arguments into "open document" events (OnActivated) as well; open them only once.
-        var files = OperatingSystem.IsMacOS() ? [] : args.Where(File.Exists).ToList();
-        if (files.Count > 0)
-            await WindowManager.Instance.OpenFilesAsync(files, first);
-        if (await update is { } offer)
-            await Updater.Instance.OfferAsync(offer);
+        // Looked up while the startup dialogs are open; offered after them, even if one of them fails.
+        var startup = new TaskCompletionSource();
+        var update = Updater.Instance.CheckAndOfferAsync(offerAfter: startup.Task);
+        try
+        {
+            await AppServices.Instance.LocateToolsAsync();
+            AppLog.Write(AppServices.Instance.Tools is { } tools ? $"ffmpeg: {tools.VersionText} ({tools.Ffmpeg})" : $"ffmpeg: {AppServices.Instance.ToolsError}");
+            // Before opening files, so they can be read with what gets installed.
+            if (SetupViewModel.ShouldAskAtStartup)
+                await new SetupWindow().ShowDialog(first);
+            await OfferProjectFileAssociationAsync(first);
+            // macOS turns file arguments into "open document" events (OnActivated) as well; open them only once.
+            var files = OperatingSystem.IsMacOS() ? [] : args.Where(File.Exists).ToList();
+            if (files.Count > 0)
+                await WindowManager.Instance.OpenFilesAsync(files, first);
+        }
+        finally
+        {
+            startup.TrySetResult();
+        }
+        await update;
 #if DEBUG
         DebugAutomation.StartIfRequested(first);
 #endif
@@ -134,7 +141,7 @@ public partial class App : Application
                 "github.com/ManeFunction/mane-ffmpeg", "https://github.com/ManeFunction/mane-ffmpeg");
     }
 
-    private void OnCheckForUpdatesClicked(object? sender, EventArgs e) => _ = Updater.Instance.CheckAndOfferAsync();
+    private void OnCheckForUpdatesClicked(object? sender, EventArgs e) => _ = Updater.Instance.CheckAndOfferAsync(manual: true);
 
     /// <summary>The menu item can't be clicked while a check or the update window is open.</summary>
     private void ShowUpdateBusy()

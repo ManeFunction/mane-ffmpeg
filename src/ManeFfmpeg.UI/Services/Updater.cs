@@ -47,40 +47,36 @@ public sealed class Updater
     }
 
     /// <summary>
-    /// The newer release to offer, or null (none, turned off, skipped by the user, no connection, or another check is
-    /// already running). When it returns a release the updater stays busy until <see cref="OfferAsync"/> is done with it.
+    /// Looks for a newer release and, if there is one, shows the update window. The updater is busy from the start of
+    /// the check until the window is closed (or there is nothing to offer), and never longer: this one call owns it.
+    /// Does nothing when another check is already running, or when automatic checks are off and the user didn't ask.
     /// </summary>
     /// <param name="manual">The user asked: look even when automatic checks are off, and offer a release they skipped.</param>
-    public async Task<UpdateOffer?> CheckAsync(bool manual = false)
+    /// <param name="offerAfter">Work the window must wait for (the startup dialogs); the check itself runs meanwhile.</param>
+    public async Task CheckAndOfferAsync(bool manual = false, Task? offerAfter = null)
     {
         if (IsBusy)
-            return null;
+            return;
         var settings = AppServices.Instance.Settings.Current;
 #if DEBUG
         if (Environment.GetEnvironmentVariable(PretendVersionVariable) is null)
-            return null;
+            return;
 #endif
         if (!manual && !settings.CheckForUpdates)
-            return null;
+            return;
         SetBusy(true);
-        UpdateOffer? offer = null;
         try
         {
-            offer = await LookUpAsync(settings, manual);
-            return offer;
+            var offer = await LookUpAsync(settings, manual);
+            if (offerAfter is not null)
+                await offerAfter;
+            if (offer is not null)
+                await ShowOfferAsync(offer);
         }
         finally
         {
-            if (offer is null)
-                SetBusy(false);
+            SetBusy(false);
         }
-    }
-
-    /// <summary>The menu command: checks now and, if there is a newer release, shows the update window.</summary>
-    public async Task CheckAndOfferAsync()
-    {
-        if (await CheckAsync(manual: true) is { } offer)
-            await OfferAsync(offer);
     }
 
     private async Task<UpdateOffer?> LookUpAsync(AppSettings settings, bool manual)
@@ -111,18 +107,6 @@ public sealed class Updater
     }
 
     /// <summary>Shows the update window for <paramref name="offer"/> and carries out what the user picks there.</summary>
-    public async Task OfferAsync(UpdateOffer offer)
-    {
-        try
-        {
-            await ShowOfferAsync(offer);
-        }
-        finally
-        {
-            SetBusy(false);
-        }
-    }
-
     private async Task ShowOfferAsync(UpdateOffer offer)
     {
         if (WindowManager.Instance.Windows.LastOrDefault() is not { } owner)
