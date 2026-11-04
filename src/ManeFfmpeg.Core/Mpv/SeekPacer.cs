@@ -6,7 +6,8 @@ namespace ManeFfmpeg.Core.Mpv;
 /// for a newer one, so seeking at the pointer's pace would show nothing until the pointer stopped (an exact seek in a
 /// long GOP can take hundreds of ms). A seek mpv never reports finished is checked on every
 /// <see cref="CheckInterval"/>: while mpv is still seeking it keeps waiting, however long that takes; otherwise the
-/// next one goes. Thread-safe: seeks come from the UI thread, restarts from mpv's event thread and checks from a timer.
+/// next one goes. Thread-safe: seeks come from the UI thread, restarts from mpv's event thread and checks from a timer;
+/// <see cref="Dispose"/> waits for calls into mpv under way on those threads, so none reaches a destroyed mpv.
 /// </summary>
 /// <param name="send">Sends an exact seek to mpv.</param>
 /// <param name="isSeeking">Whether mpv is still working on a seek.</param>
@@ -28,6 +29,11 @@ internal sealed class SeekPacer(Action<TimeSpan> send, Func<bool> isSeeking, Act
     private TimeSpan _target;
     private DateTime _lastSentAt;
     private bool _disposed;
+    // Calls into mpv under way (send or isSeeking), which Dispose waits for.
+    private int _inFlight;
+
+    /// <summary>The longest <see cref="Dispose"/> waits for a call into mpv to return.</summary>
+    private static readonly TimeSpan DisposeWait = TimeSpan.FromSeconds(5);
 
     /// <summary>Seeks to <paramref name="time"/> now, or as soon as the seek under way has finished.</summary>
     public void Seek(TimeSpan time)
@@ -59,9 +65,21 @@ internal sealed class SeekPacer(Action<TimeSpan> send, Func<bool> isSeeking, Act
     public void Check()
     {
         lock (_gate)
+        {
             if (_disposed || !_seeking)
                 return;
-        if (isSeeking())
+            _inFlight++;
+        }
+        bool stillSeeking;
+        try
+        {
+            stillSeeking = isSeeking();
+        }
+        finally
+        {
+            Exit();
+        }
+        if (stillSeeking)
         {
             lock (_gate)
                 if (!_disposed && _seeking)
@@ -95,11 +113,25 @@ internal sealed class SeekPacer(Action<TimeSpan> send, Func<bool> isSeeking, Act
             _lastSentAt = DateTime.MinValue;
     }
 
-    /// <summary>Nothing more is sent or armed (the player is going away).</summary>
+    /// <summary>
+    /// Nothing more is sent or armed, and calls into mpv under way have returned (the player is about to destroy it).
+    /// </summary>
     public void Dispose()
     {
         lock (_gate)
+        {
             _disposed = true;
+            var until = DateTime.UtcNow + DisposeWait;
+            while (_inFlight > 0 && until - DateTime.UtcNow is { Ticks: > 0 } left)
+                Monitor.Wait(_gate, left);
+        }
+    }
+
+    private void Exit()
+    {
+        lock (_gate)
+            if (--_inFlight == 0)
+                Monitor.PulseAll(_gate);
     }
 
     private void Flush()
@@ -116,10 +148,19 @@ internal sealed class SeekPacer(Action<TimeSpan> send, Func<bool> isSeeking, Act
             {
                 _target = target;
                 _lastSentAt = _now();
+                _inFlight++;
             }
             armCheck(_seeking);
         }
-        if (next is { } time)
+        if (next is not { } time)
+            return;
+        try
+        {
             send(time);
+        }
+        finally
+        {
+            Exit();
+        }
     }
 }

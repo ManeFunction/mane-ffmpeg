@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   finding an update and showing it.
 - Restarting for an update no longer stops a running export in one window when a later window answers *Cancel*: exports
   stop only once every window has agreed to close.
+- A possible crash when closing a window while the preview was still waiting on a slow seek.
 
 ## [1.0.0] - 2026-11-02
 ### Added

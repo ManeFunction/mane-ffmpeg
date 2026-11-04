@@ -113,4 +113,27 @@ public class SeekPacerTests
         f.Pacer.Check();
         Assert.Equal([S(1)], f.Sent);
     }
+
+    [Fact]
+    public async Task Disposing_waits_for_a_check_that_is_asking_mpv()
+    {
+        using var asking = new ManualResetEventSlim();
+        using var answer = new ManualResetEventSlim();
+        var pacer = new SeekPacer(_ => { }, () =>
+        {
+            asking.Set();
+            answer.Wait(TimeSpan.FromSeconds(10));
+            return true;
+        }, _ => { });
+        pacer.Seek(S(1));
+        var check = Task.Run(pacer.Check);
+        Assert.True(asking.Wait(TimeSpan.FromSeconds(5)));
+
+        var dispose = Task.Run(pacer.Dispose);
+        await Task.Delay(200);
+        Assert.False(dispose.IsCompleted, "Dispose returned while the check was still calling into mpv");
+        answer.Set();
+        await dispose.WaitAsync(TimeSpan.FromSeconds(5));
+        await check.WaitAsync(TimeSpan.FromSeconds(5));
+    }
 }
