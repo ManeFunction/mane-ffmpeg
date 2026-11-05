@@ -147,10 +147,7 @@ public class ReplacedAudioPlannerTests
 
     private static ExportJob Job(Preset preset, IReadOnlyDictionary<string, MediaInfo> media, params Clip[] clips) => new()
     {
-        State = new ProjectState([new SourceMedia { Id = "a", Path = "/m/a.src" }], new Timeline([.. clips]))
-        {
-            AudioFiles = [new SourceMedia { Id = "t", Path = "/m/t.m4a" }],
-        },
+        State = new ProjectState([new SourceMedia { Id = "a", Path = "/m/a.src" }], new Timeline([.. clips]), [new SourceMedia { Id = "t", Path = "/m/t.m4a" }]),
         Media = media,
         Preset = preset,
         OutputPath = "/out/edit.mp4",

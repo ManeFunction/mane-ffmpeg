@@ -125,7 +125,7 @@ public static class ProjectFile
         {
             // Clips of a video that isn't listed are dropped; a replacement whose audio file is gone leaves the clip
             // with its own audio.
-            State = ProjectEditor.DropOrphans(new ProjectState(sources, new Timeline(clips)) { AudioFiles = audioFiles }),
+            State = ProjectEditor.DropOrphans(new ProjectState(sources, new Timeline(clips), audioFiles)),
             Export = dto.Export ?? new ExportSettings(),
             Layout = dto.Layout ?? new ProjectLayout(),
         };

@@ -244,10 +244,7 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
         var work = Path.Combine(media.Directory, "work-" + Guid.NewGuid().ToString("N"));
         var plan = ExportPlanner.Plan(new ExportJob
         {
-            State = new ProjectState([new SourceMedia { Id = "a", Path = media.Sync30 }], new Timeline([.. clips]))
-            {
-                AudioFiles = [new SourceMedia { Id = "t", Path = media.Tone }],
-            },
+            State = new ProjectState([new SourceMedia { Id = "a", Path = media.Sync30 }], new Timeline([.. clips]), [new SourceMedia { Id = "t", Path = media.Tone }]),
             Media = infos, Preset = preset, OutputPath = output, WorkDirectory = work, Keyframes = keyframes,
         });
         var result = await new ExportRunner(FfmpegFixture.Tools!).RunAsync(plan, null, CancellationToken.None);

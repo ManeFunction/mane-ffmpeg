@@ -742,10 +742,7 @@ public class AudioLayoutTests
     {
         var video = new MediaInfo { Duration = S(10), AudioStreams = [new AudioStreamInfo { Index = 1, Codec = "aac", SampleRate = 48000, Channels = 2 }] };
         var tone = new MediaInfo { Duration = S(3), AudioStreams = [new AudioStreamInfo { Index = 0, Codec = "aac", SampleRate = 44100, Channels = 2, Duration = S(2.5) }] };
-        var state = new ProjectState([new SourceMedia { Id = "s", Path = "/m/a.mp4" }], new Timeline([]))
-        {
-            AudioFiles = [new SourceMedia { Id = "f", Path = "/m/t.m4a" }],
-        };
+        var state = new ProjectState([new SourceMedia { Id = "s", Path = "/m/a.mp4" }], new Timeline([]), [new SourceMedia { Id = "f", Path = "/m/t.m4a" }]);
         var media = new Dictionary<string, MediaInfo> { ["s"] = video, ["f"] = tone };
 
         Assert.Equal("s", state.HeardAudio(Own(0, 1, 0), media.GetValueOrDefault)!.File.Id);
@@ -910,10 +907,7 @@ public class AudioReplacementTests
             Directory.CreateDirectory(Path.GetDirectoryName(song)!);
             File.WriteAllText(song, "x");
             var clip = C("c", 1, 4) with { ReplacedAudio = new AudioReplacement { FileId = "f", Anchor = S(1), Offset = S(-2.5), Loop = true } };
-            var state = new ProjectState([new SourceMedia { Id = "s", Path = "/m/a.mp4" }], new Timeline([clip]))
-            {
-                AudioFiles = [new SourceMedia { Id = "f", Path = song, AudioStreamIndex = 1 }],
-            };
+            var state = new ProjectState([new SourceMedia { Id = "s", Path = "/m/a.mp4" }], new Timeline([clip]), [new SourceMedia { Id = "f", Path = song, AudioStreamIndex = 1 }]);
             var path = Path.Combine(dir.FullName, "p.mfvp");
             var json = ProjectFile.Serialize(new Project { State = state }, path);
             Assert.Contains("\"version\": 2", json);
@@ -948,7 +942,7 @@ public class AudioReplacementTests
     };
 
     private static ProjectState Replaced(Clip clip) =>
-        new ProjectState([new SourceMedia { Id = "s", Path = "/m/a.mp4" }], new Timeline([clip])) { AudioFiles = [new SourceMedia { Id = "f", Path = "/m/t.m4a" }] };
+        new ProjectState([new SourceMedia { Id = "s", Path = "/m/a.mp4" }], new Timeline([clip]), [new SourceMedia { Id = "f", Path = "/m/t.m4a" }]);
 
     [Fact]
     public void Edl_plays_the_replacement_slipped_or_looped()
@@ -983,7 +977,7 @@ public class ProjectEditorTests
     private static Clip Plays(string id, string? fileId) =>
         Clip.Create("v", S(0), S(2)) with { Id = id, ReplacedAudio = fileId is null ? null : new AudioReplacement { FileId = fileId } };
 
-    private static ProjectState State(params Clip[] clips) => new([Video], new Timeline([.. clips])) { AudioFiles = [Song] };
+    private static ProjectState State(params Clip[] clips) => new([Video], new Timeline([.. clips]), [Song]);
 
     [Fact]
     public void A_path_is_listed_once_and_keeps_its_id()

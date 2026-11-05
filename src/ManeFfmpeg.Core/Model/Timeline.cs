@@ -131,12 +131,14 @@ public sealed record Timeline
 }
 
 /// <summary>The undoable part of a project.</summary>
-public sealed record ProjectState(ImmutableList<SourceMedia> Sources, Timeline Timeline)
+/// <param name="Sources">The videos clips are cut from.</param>
+/// <param name="AudioFiles">Imported audio files that can replace clips' sound.</param>
+public sealed record ProjectState(ImmutableList<SourceMedia> Sources, Timeline Timeline, ImmutableList<SourceMedia> AudioFiles)
 {
-    public static readonly ProjectState Empty = new([], Timeline.Empty);
+    public static readonly ProjectState Empty = new([], Timeline.Empty, []);
 
-    /// <summary>Imported audio files that can replace clips' sound.</summary>
-    public ImmutableList<SourceMedia> AudioFiles { get; init; } = [];
+    /// <summary>A project of videos only.</summary>
+    public ProjectState(ImmutableList<SourceMedia> sources, Timeline timeline) : this(sources, timeline, []) { }
 
     public SourceMedia? Source(string id) => Sources.Find(s => s.Id == id);
 
