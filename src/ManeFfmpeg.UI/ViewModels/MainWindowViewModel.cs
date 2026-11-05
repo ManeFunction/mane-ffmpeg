@@ -74,14 +74,25 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable, IA
     /// <summary>The Audio tab: imported audio files that can replace clips' sound.</summary>
     public ObservableCollection<SourceItemViewModel> AudioFiles { get; } = [];
 
-    /// <summary>The Files panel's tab: 0 is Video, 1 is Audio.</summary>
+    /// <summary>The Files panel's tab: the videos or the audio files.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsVideoTab), nameof(IsAudioTab))]
-    public partial int FilesTab { get; set; }
+    [NotifyPropertyChangedFor(nameof(IsVideoTab), nameof(IsAudioTab), nameof(FilesTabIndex))]
+    public partial FileKind FilesTab { get; set; }
 
-    public bool IsVideoTab => FilesTab == 0;
+    /// <summary>The tab control's selected index; its tabs are in <see cref="FileKind"/> order.</summary>
+    public int FilesTabIndex
+    {
+        get => (int)FilesTab;
+        set
+        {
+            if (Enum.IsDefined((FileKind)value))
+                FilesTab = (FileKind)value;
+        }
+    }
 
-    public bool IsAudioTab => FilesTab == 1;
+    public bool IsVideoTab => FilesTab == FileKind.Video;
+
+    public bool IsAudioTab => FilesTab == FileKind.Audio;
 
     /// <summary>What's known about each source: status, probe result, waveform, keyframes.</summary>
     public SourceCatalog Catalog => _catalog;
@@ -256,7 +267,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable, IA
     private void ShowAdded(AddedFiles added, string? replacedClip)
     {
         if (added.AudioFiles.Count > 0)
-            FilesTab = 1;
+            FilesTab = FileKind.Audio;
         StatusMessage = added.Skipped.Count > 0 ? "Skipped: " + string.Join("; ", added.Skipped)
             : replacedClip is not null ? ReplacedMessage(added.AudioFiles[0])
             : added.AudioFiles.Count > 0 ? AudioAddedMessage(added.AudioFiles.Count)
@@ -365,7 +376,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable, IA
         var preset = await Export.ResolvePresetAsync(project.Export);
         Sources.Clear();
         AudioFiles.Clear();
-        FilesTab = 0;
+        FilesTab = FileKind.Video;
         FilePath = path;
         Layout = project.Layout;
         Export.ApplyExportSettings(project.Export, preset);

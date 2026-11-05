@@ -105,7 +105,7 @@
                             <TextBlock DockPanel.Dock="Bottom" Text="{Binding ToolsError}" Foreground="{StaticResource ErrorBrush}"
                                        TextWrapping="Wrap" FontSize="12" Margin="2,6,0,0"
                                        IsVisible="{Binding ToolsError, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                            <TabControl x:Name="FilesTabs" Classes="files" SelectedIndex="{Binding FilesTab}" Padding="0">
+                            <TabControl x:Name="FilesTabs" Classes="files" SelectedIndex="{Binding FilesTabIndex}" Padding="0">
                                 <TabItem Header="Video">
                                     <Panel>
                                         <TextBlock Text="Drop video files here or use “Add videos…”." Classes="dim" TextWrapping="Wrap"

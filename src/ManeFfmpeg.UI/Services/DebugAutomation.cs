@@ -68,7 +68,7 @@ internal static class DebugAutomation
                         await vm.AddAudioAsync(arg.Split('|'));
                         break;
                     case "files-tab":
-                        vm.FilesTab = arg == "audio" ? 1 : 0;
+                        vm.FilesTab = arg == "audio" ? FileKind.Audio : FileKind.Video;
                         break;
                     case "replace-audio":
                     {
@@ -511,7 +511,7 @@ internal static class DebugAutomation
     /// <summary>Synthetic drag of an Audio tab item onto the timeline's audio row at <paramref name="at"/> seconds.</summary>
     private static async Task DragAudioAsync(MainWindow window, int index, double at)
     {
-        window.ViewModel.FilesTab = 1;
+        window.ViewModel.FilesTab = FileKind.Audio;
         await Task.Delay(300);
         var list = window.AudioList;
         var item = list.ContainerFromIndex(index) ?? throw new InvalidOperationException("no such audio file");
