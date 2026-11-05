@@ -8,7 +8,7 @@ namespace ManeFfmpeg.Core.Persistence;
 /// <summary>The user's export presets, shared by all windows and saved to presets.json.</summary>
 public sealed class PresetStore
 {
-    private const int CurrentVersion = 3;
+    private const int CurrentVersion = 4;
 
     private readonly string _path;
     private List<Preset> _presets;
@@ -25,6 +25,8 @@ public sealed class PresetStore
     /// <summary>
     /// Version 2 made "for storage" keep more detail and kept the old settings as "harsh": an unedited
     /// "for storage" gets the new arguments, and "harsh" is added next to it. Version 3 added "share".
+    /// Version 4 renamed the built-ins (a name the user edited is kept), moved "share" to second
+    /// place and added "copy to mp4", taking over the user's own "plane copy but mp4" if they made one.
     /// </summary>
     private static bool Migrate(List<Preset> presets, int version)
     {
@@ -36,10 +38,33 @@ public sealed class PresetStore
             if (presets.All(p => p.Id != Preset.Harsh.Id))
                 presets.Insert(storage >= 0 ? storage + 1 : 0, Preset.Harsh);
         }
-        if (presets.All(p => p.Id != Preset.Share.Id))
+        if (version < 3 && presets.All(p => p.Id != Preset.Share.Id))
         {
             var harsh = presets.FindIndex(p => p.Id == Preset.Harsh.Id);
             presets.Insert(harsh >= 0 ? harsh + 1 : presets.Count, Preset.Share);
+        }
+        if (version < 4)
+        {
+            for (var i = 0; i < presets.Count; i++)
+            {
+                if (Preset.V3Names.TryGetValue(presets[i].Id, out var oldName) && presets[i].Name == oldName)
+                    presets[i] = presets[i] with { Name = Preset.BuiltIns.First(b => b.Id == presets[i].Id).Name };
+            }
+            var share = presets.FindIndex(p => p.Id == Preset.Share.Id);
+            if (share > 1)
+            {
+                var preset = presets[share];
+                presets.RemoveAt(share);
+                presets.Insert(1, preset);
+            }
+            var own = presets.FindIndex(p => p.Id != Preset.CopyToMp4.Id && p.Name is "plane copy but mp4" or "copy to mp4 (w/o encode)");
+            if (own >= 0)
+                presets[own] = presets[own] with { Id = Preset.CopyToMp4.Id, Name = Preset.CopyToMp4.Name };
+            else if (presets.All(p => p.Id != Preset.CopyToMp4.Id))
+            {
+                var copy = presets.FindIndex(p => p.Id == Preset.PlaneCopy.Id);
+                presets.Insert(copy >= 0 ? copy + 1 : presets.Count, Preset.CopyToMp4);
+            }
         }
         return true;
     }

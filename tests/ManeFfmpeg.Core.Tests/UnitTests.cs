@@ -463,9 +463,9 @@ public class PresetStoreTests
     {
         var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");
         var store = new PresetStore(path);
-        Assert.Equal(["for storage", "harsh", "share", "plane copy"], store.Presets.Select(p => p.Name));
+        Assert.Equal(["for storage (balanced)", "for share (compatibility)", "harsh compression", "copy (w/o encode)", "copy to mp4 (w/o encode)"], store.Presets.Select(p => p.Name));
         Assert.Contains("yuv420p10le", store.Presets[0].Arguments);
-        Assert.Equal("-c:v libx265 -crf 28 -preset slow -c:a copy", store.Presets[1].Arguments);
+        Assert.Equal("-c:v libx265 -crf 28 -preset slow -c:a copy", store.Presets[2].Arguments);
     }
 
     [Fact]
@@ -476,10 +476,10 @@ public class PresetStoreTests
         {
             var store = new PresetStore(path);
             store.Move(Preset.PlaneCopy.Id, 0);
-            Assert.Equal(["plane copy", "for storage", "harsh", "share"], store.Presets.Select(p => p.Name));
+            Assert.Equal(["copy (w/o encode)", "for storage (balanced)", "for share (compatibility)", "harsh compression", "copy to mp4 (w/o encode)"], store.Presets.Select(p => p.Name));
             // Past the end means last.
             store.Move(Preset.ForStorage.Id, 99);
-            Assert.Equal(["plane copy", "harsh", "share", "for storage"], new PresetStore(path).Presets.Select(p => p.Name));
+            Assert.Equal(["copy (w/o encode)", "for share (compatibility)", "harsh compression", "copy to mp4 (w/o encode)", "for storage (balanced)"], new PresetStore(path).Presets.Select(p => p.Name));
         }
         finally
         {
@@ -502,9 +502,9 @@ public class PresetStoreTests
         try
         {
             var store = new PresetStore(path);
-            Assert.Equal(["for storage", "harsh", "share", "mine"], store.Presets.Select(p => p.Name));
+            Assert.Equal(["for storage (balanced)", "for share (compatibility)", "harsh compression", "mine", "copy to mp4 (w/o encode)"], store.Presets.Select(p => p.Name));
             Assert.Equal(edited ? storageArgs : Preset.ForStorage.Arguments, store.Presets[0].Arguments);
-            Assert.Contains("\"version\": 3", File.ReadAllText(path));
+            Assert.Contains("\"version\": 4", File.ReadAllText(path));
 
             // A second load doesn't migrate again (an edited preset stays as the user left it).
             Assert.Equal(store.Presets.Select(p => p.Arguments), new PresetStore(path).Presets.Select(p => p.Arguments));
@@ -528,9 +528,55 @@ public class PresetStoreTests
         try
         {
             var store = new PresetStore(path);
-            Assert.Equal(["for storage", "harsh", "share", "mine"], store.Presets.Select(p => p.Name));
+            Assert.Equal(["for storage (balanced)", "for share (compatibility)", "harsh compression", "mine", "copy to mp4 (w/o encode)"], store.Presets.Select(p => p.Name));
             Assert.Equal("-c:v libx265 -crf 20 -c:a copy", store.Presets[0].Arguments);
-            Assert.Contains("\"version\": 3", File.ReadAllText(path));
+            Assert.Contains("\"version\": 4", File.ReadAllText(path));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Version_3_file_renames_built_ins_unless_edited_and_moves_share_second()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, """
+            { "version": 3, "presets": [
+              { "id": "builtin-for-storage", "name": "my storage", "arguments": "-c:v libx265 -crf 20 -c:a copy" },
+              { "id": "builtin-harsh", "name": "harsh", "arguments": "-c:v libx265 -crf 28 -c:a copy" },
+              { "id": "builtin-share", "name": "share", "arguments": "-c:v libx264" },
+              { "id": "builtin-plane-copy", "name": "plane copy", "arguments": "-c:v copy -c:a copy" },
+              { "id": "mine", "name": "plane copy but mp4", "arguments": "-c:v copy -c:a copy" } ] }
+            """);
+        try
+        {
+            var store = new PresetStore(path);
+            Assert.Equal(
+                ["my storage", "for share (compatibility)", "harsh compression", "copy (w/o encode)", "copy to mp4 (w/o encode)"],
+                store.Presets.Select(p => p.Name));
+            Assert.Contains("\"version\": 4", File.ReadAllText(path));
+            Assert.Equal(Preset.CopyToMp4.Id, store.Presets[^1].Id);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Version_3_file_without_a_copy_to_mp4_preset_gains_the_built_in_after_copy()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, """
+            { "version": 3, "presets": [
+              { "id": "builtin-plane-copy", "name": "plane copy", "arguments": "-c:v copy -c:a copy" },
+              { "id": "mine", "name": "mine", "arguments": "-c:v libx264" } ] }
+            """);
+        try
+        {
+            Assert.Equal(["copy (w/o encode)", "copy to mp4 (w/o encode)", "mine"], new PresetStore(path).Presets.Select(p => p.Name));
         }
         finally
         {
@@ -596,7 +642,7 @@ public class PresetStoreTests
     public void Missing_fields_get_defaults()
     {
         var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");
-        File.WriteAllText(path, """{ "version": 3, "presets": [ { "id": "mine", "name": "mine", "arguments": "-c:v libx264" } ] }""");
+        File.WriteAllText(path, """{ "version": 4, "presets": [ { "id": "mine", "name": "mine", "arguments": "-c:v libx264" } ] }""");
         try
         {
             var preset = Assert.Single(new PresetStore(path).Presets);
@@ -920,7 +966,7 @@ public class AudioReplacementTests
             // A replacement whose audio file is gone falls back to the clip's own audio.
             var orphan = ProjectFile.Deserialize(json.Replace("\"id\": \"f\"", "\"id\": \"g\""), path);
             Assert.Null(orphan.State.Timeline.Clips[0].ReplacedAudio);
-            Assert.Throws<ProjectFileException>(() => ProjectFile.Deserialize(json.Replace("\"version\": 2", "\"version\": 3"), path));
+            Assert.Throws<ProjectFileException>(() => ProjectFile.Deserialize(json.Replace("\"version\": 2", "\"version\": 4"), path));
         }
         finally
         {

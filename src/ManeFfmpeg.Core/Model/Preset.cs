@@ -31,7 +31,7 @@ public sealed record Preset
     public static readonly Preset ForStorage = new()
     {
         Id = "builtin-for-storage",
-        Name = "for storage",
+        Name = "for storage (balanced)",
         Arguments = "-c:v libx265 -crf 23 -preset slow -pix_fmt yuv420p10le -x265-params aq-mode=3:psy-rdoq=1.0:no-sao=1 -c:a copy",
         Extension = "mp4",
     };
@@ -40,7 +40,7 @@ public sealed record Preset
     public static readonly Preset Harsh = new()
     {
         Id = "builtin-harsh",
-        Name = "harsh",
+        Name = "harsh compression",
         Arguments = ForStorageV1Arguments,
         Extension = "mp4",
     };
@@ -53,7 +53,7 @@ public sealed record Preset
     public static readonly Preset Share = new()
     {
         Id = "builtin-share",
-        Name = "share",
+        Name = "for share (compatibility)",
         Arguments = "-c:v libx264 -crf 20 -preset medium -profile:v high -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart",
         Extension = "mp4",
     };
@@ -61,12 +61,30 @@ public sealed record Preset
     public static readonly Preset PlaneCopy = new()
     {
         Id = "builtin-plane-copy",
-        Name = "plane copy",
+        Name = "copy (w/o encode)",
         Arguments = "-c:v copy -c:a copy",
         Extension = "",
     };
 
-    public static IReadOnlyList<Preset> BuiltIns { get; } = [ForStorage, Harsh, Share, PlaneCopy];
+    /// <summary>Stream copy into an MP4, for sources in another container.</summary>
+    public static readonly Preset CopyToMp4 = new()
+    {
+        Id = "builtin-copy-mp4",
+        Name = "copy to mp4 (w/o encode)",
+        Arguments = "-c:v copy -c:a copy",
+        Extension = "mp4",
+    };
+
+    public static IReadOnlyList<Preset> BuiltIns { get; } = [ForStorage, Share, Harsh, PlaneCopy, CopyToMp4];
+
+    /// <summary>Built-in names before version 4 of the presets file, by preset id.</summary>
+    public static readonly IReadOnlyDictionary<string, string> V3Names = new Dictionary<string, string>
+    {
+        [ForStorage.Id] = "for storage",
+        [Harsh.Id] = "harsh",
+        [Share.Id] = "share",
+        [PlaneCopy.Id] = "plane copy",
+    };
 
     /// <summary>"for storage" arguments before version 2 of the presets file.</summary>
     public const string ForStorageV1Arguments = "-c:v libx265 -crf 28 -preset slow -c:a copy";

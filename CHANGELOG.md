@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Hold Shift while dragging the playhead to snap it to clip edges and audio edges: where a clip's sound starts or runs
   out inside it (shifted audio, or audio shorter than the clip) and where looped audio starts again. Pressing or
   releasing Shift mid-drag snaps or lets go at once.
+- **copy to mp4 (w/o encode)** built-in preset: stream copy into an MP4. A preset of your own named *plane copy but mp4*
+  becomes this one.
+
+### Changed
+- Built-in presets are renamed: *for storage (balanced)*, *for share (compatibility)* (was *share*, now second in the
+  list), *harsh compression* and *copy (w/o encode)* (was *plane copy*). Existing presets files are updated, except
+  names you edited yourself.
 
 ### Fixed
 - Exports that join clips with different audio formats keep the best of them: the highest sample rate and the widest

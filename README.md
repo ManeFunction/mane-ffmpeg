@@ -35,10 +35,11 @@ Built with C#, .NET 10 and Avalonia 12.
   - Double-click a video in the list to preview it on its own, mark In/Out (I/O) and add the range (Enter).
 - **Presets**
   - Raw ffmpeg output options, editable in *Presets → Edit Presets…*. Built in:
-    - **for storage** (default): `-c:v libx265 -crf 23 -preset slow -pix_fmt yuv420p10le -x265-params aq-mode=3:psy-rdoq=1.0:no-sao=1 -c:a copy` → `.mp4`. 10-bit HEVC tuned to keep detail, so moving objects don't smear.
-    - **harsh**: `-c:v libx265 -crf 28 -preset slow -c:a copy` → `.mp4`. Smaller files, softer in motion.
-    - **share**: `-c:v libx264 -crf 20 -preset medium -profile:v high -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart` → `.mp4`. Everyday video for messengers and social media: H.264 + AAC plays everywhere and starts before it finishes downloading.
-    - **plane copy**: `-c:v copy -c:a copy` → same container as the source
+    - **for storage (balanced)** (default): `-c:v libx265 -crf 23 -preset slow -pix_fmt yuv420p10le -x265-params aq-mode=3:psy-rdoq=1.0:no-sao=1 -c:a copy` → `.mp4`. 10-bit HEVC tuned to keep detail, so moving objects don't smear.
+    - **for share (compatibility)**: `-c:v libx264 -crf 20 -preset medium -profile:v high -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart` → `.mp4`. Everyday video for messengers and social media: H.264 + AAC plays everywhere and starts before it finishes downloading.
+    - **harsh compression**: `-c:v libx265 -crf 28 -preset slow -c:a copy` → `.mp4`. Smaller files, softer in motion.
+    - **copy (w/o encode)**: `-c:v copy -c:a copy` → same container as the source
+    - **copy to mp4 (w/o encode)**: `-c:v copy -c:a copy` → `.mp4`. The same stream copy, for sources in another container.
   - Add, duplicate, delete, or restore the built-ins.
 - **Export**
   - The progress bar, ETA, speed and Cancel button all stay inside the window.
@@ -109,7 +110,7 @@ The planner (`src/ManeFfmpeg.Core/Ffmpeg/ExportPlanner.cs`) picks one of four st
 | One untouched clip (whole file, no offset) | Your preset as-is: `ffmpeg -i SRC <preset> OUT` |
 | One trimmed or offset clip, preset copies audio | The audio is cut losslessly first, then muxed with the encoded video, so `-c:a copy` is kept |
 | Several clips or offsets, video encoded | One `-filter_complex` with trimmed inputs, per-clip audio slip (`adelay`/`apad`/`atrim`) and `concat`. `-c:a copy` falls back to the preset's audio fallback (default `-c:a aac -b:a 256k`) |
-| Video copied ("plane copy") | ffconcat stream copy. Cuts start on the keyframe at or before each in point (turn on *Snap to keyframes* to see exact cuts). With audio offsets or replaced audio, only the audio is re-encoded |
+| Video copied (*copy (w/o encode)*) | ffconcat stream copy. Cuts start on the keyframe at or before each in point (turn on *Snap to keyframes* to see exact cuts). With audio offsets or replaced audio, only the audio is re-encoded |
 
 Some details:
 - Clips from differently sized sources are scaled and padded to the first clip's size and frame rate.
