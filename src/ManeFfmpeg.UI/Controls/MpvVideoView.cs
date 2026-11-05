@@ -46,14 +46,14 @@ public sealed class MpvVideoView : Control
     private int _front;
     private WriteableBitmap? Front => _bitmaps[_front];
 
+    private readonly FrameStats _stats = new();
+
 #if DEBUG
     /// <summary>Diagnostics for the automation script: wake-ups, frames mpv rendered, frames shown.</summary>
-    public (int Wakes, int Rendered, int Presented) Counters => (_wakes, _rendered, _presented);
+    public (int Wakes, int Rendered, int Presented) Counters => _stats.Counters;
 
     /// <summary>Total milliseconds spent in mpv's render call, waiting for the frame lock in Present, and copying.</summary>
-    public (double Render, double PresentWait, double Copy) Timings =>
-        (_renderTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency, _waitTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency,
-            _copyTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
+    public (double Render, double PresentWait, double Copy) Timings => _stats.Timings;
 
 #pragma warning disable CS0618 // debug snapshot only
     public void SaveFrame(string path) => Front?.Save(path);
@@ -70,15 +70,6 @@ public sealed class MpvVideoView : Control
             return $"{w}x{h} bgra=({p[0]},{p[1]},{p[2]},{p[3]})";
         }
     }
-#endif
-
-#if DEBUG
-    private int _wakes;
-    private int _rendered;
-    private int _presented;
-    private long _renderTicks;
-    private long _waitTicks;
-    private long _copyTicks;
 #endif
 
     static MpvVideoView()
@@ -177,9 +168,7 @@ public sealed class MpvVideoView : Control
             _wake.WaitOne();
             if (_stop)
                 break;
-#if DEBUG
-            Interlocked.Increment(ref _wakes);
-#endif
+            _stats.Woke();
             lock (_renderLock)
             {
                 if (_renderer is not { } renderer)
@@ -193,15 +182,11 @@ public sealed class MpvVideoView : Control
                 if (width <= 0 || height <= 0)
                     continue;
                 _drawing.Resize(width, height);
-#if DEBUG
-                var renderStart = System.Diagnostics.Stopwatch.GetTimestamp();
-#endif
+                long renderStart = 0;
+                FrameStats.Start(ref renderStart);
                 if (!renderer.Render(width, height, width * 4, _drawing.Pixels))
                     continue;
-#if DEBUG
-                Interlocked.Add(ref _renderTicks, System.Diagnostics.Stopwatch.GetTimestamp() - renderStart);
-                Interlocked.Increment(ref _rendered);
-#endif
+                _stats.Rendered(renderStart);
                 lock (_frameLock)
                 {
                     (_latest, _drawing) = (_drawing, _latest);
@@ -216,15 +201,11 @@ public sealed class MpvVideoView : Control
     private unsafe void Present()
     {
         Interlocked.Exchange(ref _presentPending, 0);
-#if DEBUG
-        var waitStart = System.Diagnostics.Stopwatch.GetTimestamp();
-#endif
+        long waitStart = 0, copyStart = 0;
+        FrameStats.Start(ref waitStart);
         lock (_frameLock)
         {
-#if DEBUG
-            var copyStart = System.Diagnostics.Stopwatch.GetTimestamp();
-            _waitTicks += copyStart - waitStart;
-#endif
+            _stats.Waited(waitStart, ref copyStart);
             if (!_latest.Ready)
                 return;
             var size = new PixelSize(_latest.Width, _latest.Height);
@@ -244,10 +225,7 @@ public sealed class MpvVideoView : Control
                         Buffer.MemoryCopy((byte*)_latest.Pixels + y * rowBytes, (byte*)target.Address + y * target.RowBytes, rowBytes, rowBytes);
             }
             _front = back;
-#if DEBUG
-            _copyTicks += System.Diagnostics.Stopwatch.GetTimestamp() - copyStart;
-            _presented++;
-#endif
+            _stats.Presented(copyStart);
         }
         InvalidateVisual();
     }
