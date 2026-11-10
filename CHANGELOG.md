@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Added
+- Crop the picture right on the preview: click *Crop* (or press C), then drag the rectangle, its edges or corners, or
+  drag outside it to draw a new one. Hold Shift to keep its shape, or pick *Original*, 16:9, 9:16, 4:3, 4:5 or 1:1.
+  The rectangle shows the output size in pixels. *Done* (Enter or Esc) shows the cropped picture, rendered larger so it
+  stays sharp. *Edit → Crop Picture* and *Reset Crop* do the same from the menu, and each drag can be undone.
+- Exports cut the crop from the joined picture (after clips of other sizes are fitted to the first) with ffmpeg's
+  `crop`, before the preset's own `-vf`. Presets that copy video refuse a cropped project. Projects with a crop are
+  saved as format 3, which older versions refuse to open instead of silently dropping the crop.
 
 ## [2.0.0] - 2026-11-05
 ### Added

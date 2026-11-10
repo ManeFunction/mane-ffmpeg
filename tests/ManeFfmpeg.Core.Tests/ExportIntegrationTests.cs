@@ -29,6 +29,9 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
         In = TimeSpan.FromSeconds(inS), Out = TimeSpan.FromSeconds(outS), AudioOffset = TimeSpan.FromMilliseconds(offsetMs),
     };
 
+    /// <summary>The crop the next export uses (xUnit makes a new instance per test).</summary>
+    private CropRect? _crop;
+
     private async Task<(ExportPlan Plan, ExportResult Result, string Output)> ExportAsync(
         Preset preset, string extension, IEnumerable<(string Id, string Path)> sources, params Clip[] clips)
     {
@@ -46,7 +49,7 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
         var work = Path.Combine(media.Directory, "work-" + Guid.NewGuid().ToString("N"));
         var plan = ExportPlanner.Plan(new ExportJob
         {
-            State = new ProjectState([.. list], new Timeline([.. clips])),
+            State = new ProjectState([.. list], new Timeline([.. clips])).WithCrop(_crop),
             Media = infos,
             Preset = preset,
             OutputPath = output,
@@ -169,6 +172,30 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
         Assert.Equal(ExportMode.Passthrough, plan.Mode);
         Assert.Contains("copy", plan.Steps[0].Arguments);
         Assert.InRange((await media.ProbeAsync(output)).Duration.TotalSeconds, 11.9, 12.1);
+    }
+
+    [FfmpegFact]
+    public async Task Crop_cuts_the_picture_in_every_encoding_mode_and_keeps_sync()
+    {
+        _crop = new CropRect(0.25, 0.1, 0.5, 0.6);
+        var (whole, _, wholeOut) = await ExportAsync(FastEncode, "mp4", [("a", media.Sync30)], C("a", 0, 12));
+        var (single, _, singleOut) = await ExportAsync(FastEncode, "mp4", [("a", media.Sync30)], C("a", 3.5, 8.0, +120));
+        var (joined, _, joinedOut) = await ExportAsync(FastEncode, "mp4", [("a", media.Sync30), ("c", media.Sync25)],
+            C("a", 3.5, 7.0), C("c", 2.5, 5.1, -80));
+        Assert.Equal([ExportMode.Passthrough, ExportMode.SingleClipAudioCopy, ExportMode.Encode], [whole.Mode, single.Mode, joined.Mode]);
+
+        var first = (await media.ProbeAsync(media.Sync30)).Video!;
+        var expected = _crop.ToPixels(first.Width, first.Height);
+        foreach (var output in new[] { wholeOut, singleOut, joinedOut })
+        {
+            var video = (await media.ProbeAsync(output)).Video!;
+            Assert.Equal((expected.Width, expected.Height), (video.Width, video.Height));
+        }
+        // The flashes fill the frame, so they still show; cropping doesn't move picture against sound.
+        var (flashes, beeps, _) = await media.MeasureAsync(joinedOut);
+        // a 3.5–7.0 flashes at 4 and 6; c from 2.5 flashes at 4, 1.5 s into it, with its audio 80 ms early.
+        AssertTimes([0.5, 2.5, 5.0], flashes, FrameTolerance, "flashes");
+        AssertTimes([0.5, 2.5, 4.92], beeps, BeepTolerance, "beeps");
     }
 
     [FfmpegFact]

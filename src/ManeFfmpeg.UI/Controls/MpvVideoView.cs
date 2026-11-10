@@ -7,6 +7,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using ManeFfmpeg.Core.Model;
 using ManeFfmpeg.Core.Mpv;
 
 namespace ManeFfmpeg.UI.Controls;
@@ -15,7 +16,8 @@ namespace ManeFfmpeg.UI.Controls;
 /// Shows an <see cref="MpvPlayer"/> using mpv's software renderer. A render thread draws each new frame
 /// into a buffer of its own sized to the control's pixels (mpv scales and letterboxes), then swaps it with
 /// the latest finished frame, which the UI thread copies into a <see cref="WriteableBitmap"/>. mpv draws
-/// outside the lock the UI thread takes, so a slow frame never holds up clicks.
+/// outside the lock the UI thread takes, so a slow frame never holds up clicks. With a <see cref="Crop"/>, only that
+/// part of the output frame is shown, filling the control, and mpv renders larger so it stays sharp.
 /// </summary>
 public sealed class MpvVideoView : Control
 {
@@ -24,6 +26,18 @@ public sealed class MpvVideoView : Control
 
     public static readonly StyledProperty<string?> MessageProperty =
         AvaloniaProperty.Register<MpvVideoView, string?>(nameof(Message));
+
+    /// <summary>Width over height of the picture mpv shows (0 = unknown: the frame is drawn as rendered).</summary>
+    public static readonly StyledProperty<double> PictureAspectProperty =
+        AvaloniaProperty.Register<MpvVideoView, double>(nameof(PictureAspect));
+
+    /// <summary>Width over height of the output frame the picture is fitted into (0 = the picture's own).</summary>
+    public static readonly StyledProperty<double> FrameAspectProperty =
+        AvaloniaProperty.Register<MpvVideoView, double>(nameof(FrameAspect));
+
+    /// <summary>The part of the output frame to show; null shows all of it.</summary>
+    public static readonly StyledProperty<CropRect?> CropProperty =
+        AvaloniaProperty.Register<MpvVideoView, CropRect?>(nameof(Crop));
 
     private const int MaxPixels = 1920 * 1080;
 
@@ -74,7 +88,25 @@ public sealed class MpvVideoView : Control
 
     static MpvVideoView()
     {
-        AffectsRender<MpvVideoView>(MessageProperty);
+        AffectsRender<MpvVideoView>(MessageProperty, PictureAspectProperty, FrameAspectProperty, CropProperty);
+    }
+
+    public double PictureAspect
+    {
+        get => GetValue(PictureAspectProperty);
+        set => SetValue(PictureAspectProperty, value);
+    }
+
+    public double FrameAspect
+    {
+        get => GetValue(FrameAspectProperty);
+        set => SetValue(FrameAspectProperty, value);
+    }
+
+    public CropRect? Crop
+    {
+        get => GetValue(CropProperty);
+        set => SetValue(CropProperty, value);
     }
 
     public MpvPlayer? Player
@@ -98,6 +130,10 @@ public sealed class MpvVideoView : Control
             if (change.NewValue is MpvPlayer player)
                 Attach(player);
             InvalidateVisual();
+        }
+        else if (change.Property == CropProperty || change.Property == PictureAspectProperty || change.Property == FrameAspectProperty)
+        {
+            UpdateTargetSize();
         }
     }
 
@@ -239,6 +275,8 @@ public sealed class MpvVideoView : Control
     private void UpdateTargetSize()
     {
         var scaling = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
+        // A cropped part is shown enlarged: render that much bigger (up to the pixel limit) so it isn't blurry.
+        scaling *= PreviewGeometry.RenderScale(new Rect(Bounds.Size), PictureAspect, FrameAspect, Crop);
         var width = Bounds.Width * scaling;
         var height = Bounds.Height * scaling;
         if (width < 2 || height < 2)
@@ -289,7 +327,17 @@ public sealed class MpvVideoView : Control
         var bounds = new Rect(Bounds.Size);
         context.FillRectangle(Brushes.Black, bounds);
         if (Front is { } frame && Player is not null && Message is null)
-            context.DrawImage(frame, new Rect(frame.Size), bounds);
+        {
+            var (pictureAspect, frameAspect) = (PictureAspect, FrameAspect);
+            if (Crop is null && (frameAspect <= 0 || Math.Abs(frameAspect - pictureAspect) < 1e-3))
+                context.DrawImage(frame, new Rect(frame.Size), bounds);
+            else
+            {
+                var (source, destination) = PreviewGeometry.Placement(frame.Size, bounds, pictureAspect, frameAspect, Crop ?? CropRect.Full);
+                if (source.Width > 0 && source.Height > 0)
+                    context.DrawImage(frame, source, destination);
+            }
+        }
         if (Message is { Length: > 0 } message)
         {
             var text = new FormattedText(message, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,

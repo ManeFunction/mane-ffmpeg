@@ -140,6 +140,12 @@ public sealed record ProjectState(ImmutableList<SourceMedia> Sources, Timeline T
     /// <summary>A project of videos only.</summary>
     public ProjectState(ImmutableList<SourceMedia> sources, Timeline timeline) : this(sources, timeline, []) { }
 
+    /// <summary>The part of the output frame that is exported; null keeps the whole frame.</summary>
+    public CropRect? Crop { get; init; }
+
+    /// <summary>The state with the output cropped to <paramref name="crop"/>; a crop that keeps the whole frame is none.</summary>
+    public ProjectState WithCrop(CropRect? crop) => this with { Crop = crop?.Clamped() is { IsFull: false } kept ? kept : null };
+
     public SourceMedia? Source(string id) => Sources.Find(s => s.Id == id);
 
     public SourceMedia? AudioFile(string id) => AudioFiles.Find(s => s.Id == id);
@@ -168,7 +174,7 @@ public sealed record ProjectState(ImmutableList<SourceMedia> Sources, Timeline T
 
     public bool Equals(ProjectState? other) =>
         other is not null && Sources.SequenceEqual(other.Sources) && AudioFiles.SequenceEqual(other.AudioFiles)
-        && Timeline.Equals(other.Timeline);
+        && Timeline.Equals(other.Timeline) && Equals(Crop, other.Crop);
 
     public override int GetHashCode() => HashCode.Combine(Sources.Count, AudioFiles.Count, Timeline.Clips.Count);
 }

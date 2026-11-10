@@ -29,6 +29,12 @@ Built with C#, .NET 10 and Avalonia 12.
   - The offset *slips* the clip's audio. Clip edges stay put, and the sound comes from slightly earlier or later in the same file, so cuts never open gaps.
   - Silence is added only where the shifted audio runs past the start or end of the file (hatched on A1).
   - "Use this offset for all clips of this video" shifts a whole recording.
+- **Crop**
+  - Click *Crop* above the preview (or press C) and drag on the picture: drag inside the rectangle to move it, drag an
+    edge or corner to resize it, or drag outside it to draw a new one. Hold Shift to keep its shape, or pick one
+    (*Original*, 16:9, 9:16, 4:3, 4:5, 1:1). The size in output pixels is shown on the rectangle.
+  - *Done* (Enter or Esc) shows the cropped picture in the preview. One crop applies to the whole export, and each drag
+    can be undone.
 - **Preview**
   - Smooth playback, exact seeking and frame stepping via libmpv.
   - The timeline plays as a single virtual file (an mpv EDL with separate video and audio streams), so cuts and audio offsets sound exactly as they will be exported.
@@ -114,6 +120,8 @@ The planner (`src/ManeFfmpeg.Core/Ffmpeg/ExportPlanner.cs`) picks one of four st
 
 Some details:
 - Clips from differently sized sources are scaled and padded to the first clip's size and frame rate.
+- A crop is cut from that joined picture with `crop=W:H:X:Y` (even numbers, so 4:2:0 encodes), before the preset's
+  own `-vf`. A copied picture can't be cropped, so presets that copy video refuse a cropped project.
 - `-tag:v hvc1` and `-movflags +faststart` are added for HEVC in MP4/MOV, so QuickTime can play the file.
 - MPEG-TS and other containers with unreliable seeking are handled by seeking early and trimming exactly.
 - Replaced audio is always re-encoded, using the preset's audio fallback when the preset copies audio. Audio-only files
@@ -137,7 +145,8 @@ The integration tests check A/V sync of real exports. They use synthetic video w
 | Alt+← / → | Audio 10 ms earlier / later |
 | Alt+Shift+← / → | Audio 1 frame earlier / later |
 | I / O / Enter | Mark In / Out / add the range (source preview) |
-| Esc | Back to the timeline / clear the selection; closes Presets, Settings and message dialogs (as Cancel) |
+| C | Crop the picture on the preview; Enter or Esc finishes |
+| Esc | Finish cropping / back to the timeline / clear the selection; closes Presets, Settings and message dialogs (as Cancel) |
 | ⌘Z / ⇧⌘Z | Undo / redo (Ctrl on Linux) |
 | ⌘N, ⌘O, ⌘S, ⇧⌘S, ⌘E, ⌘W | New window, open, save, save as, export, close |
 | ⌘+ / ⌘− / ⌘0, or ⌘/Ctrl+wheel | Zoom in, zoom out, fit |

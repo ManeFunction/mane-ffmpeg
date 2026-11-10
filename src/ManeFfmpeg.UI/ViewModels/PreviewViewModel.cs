@@ -79,7 +79,12 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
     {
         if (_preview is not null)
             _preview.Compact = value;
+        UpdateFrame();
     }
+
+    partial void OnModeChanged(PreviewMode value) => UpdateFrame();
+
+    partial void OnPreviewedSourceChanged(SourceItemViewModel? value) => UpdateFrame();
 
     [RelayCommand]
     private void ToggleCompact() => IsCompact = !IsCompact;
@@ -93,6 +98,8 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
 
     public string PreviewTitle => Mode == PreviewMode.Source && PreviewedSource is { } s
         ? $"{(s.Kind == FileKind.Audio ? "Audio" : "Source")}: {s.Name}"
+        : IsCropping ? "Crop" + (CropSizeText is { } editing ? $" · {editing}" : "")
+        : CropSizeText is { } size ? $"Preview · cropped to {size}"
         : "Preview";
 
     /// <summary>Where the preview is: in the previewed source, or the playhead on the timeline.</summary>
@@ -108,8 +115,16 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
     public PreviewViewModel(MainWindowViewModel owner)
     {
         _owner = owner;
-        owner.StateChanged += (_, _) => ScheduleTimelineReload();
-        owner.Catalog.Changed += _ => ScheduleTimelineReload();
+        owner.StateChanged += (_, _) =>
+        {
+            ScheduleTimelineReload();
+            UpdateFrame();
+        };
+        owner.Catalog.Changed += _ =>
+        {
+            ScheduleTimelineReload();
+            UpdateFrame();
+        };
         _reloadTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, OnReloadTimer);
 
         if (_app.MpvAvailable)
@@ -175,6 +190,7 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
 
     internal void OnPlayheadMoved()
     {
+        UpdatePicture();
         OnPropertyChanged(nameof(Position));
         OnPropertyChanged(nameof(PositionText));
         if (!_settingPlayheadFromPlayer && !IsPlaying)

@@ -57,6 +57,9 @@ public partial class MainWindow : Window, IMainWindowView
         AddHandler(KeyDownEvent, OnWindowKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, OnWindowKeyUp, RoutingStrategies.Tunnel);
         AudioOffsetBox.AddHandler(KeyDownEvent, OnAudioOffsetKeyDown, RoutingStrategies.Tunnel);
+        CropOverlay.Committed += crop => ViewModel.Preview.CommitCrop(crop);
+        // A picked shape leaves the field, so Enter, Escape and C act on the crop again.
+        CropAspectBox.DropDownClosed += (_, _) => TimelineView.Focus();
         Deactivated += (_, _) => _shortcutKeysDown.Clear();
         Closing += OnClosing;
         viewModel.Preview.PropertyChanged += (_, e) =>
@@ -149,6 +152,9 @@ public partial class MainWindow : Window, IMainWindowView
             Item("Audio 1 Frame Later", vm.NudgeAudioFrameLaterCommand),
             Item("Reset Audio Offset", vm.ResetAudioOffsetCommand),
             Item("Use Original Audio", vm.RestoreOriginalAudioCommand),
+            new NativeMenuItemSeparator(),
+            Item("Crop Picture", vm.Preview.ToggleCropCommand),
+            Item("Reset Crop", vm.Preview.ResetCropCommand),
         })
             edit.Items.Add(item);
 
@@ -260,12 +266,20 @@ public partial class MainWindow : Window, IMainWindowView
             case Key.O when vm.Preview.CanMark:
                 vm.Preview.SetMarkOutCommand.Execute(null);
                 break;
+            case Key.C when !shift && !alt:
+                vm.Preview.ToggleCropCommand.Execute(null);
+                break;
+            case Key.Enter when vm.Preview.IsCropping:
+                vm.Preview.FinishCropCommand.Execute(null);
+                break;
             case Key.Enter when vm.Preview.CanMark:
                 vm.Preview.AddMarkedRangeCommand.Execute(null);
                 break;
             case Key.Escape:
                 if (vm.AudioDrag.IsDragging)
                     CancelAudioDrag();
+                else if (vm.Preview.IsCropping)
+                    vm.Preview.FinishCropCommand.Execute(null);
                 else if (vm.Preview.IsSourceMode)
                     vm.Preview.BackToTimelineCommand.Execute(null);
                 else

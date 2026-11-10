@@ -249,11 +249,29 @@
                 <!-- Preview -->
                 <Border x:Name="PreviewPanel" Grid.Column="2" Classes="panel" Padding="0" ClipToBounds="True">
                     <DockPanel>
-                        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="10,6,6,6">
-                            <TextBlock Text="{Binding Preview.PreviewTitle}" Classes="title" VerticalAlignment="Center" />
-                            <Button Grid.Column="1" Classes="tool" Content="← Back to timeline" Command="{Binding Preview.BackToTimelineCommand}"
-                                    IsVisible="{Binding Preview.IsSourceMode}" />
-                            <Button x:Name="ClosePreviewButton" Grid.Column="2" Classes="close" Command="{Binding Preview.ToggleCompactCommand}"
+                        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto,Auto" Margin="10,6,6,6">
+                            <TextBlock Text="{Binding Preview.PreviewTitle}" Classes="title" VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis" />
+                            <!-- Crop: a button on the timeline preview; while cropping, the shape, reset and done -->
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="8,0,0,0"
+                                        IsVisible="{Binding !Preview.IsSourceMode}">
+                                <Button Classes="tool" Content="Crop" Command="{Binding Preview.ToggleCropCommand}"
+                                        IsEnabled="{Binding Preview.CanCrop}" IsVisible="{Binding !Preview.IsCropping}"
+                                        ToolTip.Tip="Crop the exported picture (C)" />
+                                <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding Preview.IsCropping}">
+                                    <ComboBox x:Name="CropAspectBox" ItemsSource="{x:Static vm:PreviewViewModel.CropAspects}"
+                                              SelectedItem="{Binding Preview.SelectedCropAspect}" MinWidth="96" FontSize="12"
+                                              MinHeight="29" Height="29" Padding="10,4,0,4" VerticalContentAlignment="Center"
+                                              ToolTip.Tip="Shape of the crop (hold Shift while dragging to keep the current one)" />
+                                    <Button Classes="tool" Content="Reset" Command="{Binding Preview.ResetCropCommand}"
+                                            IsEnabled="{Binding Preview.HasCrop}" ToolTip.Tip="Export the whole frame" />
+                                    <Button Classes="tool accent" Content="Done" Command="{Binding Preview.FinishCropCommand}"
+                                            ToolTip.Tip="Show the cropped picture (Enter)" />
+                                </StackPanel>
+                            </StackPanel>
+                            <Button Grid.Column="2" Classes="tool" Content="← Back to timeline" Command="{Binding Preview.BackToTimelineCommand}"
+                                    IsVisible="{Binding Preview.IsSourceMode}" Margin="8,0,0,0" />
+                            <Button x:Name="ClosePreviewButton" Grid.Column="3" Classes="close" Command="{Binding Preview.ToggleCompactCommand}"
                                     Margin="8,0,0,0" ToolTip.Tip="Hide the video preview (⇧⌘C)">
                                 <PathIcon Data="{StaticResource IconClose}" />
                             </Button>
@@ -294,7 +312,15 @@
                             </StackPanel>
                         </Grid>
 
-                        <controls:MpvVideoView x:Name="Video" Player="{Binding Preview.Player}" Message="{Binding Preview.PreviewMessage}" />
+                        <Panel>
+                            <controls:MpvVideoView x:Name="Video" Player="{Binding Preview.Player}" Message="{Binding Preview.PreviewMessage}"
+                                                   PictureAspect="{Binding Preview.PictureAspect}" FrameAspect="{Binding Preview.FrameAspect}"
+                                                   Crop="{Binding Preview.ShownCrop}" />
+                            <controls:CropOverlay x:Name="CropOverlay" IsVisible="{Binding Preview.IsCropping}"
+                                                  PictureAspect="{Binding Preview.PictureAspect}" FrameAspect="{Binding Preview.FrameAspect}"
+                                                  Crop="{Binding Preview.Crop}" AspectLock="{Binding Preview.AspectLock}"
+                                                  FramePixels="{Binding Preview.FramePixels}" />
+                        </Panel>
                     </DockPanel>
                 </Border>
             </Grid>

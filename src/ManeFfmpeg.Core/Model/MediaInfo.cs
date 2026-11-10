@@ -64,6 +64,12 @@ public sealed record VideoStreamInfo
 
     private bool Rotated => Math.Abs(Rotation) % 180 == 90;
 
+    /// <summary>The decoded frame's size once rotated upright, as filters see it (no square-pixel correction).</summary>
+    public (int Width, int Height) UprightSize => Rotated ? (Height, Width) : (Width, Height);
+
+    /// <summary>Width over height as shown: after square-pixel correction and rotation.</summary>
+    public double DisplayAspect => (double)DisplayWidth / DisplayHeight;
+
     private int SarWidth => SampleAspectRatio.IsValid && SampleAspectRatio.Num != SampleAspectRatio.Den
         ? (int)Math.Round(Width * SampleAspectRatio.Value)
         : Width;

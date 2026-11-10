@@ -405,6 +405,39 @@ internal static class DebugAutomation
                         dialog.Close();
                         break;
                     }
+                    case "crop":
+                    {
+                        // crop <x> <y> <width> <height> (fractions of the frame) | crop off
+                        if (arg == "off")
+                        {
+                            vm.Preview.CommitCrop(null);
+                            break;
+                        }
+                        var n = arg.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(v => double.Parse(v, CultureInfo.InvariantCulture)).ToArray();
+                        vm.Preview.CommitCrop(new CropRect(n[0], n[1], n[2], n[3]));
+                        break;
+                    }
+                    case "crop-edit":
+                        if ((arg == "on") != vm.Preview.IsCropping)
+                            vm.Preview.ToggleCropCommand.Execute(null);
+                        break;
+                    case "crop-aspect":
+                        vm.Preview.SelectedCropAspect = PreviewViewModel.CropAspects.First(a => a.Name == arg);
+                        break;
+                    case "crop-drag":
+                    {
+                        // crop-drag <x1> <y1> <x2> <y2> [shift]: fractions of the overlay's bounds
+                        var parts = arg.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        var n = parts.Take(4).Select(v => double.Parse(v, CultureInfo.InvariantCulture)).ToArray();
+                        await CropDragAsync(window, new Point(n[0], n[1]), new Point(n[2], n[3]), parts.Length > 4 && parts[4] == "shift");
+                        break;
+                    }
+                    case "crop-state":
+                        Console.WriteLine($"[crop] title='{vm.Preview.PreviewTitle}' editing={vm.Preview.IsCropping} can={vm.Preview.CanCrop} " +
+                                          $"crop={vm.State.Crop} shown={window.Video.Crop} picture={vm.Preview.PictureAspect:0.###} frame={vm.Preview.FrameAspect:0.###} " +
+                                          $"pixels={vm.Preview.FramePixels} lock={vm.Preview.AspectLock:0.###} status='{vm.StatusMessage}' undo={vm.History.CanUndo}");
+                        break;
                     case "snapshot":
                         await Task.Delay(300);
                         Snapshot(window, arg);
@@ -476,6 +509,30 @@ internal static class DebugAutomation
         bitmap.Save(path);
         window.Video.SaveFrame(path + ".frame.png");
         Console.WriteLine($"[snapshot] {path}");
+    }
+
+    /// <summary>Synthetic mouse drag on the crop overlay, between points given as fractions of its bounds.</summary>
+    private static async Task CropDragAsync(MainWindow window, Point from, Point to, bool shift)
+    {
+        var control = window.CropOverlay;
+        var size = control.Bounds.Size;
+        var origin = control.TranslatePoint(new Point(0, 0), window) ?? default;
+        Point At(Point f) => origin + new Point(f.X * size.Width, f.Y * size.Height);
+        var pointer = new Pointer(Pointer.GetNextFreeId(), PointerType.Mouse, true);
+        var mods = shift ? KeyModifiers.Shift : KeyModifiers.None;
+        var raw = shift ? RawInputModifiers.Shift : RawInputModifiers.None;
+        ulong ts = 1;
+        control.RaiseEvent(new PointerPressedEventArgs(control, pointer, window, At(from), ts++,
+            new PointerPointProperties(raw | RawInputModifiers.LeftMouseButton, PointerUpdateKind.LeftButtonPressed), mods));
+        for (var i = 1; i <= 10; i++)
+        {
+            var p = new Point(from.X + (to.X - from.X) * i / 10, from.Y + (to.Y - from.Y) * i / 10);
+            control.RaiseEvent(new PointerEventArgs(InputElement.PointerMovedEvent, control, pointer, window, At(p), ts++,
+                new PointerPointProperties(raw | RawInputModifiers.LeftMouseButton, PointerUpdateKind.Other), mods));
+            await Task.Delay(16);
+        }
+        control.RaiseEvent(new PointerReleasedEventArgs(control, pointer, window, At(to), ts,
+            new PointerPointProperties(raw, PointerUpdateKind.LeftButtonReleased), mods, MouseButton.Left));
     }
 
     /// <summary>Synthetic mouse drag on the timeline, in timeline seconds (x) and track rows (y).</summary>
