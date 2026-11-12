@@ -140,11 +140,18 @@ public sealed record ProjectState(ImmutableList<SourceMedia> Sources, Timeline T
     /// <summary>A project of videos only.</summary>
     public ProjectState(ImmutableList<SourceMedia> sources, Timeline timeline) : this(sources, timeline, []) { }
 
-    /// <summary>The part of the output frame that is exported; null keeps the whole frame.</summary>
-    public CropRect? Crop { get; init; }
+    /// <summary>
+    /// The part of the output frame that is exported; null keeps the whole frame. Always inside the frame: a crop set
+    /// here is clamped, and one that keeps the whole frame (or can't be used) becomes null.
+    /// </summary>
+    public CropRect? Crop
+    {
+        get;
+        init => field = value?.Clamped() is { IsFull: false } kept ? kept : null;
+    }
 
-    /// <summary>The state with the output cropped to <paramref name="crop"/>; a crop that keeps the whole frame is none.</summary>
-    public ProjectState WithCrop(CropRect? crop) => this with { Crop = crop?.Clamped() is { IsFull: false } kept ? kept : null };
+    /// <summary>The state with the output cropped to <paramref name="crop"/>.</summary>
+    public ProjectState WithCrop(CropRect? crop) => this with { Crop = crop };
 
     public SourceMedia? Source(string id) => Sources.Find(s => s.Id == id);
 

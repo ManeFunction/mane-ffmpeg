@@ -175,8 +175,8 @@ public sealed class CropOverlay : Control
         e.Handled = true;
         InvalidateVisual();
         // A click without a drag changes nothing (and a click outside doesn't collapse the crop to a dot).
-        if (moved && result is { } rect && PreviewGeometry.ToCrop(Frame, rect).Clamped() is { } crop)
-            Committed?.Invoke(crop);
+        if (moved && result is { } rect)
+            Committed?.Invoke(PreviewGeometry.ToCrop(Frame, rect));
     }
 
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)

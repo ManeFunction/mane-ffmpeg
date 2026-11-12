@@ -62,6 +62,9 @@ public class CropTests
         Assert.NotNull(cropped.Crop);
         Assert.NotEqual(state, cropped);
         Assert.Equal(cropped, state.WithCrop(new CropRect(0.1, 0.1, 0.5, 0.5)));
+        // Set directly, it is kept inside the frame all the same.
+        Assert.Equal(new CropRect(0.5, 0, 0.5, 1), (state with { Crop = new CropRect(0.8, 0, 0.5, 1) }).Crop);
+        Assert.Null((state with { Crop = new CropRect(double.NaN, 0, 1, 1) }).Crop);
     }
 
     // ---- Export ------------------------------------------------------------------------------------

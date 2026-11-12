@@ -124,7 +124,7 @@ public static class ExportPlanner
                     $"The output file is one of the {(file == item.Source ? "source videos" : "audio files")}. Choose another name.");
         }
 
-        var crop = job.State.Crop is { IsFull: false } c ? c : null;
+        var crop = job.State.Crop;
         if (crop is not null && args.VideoCopy)
             throw new ExportPlanException(
                 $"Preset \"{job.Preset.Name}\" copies the video, and a copied picture can't be cropped. Choose an encoding preset or reset the crop.");
