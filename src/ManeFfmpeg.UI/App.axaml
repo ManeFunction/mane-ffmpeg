@@ -94,6 +94,34 @@
             <Setter Property="MinHeight" Value="29" />
             <Setter Property="FontSize" Value="12" />
         </Style>
+        <!-- Tool controls for panel headers, as tall as the header's close button (18 px; at 11 pt the caps are
+             8 px, and 18 − 8 is even), so they never make the header taller. The half pixels put the line box where
+             the caps land in the middle on a Retina screen: without them they sit a device pixel high. -->
+        <Style Selector="Button.tool.small">
+            <Setter Property="MinHeight" Value="18" />
+            <Setter Property="Height" Value="18" />
+            <Setter Property="Padding" Value="7,1.5,7,1" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+        <Style Selector="ComboBox.small">
+            <Setter Property="MinHeight" Value="18" />
+            <Setter Property="Height" Value="18" />
+            <Setter Property="Padding" Value="7,0.5,0,0" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <!-- Dropdown list rows. Fluent pads them 5 above and 7 below, so labels sit 1.5 px high (2.5 at 11 pt);
+             these put the caps in the middle (half a pixel below it at 11 pt, where small labels look centred). -->
+        <Style Selector="ComboBoxItem">
+            <Setter Property="Padding" Value="11,6.5,11,5.5" />
+        </Style>
+        <!-- 11 pt lists (the crop shape, a file's audio track): whole-pixel rows, 24 − 8 is even. -->
+        <Style Selector="ComboBox[FontSize=11] ComboBoxItem">
+            <Setter Property="MinHeight" Value="24" />
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Padding" Value="11,1,11,0" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
         <Style Selector="Button.icon">
             <!-- Transport buttons don't take keyboard focus, so Space always means play/pause. -->
             <Setter Property="Focusable" Value="False" />

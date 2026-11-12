@@ -255,17 +255,16 @@
                             <!-- Crop: a button on the timeline preview; while cropping, the shape, reset and done -->
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="8,0,0,0"
                                         IsVisible="{Binding !Preview.IsSourceMode}">
-                                <Button Classes="tool" Content="Crop" Command="{Binding Preview.ToggleCropCommand}"
+                                <Button Classes="tool small" Content="Crop" Command="{Binding Preview.ToggleCropCommand}"
                                         IsEnabled="{Binding Preview.CanCrop}" IsVisible="{Binding !Preview.IsCropping}"
                                         ToolTip.Tip="Crop the exported picture (C)" />
                                 <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding Preview.IsCropping}">
                                     <ComboBox x:Name="CropAspectBox" ItemsSource="{x:Static vm:PreviewViewModel.CropAspects}"
-                                              SelectedItem="{Binding Preview.SelectedCropAspect}" MinWidth="96" FontSize="12"
-                                              MinHeight="29" Height="29" Padding="10,4,0,4" VerticalContentAlignment="Center"
+                                              SelectedItem="{Binding Preview.SelectedCropAspect}" MinWidth="90" Classes="small"
                                               ToolTip.Tip="Shape of the crop (hold Shift while dragging to keep the current one)" />
-                                    <Button Classes="tool" Content="Reset" Command="{Binding Preview.ResetCropCommand}"
+                                    <Button Classes="tool small" Content="Reset" Command="{Binding Preview.ResetCropCommand}"
                                             IsEnabled="{Binding Preview.HasCrop}" ToolTip.Tip="Export the whole frame" />
-                                    <Button Classes="tool accent" Content="Done" Command="{Binding Preview.FinishCropCommand}"
+                                    <Button Classes="tool small accent" Content="Done" Command="{Binding Preview.FinishCropCommand}"
                                             ToolTip.Tip="Show the cropped picture (Enter)" />
                                 </StackPanel>
                             </StackPanel>

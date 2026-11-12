@@ -433,6 +433,31 @@ internal static class DebugAutomation
                         await CropDragAsync(window, new Point(n[0], n[1]), new Point(n[2], n[3]), parts.Length > 4 && parts[4] == "shift");
                         break;
                     }
+                    case "dropdown":
+                    {
+                        // dropdown <n|settings> <png>: opens the n-th visible dropdown of the window (or the Settings
+                        // theme dropdown), saves its list at 2× and prints its rows.
+                        var parts = arg.Split(' ', 2);
+                        Avalonia.Controls.Window? settings = null;
+                        if (parts[0] == "settings")
+                        {
+                            settings = new SettingsWindow();
+                            settings.Show(window);
+                            await Task.Delay(800);
+                        }
+                        var combo = Avalonia.VisualTree.VisualExtensions.GetVisualDescendants((Avalonia.Visual?)settings ?? window).OfType<ComboBox>()
+                            .Where(c => c.IsEffectivelyVisible).ElementAt(settings is null ? int.Parse(parts[0], CultureInfo.InvariantCulture) : 0);
+                        combo.IsDropDownOpen = true;
+                        await Task.Delay(600);
+                        var list = (Avalonia.Controls.Control)Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(combo)
+                            .OfType<Avalonia.Controls.Primitives.Popup>().First().Child!;
+                        SaveRetina(list, parts[1]);
+                        foreach (var item in Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(list).OfType<ComboBoxItem>())
+                            Console.WriteLine($"[dropdown] item y={item.TranslatePoint(default, list)?.Y:0.##} h={item.Bounds.Height:0.##} font={item.FontSize}");
+                        combo.IsDropDownOpen = false;
+                        settings?.Close();
+                        break;
+                    }
                     case "crop-state":
                         Console.WriteLine($"[crop] title='{vm.Preview.PreviewTitle}' editing={vm.Preview.IsCropping} can={vm.Preview.CanCrop} " +
                                           $"crop={vm.State.Crop} shown={window.Video.Crop} picture={vm.Preview.PictureAspect:0.###} frame={vm.Preview.FrameAspect:0.###} " +
@@ -597,6 +622,16 @@ internal static class DebugAutomation
         await Task.Delay(800);
         SaveSnapshot(dialog, path);
         dialog.Close();
+    }
+
+    /// <summary>Saves a control at 2× (192 dpi), as a Retina screen shows it.</summary>
+    private static void SaveRetina(Avalonia.Controls.Control control, string path)
+    {
+        using var bitmap = new RenderTargetBitmap(
+            new PixelSize((int)Math.Ceiling(control.Bounds.Width * 2), (int)Math.Ceiling(control.Bounds.Height * 2)), new Vector(192, 192));
+        bitmap.Render(control);
+        bitmap.Save(path);
+        Console.WriteLine($"[snapshot] {path}");
     }
 
     private static void SaveSnapshot(Avalonia.Controls.Window dialog, string path)
