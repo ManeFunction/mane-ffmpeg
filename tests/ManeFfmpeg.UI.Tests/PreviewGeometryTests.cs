@@ -80,6 +80,6 @@ public class PreviewGeometryTests
         Near(new Rect(210, 65, 400, 270), PreviewGeometry.Inside(frame, crop));
         var back = PreviewGeometry.ToCrop(frame, PreviewGeometry.Inside(frame, crop));
         Assert.Equal((crop.X, crop.Y, crop.Width, crop.Height), (Math.Round(back.X, 9), Math.Round(back.Y, 9), Math.Round(back.Width, 9), Math.Round(back.Height, 9)));
-        Assert.Equal(16.0 / 9 * 0.5 / 0.6, PreviewGeometry.AspectOf(crop, Wide), 9);
+        Assert.Equal(16.0 / 9 * 0.5 / 0.6, crop.AspectIn(Wide), 9);
     }
 }

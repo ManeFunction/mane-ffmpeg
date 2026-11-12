@@ -65,6 +65,9 @@ public sealed record CropRect(double X, double Y, double Width, double Height)
 
     private static int Even(double pixels) => (int)Math.Round(pixels / 2, MidpointRounding.AwayFromZero) * 2;
 
+    /// <summary>Width over height of this crop as shown, in a frame of display aspect <paramref name="frameAspect"/>.</summary>
+    public double AspectIn(double frameAspect) => Width / Height * frameAspect;
+
     /// <summary>
     /// This crop reshaped to display aspect <paramref name="aspect"/> (width / height as shown) in a frame of display
     /// aspect <paramref name="frameAspect"/>: about as much of the picture, around the same center, made smaller

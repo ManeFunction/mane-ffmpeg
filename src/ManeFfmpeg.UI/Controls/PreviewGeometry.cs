@@ -38,9 +38,6 @@ public static class PreviewGeometry
     public static CropRect ToCrop(Rect frame, Rect rect) =>
         new((rect.X - frame.X) / frame.Width, (rect.Y - frame.Y) / frame.Height, rect.Width / frame.Width, rect.Height / frame.Height);
 
-    /// <summary>How a crop is shown: width over height of its part of a frame of <paramref name="frameAspect"/>.</summary>
-    public static double AspectOf(CropRect crop, double frameAspect) => crop.Width / crop.Height * frameAspect;
-
     /// <summary>
     /// What to draw of a rendered frame to show <paramref name="crop"/> of the output frame in <paramref name="bounds"/>.
     /// mpv draws the picture fitted into the whole bitmap (<paramref name="bitmapSize"/>), so the output frame is
@@ -52,10 +49,7 @@ public static class PreviewGeometry
         var bitmap = new Rect(bitmapSize);
         if (pictureAspect <= 0)
             return (bitmap, bounds);
-        frameAspect = frameAspect > 0 ? frameAspect : pictureAspect;
-        var frame = FrameAround(Fit(pictureAspect, bitmap), pictureAspect, frameAspect);
-        var source = Inside(frame, crop);
-        var destination = Fit(AspectOf(crop, frameAspect), bounds);
+        var (source, destination) = Unclipped(bitmap, bounds, pictureAspect, frameAspect, crop);
         if (source.Width <= 0 || source.Height <= 0)
             return (default, default);
         var clipped = source.Intersect(bitmap);
@@ -76,10 +70,18 @@ public static class PreviewGeometry
     {
         if (crop is null || pictureAspect <= 0 || bounds.Width <= 0 || bounds.Height <= 0)
             return 1;
-        frameAspect = frameAspect > 0 ? frameAspect : pictureAspect;
-        var frame = FrameAround(Fit(pictureAspect, bounds), pictureAspect, frameAspect);
-        var cropped = Inside(frame, crop);
-        var shown = Fit(AspectOf(crop, frameAspect), bounds);
+        var (cropped, shown) = Unclipped(bounds, bounds, pictureAspect, frameAspect, crop);
         return cropped.Width > 0 ? Math.Max(1, shown.Width / cropped.Width) : 1;
+    }
+
+    /// <summary>
+    /// The crop's part of the frame around a picture fitted into <paramref name="area"/> (frame parts outside it
+    /// included), and where that part is shown, as big as fits, in <paramref name="bounds"/>.
+    /// </summary>
+    private static (Rect Cropped, Rect Shown) Unclipped(Rect area, Rect bounds, double pictureAspect, double frameAspect, CropRect crop)
+    {
+        frameAspect = frameAspect > 0 ? frameAspect : pictureAspect;
+        var frame = FrameAround(Fit(pictureAspect, area), pictureAspect, frameAspect);
+        return (Inside(frame, crop), Fit(crop.AspectIn(frameAspect), bounds));
     }
 }

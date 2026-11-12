@@ -329,6 +329,8 @@ public sealed class MpvVideoView : Control
         if (Front is { } frame && Player is not null && Message is null)
         {
             var (pictureAspect, frameAspect) = (PictureAspect, FrameAspect);
+            // Nothing cropped or padded: draw mpv's frame as it is. Placement gives the same rectangle, but at
+            // fractional coordinates that resample (and slightly soften) the picture.
             if (Crop is null && (frameAspect <= 0 || Math.Abs(frameAspect - pictureAspect) < 1e-3))
                 context.DrawImage(frame, new Rect(frame.Size), bounds);
             else
