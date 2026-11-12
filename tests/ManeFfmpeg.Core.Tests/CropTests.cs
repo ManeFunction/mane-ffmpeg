@@ -174,6 +174,25 @@ public class CropTests
     }
 
     [Fact]
+    public void A_clip_of_another_shape_is_fitted_and_centered_in_the_frame()
+    {
+        // A square clip in a 16:9 frame is pillarboxed, a 21:9 one letterboxed, one of the frame's shape fills it.
+        Assert.Equal(new CropRect(0.21875, 0, 0.5625, 1), OutputFrame.PictureArea(1, 16.0 / 9));
+        var wide = OutputFrame.PictureArea(21.0 / 9, 16.0 / 9);
+        Assert.Equal((0, 1.0), (wide.X, wide.Width));
+        Assert.Equal(16.0 / 21, wide.Height, 9);
+        Assert.Equal((1 - wide.Height) / 2, wide.Y, 9);
+        Assert.Equal(CropRect.Full, OutputFrame.PictureArea(16.0 / 9, 16.0 / 9));
+        Assert.Equal(CropRect.Full, OutputFrame.PictureArea(0, 16.0 / 9));
+
+        var media = new Dictionary<string, MediaInfo> { ["a"] = Media(1280, 720), ["b"] = Media(1080, 1080) };
+        var frame = OutputFrame.Of([.. media.Values.Select(m => m.Video!)]);
+        var plan = ExportPlanner.Plan(Job(Encode, media, null, Clip.Create("a", S(1), S(3)), Clip.Create("b", S(1), S(3))));
+        Assert.Contains(frame.FitFilter, Command(plan));
+        Assert.Equal("", OutputFrame.Of([media["a"].Video!]).FitFilter);
+    }
+
+    [Fact]
     public void Stream_copy_refuses_a_crop()
     {
         var media = new Dictionary<string, MediaInfo> { ["a"] = Media() };

@@ -258,7 +258,7 @@ public static class ExportPlanner
         a.Add(ctx.Out);
 
         if (norm.Length > 0)
-            notes.Add($"Clips differ in size, frame rate or pixel format: all are converted to {reference.DisplayWidth}×{reference.DisplayHeight} like the first clip.");
+            notes.Add($"Clips differ in size, frame rate or pixel format: all are converted to {ctx.Frame.Width}×{ctx.Frame.Height} like the first clip.");
         var duration = ctx.Items.Aggregate(TimeSpan.Zero, (s, it) => s + it.Clip.Duration);
         return new ExportPlan(ExportMode.Encode, [new ExportStep("Exporting", a, duration, true)], [], duration, notes);
     }
@@ -647,14 +647,13 @@ public static class ExportPlanner
     {
         var items = ctx.Items;
         var r = items[0].Video;
-        var sizeDiffers = ctx.Frame.Normalized;
         var rateDiffers = items.Any(i => !i.Video.FrameRate.Equivalent(r.FrameRate));
         var formatDiffers = items.Any(i => i.Video.PixelFormat != r.PixelFormat) && r.PixelFormat.Length > 0;
         var sb = new StringBuilder();
         if (rateDiffers)
             sb.Append(",fps=").Append(r.FrameRate.ToString());
-        if (sizeDiffers)
-            sb.Append($",scale={r.DisplayWidth}:{r.DisplayHeight}:force_original_aspect_ratio=decrease,pad={r.DisplayWidth}:{r.DisplayHeight}:(ow-iw)/2:(oh-ih)/2,setsar=1");
+        if (ctx.Frame.Normalized)
+            sb.Append(',').Append(ctx.Frame.FitFilter);
         if (formatDiffers)
             sb.Append(",format=").Append(r.PixelFormat);
         return sb.ToString();

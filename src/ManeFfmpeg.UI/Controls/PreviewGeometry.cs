@@ -20,17 +20,14 @@ public static class PreviewGeometry
     }
 
     /// <summary>
-    /// The output frame around a picture: the picture fits inside the frame, centered, the way an export scales and
-    /// pads a clip of another shape to the first clip's frame.
+    /// The output frame around a picture: the picture lies in it where an export puts a clip of that shape
+    /// (<see cref="OutputFrame.PictureArea"/>).
     /// </summary>
     public static Rect FrameAround(Rect picture, double pictureAspect, double frameAspect)
     {
-        if (pictureAspect <= 0 || frameAspect <= 0 || Math.Abs(pictureAspect - frameAspect) < 1e-6)
-            return picture;
-        var (width, height) = frameAspect > pictureAspect
-            ? (picture.Height * frameAspect, picture.Height)
-            : (picture.Width, picture.Width / frameAspect);
-        return new Rect(picture.Center.X - width / 2, picture.Center.Y - height / 2, width, height);
+        var area = OutputFrame.PictureArea(pictureAspect, frameAspect);
+        var (width, height) = (picture.Width / area.Width, picture.Height / area.Height);
+        return new Rect(picture.X - area.X * width, picture.Y - area.Y * height, width, height);
     }
 
     /// <summary>A crop's rectangle inside <paramref name="frame"/>.</summary>
