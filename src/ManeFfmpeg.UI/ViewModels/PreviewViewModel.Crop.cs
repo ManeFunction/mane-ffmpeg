@@ -1,4 +1,3 @@
-using System.Globalization;
 using Avalonia;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -46,8 +45,11 @@ public sealed partial class PreviewViewModel
 
     /// <summary>The output frame in pixels.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(PreviewTitle))]
+    [NotifyPropertyChangedFor(nameof(CropSizeText), nameof(PreviewTitle))]
     public partial PixelSize FramePixels { get; private set; }
+
+    // The crop last announced, so property changes are raised only when it changes.
+    private CropRect? _announcedCrop;
 
     /// <summary>The committed crop; null keeps the whole frame.</summary>
     public CropRect? Crop => State.Crop;
@@ -65,7 +67,7 @@ public sealed partial class PreviewViewModel
 
     /// <summary>The crop in output pixels, as "1280 × 720"; null without one.</summary>
     public string? CropSizeText => State.Crop is { } crop && FramePixels is { Width: > 0, Height: > 0 } frame
-        ? crop.ToPixels(frame.Width, frame.Height) is var p ? string.Create(CultureInfo.InvariantCulture, $"{p.Width} × {p.Height}") : null
+        ? crop.ToPixels(frame.Width, frame.Height).SizeText
         : null;
 
     partial void OnSelectedCropAspectChanged(CropAspect value)
@@ -107,9 +109,23 @@ public sealed partial class PreviewViewModel
             _owner.StatusMessage = $"Exports crop to {size}.";
     }
 
+    /// <summary>The edit or the analysis of its files changed: the timeline to play, the frame and the crop.</summary>
+    private void OnProjectChanged()
+    {
+        ScheduleTimelineReload();
+        // Clips may have come or gone.
+        OnPropertyChanged(nameof(CanCrop));
+        UpdateFrame();
+        if (!Equals(_announcedCrop, State.Crop))
+        {
+            _announcedCrop = State.Crop;
+            OnCropChanged();
+        }
+    }
+
     /// <summary>
-    /// Works out the frame and the picture shown: called when the edit, the analysis, the playhead or the preview
-    /// mode changes. Leaves crop mode when there's nothing to crop any more.
+    /// Works out the frame and the picture shown: called when the edit, the analysis or the preview mode changes.
+    /// Leaves crop mode when there's nothing to crop any more.
     /// </summary>
     private void UpdateFrame()
     {
@@ -121,7 +137,6 @@ public sealed partial class PreviewViewModel
         FrameAspect = frame?.Aspect ?? 0;
         FramePixels = frame is null ? default : new PixelSize(frame.Width, frame.Height);
         UpdatePicture();
-        OnCropChanged();
         if (IsCropping && !CanCrop)
             IsCropping = false;
     }
@@ -142,7 +157,6 @@ public sealed partial class PreviewViewModel
         OnPropertyChanged(nameof(HasCrop));
         ResetCropCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CropSizeText));
-        OnPropertyChanged(nameof(CanCrop));
         OnPropertyChanged(nameof(PreviewTitle));
     }
 }

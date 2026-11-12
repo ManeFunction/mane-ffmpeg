@@ -207,7 +207,7 @@ public sealed class CropOverlay : Control
         var pixels = PreviewGeometry.ToCrop(Frame, rect).Clamped()?.ToPixels(frame.Width, frame.Height);
         if (pixels is not { } p)
             return;
-        var text = new FormattedText(string.Create(CultureInfo.InvariantCulture, $"{p.Width} × {p.Height}"), CultureInfo.CurrentCulture,
+        var text = new FormattedText(p.SizeText, CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight, Typeface.Default, 12, Brushes.White);
         var box = new Rect(rect.Center.X - text.Width / 2 - 6, rect.Y + 10, text.Width + 12, text.Height + 4);
         context.DrawRectangle(LabelBackground, null, box, 4, 4);

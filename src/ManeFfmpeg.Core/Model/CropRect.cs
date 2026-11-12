@@ -5,6 +5,9 @@ public readonly record struct PixelCrop(int X, int Y, int Width, int Height)
 {
     /// <summary>The ffmpeg filter that cuts it out.</summary>
     public string Filter => $"crop={Width}:{Height}:{X}:{Y}";
+
+    /// <summary>Its size as the editor shows it, e.g. "1280 × 720".</summary>
+    public string SizeText => $"{Width} × {Height}";
 }
 
 /// <summary>

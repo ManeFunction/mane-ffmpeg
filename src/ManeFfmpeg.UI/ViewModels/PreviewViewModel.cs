@@ -44,7 +44,8 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
     public partial string? PreviewMessage { get; private set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsSourceMode), nameof(CanMark), nameof(Position), nameof(PositionText), nameof(PreviewTitle))]
+    [NotifyPropertyChangedFor(nameof(IsSourceMode), nameof(CanMark), nameof(Position), nameof(PositionText), nameof(PreviewTitle),
+        nameof(ShownCrop), nameof(CanCrop))]
     public partial PreviewMode Mode { get; private set; }
 
     [ObservableProperty]
@@ -72,7 +73,7 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
 
     /// <summary>Compact mode: the video preview is hidden and mpv plays audio only.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(PreviewToggleText))]
+    [NotifyPropertyChangedFor(nameof(PreviewToggleText), nameof(CanCrop))]
     public partial bool IsCompact { get; set; }
 
     partial void OnIsCompactChanged(bool value)
@@ -115,16 +116,8 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
     public PreviewViewModel(MainWindowViewModel owner)
     {
         _owner = owner;
-        owner.StateChanged += (_, _) =>
-        {
-            ScheduleTimelineReload();
-            UpdateFrame();
-        };
-        owner.Catalog.Changed += _ =>
-        {
-            ScheduleTimelineReload();
-            UpdateFrame();
-        };
+        owner.StateChanged += (_, _) => OnProjectChanged();
+        owner.Catalog.Changed += _ => OnProjectChanged();
         _reloadTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, OnReloadTimer);
 
         if (_app.MpvAvailable)
