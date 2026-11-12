@@ -16,14 +16,14 @@ namespace ManeFfmpeg.UI.Controls;
 public sealed class CropOverlay : Control
 {
     public static readonly StyledProperty<double> PictureAspectProperty =
-        MpvVideoView.PictureAspectProperty.AddOwner<CropOverlay>();
+        PreviewProperties.PictureAspectProperty.AddOwner<CropOverlay>();
 
     public static readonly StyledProperty<double> FrameAspectProperty =
-        MpvVideoView.FrameAspectProperty.AddOwner<CropOverlay>();
+        PreviewProperties.FrameAspectProperty.AddOwner<CropOverlay>();
 
     /// <summary>The crop as committed; null is the whole frame.</summary>
     public static readonly StyledProperty<CropRect?> CropProperty =
-        MpvVideoView.CropProperty.AddOwner<CropOverlay>();
+        PreviewProperties.CropProperty.AddOwner<CropOverlay>();
 
     /// <summary>Width over height the crop keeps while dragging; 0 for any shape.</summary>
     public static readonly StyledProperty<double> AspectLockProperty =

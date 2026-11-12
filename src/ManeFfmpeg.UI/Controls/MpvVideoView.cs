@@ -29,15 +29,15 @@ public sealed class MpvVideoView : Control
 
     /// <summary>Width over height of the picture mpv shows (0 = unknown: the frame is drawn as rendered).</summary>
     public static readonly StyledProperty<double> PictureAspectProperty =
-        AvaloniaProperty.Register<MpvVideoView, double>(nameof(PictureAspect));
+        PreviewProperties.PictureAspectProperty.AddOwner<MpvVideoView>();
 
     /// <summary>Width over height of the output frame the picture is fitted into (0 = the picture's own).</summary>
     public static readonly StyledProperty<double> FrameAspectProperty =
-        AvaloniaProperty.Register<MpvVideoView, double>(nameof(FrameAspect));
+        PreviewProperties.FrameAspectProperty.AddOwner<MpvVideoView>();
 
     /// <summary>The part of the output frame to show; null shows all of it.</summary>
     public static readonly StyledProperty<CropRect?> CropProperty =
-        AvaloniaProperty.Register<MpvVideoView, CropRect?>(nameof(Crop));
+        PreviewProperties.CropProperty.AddOwner<MpvVideoView>();
 
     private const int MaxPixels = 1920 * 1080;
 
