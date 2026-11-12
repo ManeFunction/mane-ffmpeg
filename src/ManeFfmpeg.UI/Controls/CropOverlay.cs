@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using ManeFfmpeg.Core.Model;
+using ManeFfmpeg.UI.ViewModels;
 
 namespace ManeFfmpeg.UI.Controls;
 
@@ -32,7 +33,6 @@ public sealed class CropOverlay : Control
     public static readonly StyledProperty<PixelSize> FramePixelsProperty =
         AvaloniaProperty.Register<CropOverlay, PixelSize>(nameof(FramePixels));
 
-    private const double Grab = 9;
     private const double HandleSize = 8;
 
     private static readonly IBrush Shade = new SolidColorBrush(Color.FromArgb(150, 0, 0, 0));
@@ -41,30 +41,7 @@ public sealed class CropOverlay : Control
     private static readonly IPen HandleOutline = new Pen(new SolidColorBrush(Color.FromArgb(160, 0, 0, 0)), 1);
     private static readonly IBrush LabelBackground = new SolidColorBrush(Color.FromArgb(180, 0, 0, 0));
 
-    [Flags]
-    private enum Edges
-    {
-        None = 0,
-        Left = 1,
-        Top = 2,
-        Right = 4,
-        Bottom = 8,
-    }
-
-    private enum DragKind
-    {
-        None,
-        Move,
-        Resize,
-    }
-
-    private DragKind _drag;
-    private Edges _edges;
-    private Point _pressPoint;
-    private Rect _pressRect;
-    private double _pressAspect;
-    // The rectangle while it is dragged, in control coordinates; null shows the committed crop.
-    private Rect? _live;
+    private readonly CropDragGesture _drag = new();
 
     static CropOverlay()
     {
@@ -110,37 +87,18 @@ public sealed class CropOverlay : Control
     /// <summary>The output frame on screen: where the video view shows it while nothing is cropped away.</summary>
     private Rect Frame => PreviewGeometry.Fit(FrameAspect > 0 ? FrameAspect : PictureAspect, new Rect(Bounds.Size));
 
-    private Rect Shown => _live ?? PreviewGeometry.Inside(Frame, Crop ?? CropRect.Full);
+    private Rect Shown => _drag.Live ?? PreviewGeometry.Inside(Frame, Crop ?? CropRect.Full);
 
     private bool CanEdit => (FrameAspect > 0 || PictureAspect > 0) && Bounds.Width > 0 && Bounds.Height > 0;
 
-    // ---- Input ------------------------------------------------------------------------------------
+    // ---- Input (the drag itself is CropDragGesture) ----------------------------------------------
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
         if (!CanEdit || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             return;
-        var point = e.GetPosition(this);
-        var rect = Shown;
-        _pressPoint = point;
-        _pressRect = rect;
-        _pressAspect = rect.Height > 0 ? rect.Width / rect.Height : 1;
-        _edges = HitEdges(rect, point);
-        if (_edges != Edges.None)
-            _drag = DragKind.Resize;
-        else if (rect.Contains(point))
-            _drag = DragKind.Move;
-        else
-        {
-            // Outside the rectangle: draw a new one from here, as if dragging the corner of an empty one.
-            var start = Clamp(point, Frame);
-            _pressRect = new Rect(start, start);
-            _edges = Edges.Right | Edges.Bottom;
-            _drag = DragKind.Resize;
-            _pressAspect = AspectLock > 0 ? AspectLock : rect.Height > 0 ? rect.Width / rect.Height : 1;
-        }
-        _live = rect;
+        _drag.Press(e.GetPosition(this), Frame, Shown, AspectLock);
         e.Pointer.Capture(this);
         e.Handled = true;
         InvalidateVisual();
@@ -150,14 +108,12 @@ public sealed class CropOverlay : Control
     {
         base.OnPointerMoved(e);
         var point = e.GetPosition(this);
-        if (_drag == DragKind.None)
+        if (!_drag.IsDragging)
         {
-            Cursor = CanEdit ? CursorFor(HitEdges(Shown, point), Shown.Contains(point)) : null;
+            Cursor = CanEdit ? CursorFor(CropDragGesture.HitEdges(Shown, point), Shown.Contains(point)) : null;
             return;
         }
-        var keepShape = AspectLock > 0 || (e.KeyModifiers & KeyModifiers.Shift) != 0;
-        var aspect = AspectLock > 0 ? AspectLock : _pressAspect;
-        _live = _drag == DragKind.Move ? Moved(point) : Resized(point, keepShape ? aspect : 0);
+        _drag.Move(point, (e.KeyModifiers & KeyModifiers.Shift) != 0);
         e.Handled = true;
         InvalidateVisual();
     }
@@ -165,122 +121,21 @@ public sealed class CropOverlay : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
-        if (_drag == DragKind.None)
+        if (!_drag.IsDragging)
             return;
-        var moved = Math.Abs(e.GetPosition(this).X - _pressPoint.X) + Math.Abs(e.GetPosition(this).Y - _pressPoint.Y) > 1;
-        var result = _live;
-        _drag = DragKind.None;
-        _live = null;
+        var crop = _drag.Release(e.GetPosition(this));
         e.Pointer.Capture(null);
         e.Handled = true;
         InvalidateVisual();
-        // A click without a drag changes nothing (and a click outside doesn't collapse the crop to a dot).
-        if (moved && result is { } rect)
-            Committed?.Invoke(PreviewGeometry.ToCrop(Frame, rect));
+        if (crop is not null)
+            Committed?.Invoke(crop);
     }
 
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     {
         base.OnPointerCaptureLost(e);
-        _drag = DragKind.None;
-        _live = null;
+        _drag.Cancel();
         InvalidateVisual();
-    }
-
-    private Rect Moved(Point point)
-    {
-        var frame = Frame;
-        var x = Within(_pressRect.X + point.X - _pressPoint.X, frame.X, frame.Right - _pressRect.Width);
-        var y = Within(_pressRect.Y + point.Y - _pressPoint.Y, frame.Y, frame.Bottom - _pressRect.Height);
-        return new Rect(x, y, _pressRect.Width, _pressRect.Height);
-    }
-
-    /// <summary>
-    /// The pressed rectangle with the dragged edges moved to <paramref name="point"/> and the others held, kept inside
-    /// the frame and at least the minimum size; with an <paramref name="aspect"/>, of that shape.
-    /// </summary>
-    private Rect Resized(Point point, double aspect)
-    {
-        var frame = Frame;
-        var p = Clamp(point, frame);
-        var r = _pressRect;
-        var minW = CropRect.MinSize * frame.Width;
-        var minH = CropRect.MinSize * frame.Height;
-        var horizontal = (_edges & (Edges.Left | Edges.Right)) != 0;
-        var vertical = (_edges & (Edges.Top | Edges.Bottom)) != 0;
-
-        // The fixed side on each dragged axis, and which way the dragged side lies from it.
-        var anchorX = (_edges & Edges.Left) != 0 ? r.Right : r.X;
-        var anchorY = (_edges & Edges.Top) != 0 ? r.Bottom : r.Y;
-        var dirX = horizontal ? (p.X >= anchorX ? 1 : -1) : 0;
-        var dirY = vertical ? (p.Y >= anchorY ? 1 : -1) : 0;
-        var width = horizontal ? Math.Abs(p.X - anchorX) : r.Width;
-        var height = vertical ? Math.Abs(p.Y - anchorY) : r.Height;
-
-        // Room on each axis: from the anchor to the frame edge it grows towards, or around the centre it keeps.
-        var roomX = dirX > 0 ? frame.Right - anchorX : dirX < 0 ? anchorX - frame.X : 2 * Math.Min(r.Center.X - frame.X, frame.Right - r.Center.X);
-        var roomY = dirY > 0 ? frame.Bottom - anchorY : dirY < 0 ? anchorY - frame.Y : 2 * Math.Min(r.Center.Y - frame.Y, frame.Bottom - r.Center.Y);
-
-        if (aspect > 0)
-        {
-            // Follow whichever dragged side went furthest; an edge drag sizes the other axis from it.
-            if (horizontal && vertical)
-            {
-                if (width < height * aspect)
-                    width = height * aspect;
-                else
-                    height = width / aspect;
-            }
-            else if (horizontal)
-                height = width / aspect;
-            else
-                width = height * aspect;
-            var fit = Math.Min(1, Math.Min(roomX / Math.Max(width, 1e-9), roomY / Math.Max(height, 1e-9)));
-            width *= fit;
-            height *= fit;
-            var grow = Math.Max(1, Math.Max(minW / Math.Max(width, 1e-9), minH / Math.Max(height, 1e-9)));
-            width *= grow;
-            height *= grow;
-        }
-        width = Within(width, Math.Min(minW, roomX), Math.Max(roomX, minW));
-        height = Within(height, Math.Min(minH, roomY), Math.Max(roomY, minH));
-
-        var x = dirX > 0 ? anchorX : dirX < 0 ? anchorX - width : r.Center.X - width / 2;
-        var y = dirY > 0 ? anchorY : dirY < 0 ? anchorY - height : r.Center.Y - height / 2;
-        x = Within(x, frame.X, frame.Right - width);
-        y = Within(y, frame.Y, frame.Bottom - height);
-        return new Rect(x, y, width, height);
-    }
-
-    /// <summary>
-    /// Like Math.Clamp, but a <paramref name="max"/> below <paramref name="min"/> (a rectangle as big as the frame, give
-    /// or take rounding) gives <paramref name="min"/> instead of throwing.
-    /// </summary>
-    private static double Within(double value, double min, double max) => Math.Max(min, Math.Min(value, max));
-
-    private static Point Clamp(Point point, Rect area) =>
-        new(Math.Clamp(point.X, area.X, area.Right), Math.Clamp(point.Y, area.Y, area.Bottom));
-
-    /// <summary>Which edges a point grabs: near a corner both, near an edge one, else none.</summary>
-    private static Edges HitEdges(Rect rect, Point p)
-    {
-        var inX = p.X >= rect.X - Grab && p.X <= rect.Right + Grab;
-        var inY = p.Y >= rect.Y - Grab && p.Y <= rect.Bottom + Grab;
-        if (!inX || !inY)
-            return Edges.None;
-        // A small rectangle still leaves room in the middle to move it.
-        var grabX = Math.Min(Grab, rect.Width / 4);
-        var grabY = Math.Min(Grab, rect.Height / 4);
-        var edges = Edges.None;
-        if (Math.Abs(p.X - rect.X) <= grabX || (p.X < rect.X && p.X >= rect.X - Grab))
-            edges |= Edges.Left;
-        else if (Math.Abs(p.X - rect.Right) <= grabX || (p.X > rect.Right && p.X <= rect.Right + Grab))
-            edges |= Edges.Right;
-        if (Math.Abs(p.Y - rect.Y) <= grabY || (p.Y < rect.Y && p.Y >= rect.Y - Grab))
-            edges |= Edges.Top;
-        else if (Math.Abs(p.Y - rect.Bottom) <= grabY || (p.Y > rect.Bottom && p.Y <= rect.Bottom + Grab))
-            edges |= Edges.Bottom;
-        return edges;
     }
 
     private static readonly Cursor Move = new(StandardCursorType.SizeAll);
@@ -292,14 +147,14 @@ public sealed class CropOverlay : Control
     private static readonly Cursor BottomLeft = new(StandardCursorType.BottomLeftCorner);
     private static readonly Cursor BottomRight = new(StandardCursorType.BottomRightCorner);
 
-    private static Cursor CursorFor(Edges edges, bool inside) => edges switch
+    private static Cursor CursorFor(CropEdges edges, bool inside) => edges switch
     {
-        Edges.Left | Edges.Top => TopLeft,
-        Edges.Right | Edges.Top => TopRight,
-        Edges.Left | Edges.Bottom => BottomLeft,
-        Edges.Right | Edges.Bottom => BottomRight,
-        Edges.Left or Edges.Right => LeftRight,
-        Edges.Top or Edges.Bottom => UpDown,
+        CropEdges.Left | CropEdges.Top => TopLeft,
+        CropEdges.Right | CropEdges.Top => TopRight,
+        CropEdges.Left | CropEdges.Bottom => BottomLeft,
+        CropEdges.Right | CropEdges.Bottom => BottomRight,
+        CropEdges.Left or CropEdges.Right => LeftRight,
+        CropEdges.Top or CropEdges.Bottom => UpDown,
         _ => inside ? Move : Cross,
     };
 
