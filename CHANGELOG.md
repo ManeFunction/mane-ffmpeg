@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - The crop rectangle can be dragged from anywhere inside it to move it, and its edges grabbed from inside; only
   the border line and the handles reacted to the mouse.
+- The crop size shown on the rectangle, in the preview title and in the status bar is the size exported. For
+  videos with non-square pixels (anamorphic HDV/DV) and odd sizes it showed the size on screen instead.
 
 ## [2.1.0] - 2026-11-12
 ### Added

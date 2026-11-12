@@ -110,11 +110,13 @@ public sealed partial class PreviewViewModel
     /// </summary>
     private void UpdateFrame()
     {
-        var frame = Mode == PreviewMode.Source
-            ? PreviewedSource?.Info?.Video
-            : State.Timeline.Clips is { Count: > 0 } clips ? Catalog.Info(clips[0].SourceId)?.Video : null;
-        FrameAspect = frame?.DisplayAspect ?? 0;
-        FramePixels = frame is null ? default : new PixelSize(frame.DisplayWidth, frame.DisplayHeight);
+        // The frame the export would make: the same one the export crops, so the sizes shown are the sizes exported.
+        IReadOnlyList<VideoStreamInfo?> videos = Mode == PreviewMode.Source
+            ? [PreviewedSource?.Info?.Video]
+            : [.. State.Timeline.Clips.Select(c => Catalog.Info(c.SourceId)?.Video)];
+        var frame = videos is [{ } first, ..] ? OutputFrame.Of([first, .. videos.Skip(1).OfType<VideoStreamInfo>()]) : null;
+        FrameAspect = frame?.Aspect ?? 0;
+        FramePixels = frame is null ? default : new PixelSize(frame.Width, frame.Height);
         UpdatePicture();
         OnCropChanged();
         if (IsCropping && !CanCrop)

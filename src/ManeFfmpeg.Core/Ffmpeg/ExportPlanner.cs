@@ -128,7 +128,7 @@ public static class ExportPlanner
         if (crop is not null && args.VideoCopy)
             throw new ExportPlanException(
                 $"Preset \"{job.Preset.Name}\" copies the video, and a copied picture can't be cropped. Choose an encoding preset or reset the crop.");
-        var ctx = new Context(job, args, fallback, items, crop);
+        var ctx = new Context(job, args, fallback, items, OutputFrame.Of([.. items.Select(i => i.Video)]), crop);
         var plan = items.Count == 1 && IsWholeFile(items[0])
             ? Passthrough(ctx)
             : args.VideoCopy
@@ -136,7 +136,10 @@ public static class ExportPlanner
                 : items.Count == 1 && args.AudioCopy && items[0].Audio is not null
                     ? SingleClipAudioCopy(ctx) ?? Encode(ctx)
                     : Encode(ctx);
-        return plan with { Notes = [.. args.Warnings, .. plan.Notes], OutputPath = job.OutputPath, WorkDirectory = job.WorkDirectory };
+        IEnumerable<string> cropped = ctx.CropPixels is { } p
+            ? [$"Cropped to {p.Width}×{p.Height}, from {p.X},{p.Y} of the {ctx.Frame.Width}×{ctx.Frame.Height} frame."]
+            : [];
+        return plan with { Notes = [.. args.Warnings, .. plan.Notes, .. cropped], OutputPath = job.OutputPath, WorkDirectory = job.WorkDirectory };
     }
 
     /// <param name="Heard">What the clip plays (an audio file dropped on it, or <paramref name="Source"/>), or null for silence.</param>
@@ -155,24 +158,20 @@ public static class ExportPlanner
         public bool OwnAudioInSync => PlaysOwnAudio && Clip.AudioOffset == TimeSpan.Zero;
     }
 
+    /// <param name="Frame">The joined picture, which the crop is a part of.</param>
     /// <param name="Crop">The part of the frame to keep, or null for all of it.</param>
-    private sealed record Context(ExportJob Job, PresetArguments Args, IReadOnlyList<string> Fallback, List<Item> Items, CropRect? Crop)
+    private sealed record Context(ExportJob Job, PresetArguments Args, IReadOnlyList<string> Fallback, List<Item> Items, OutputFrame Frame, CropRect? Crop)
     {
         public string Out => Job.OutputPath;
         public bool AnyAudio => Items.Any(i => i.Audio is not null);
 
-        /// <summary>
-        /// The filters for the finished picture, a <paramref name="frame"/> as the graph has it: the crop, then the
-        /// preset's own -vf. Null when there are none; says what the crop keeps in <paramref name="notes"/>.
-        /// </summary>
-        public string? VideoFilter((int Width, int Height) frame, List<string> notes)
-        {
-            if (Crop is null)
-                return Args.VideoFilter;
-            var pixels = Crop.ToPixels(frame.Width, frame.Height);
-            notes.Add($"Cropped to {pixels.Width}×{pixels.Height}, from {pixels.X},{pixels.Y} of the {frame.Width}×{frame.Height} frame.");
-            return Args.VideoFilter is { } preset ? $"{pixels.Filter},{preset}" : pixels.Filter;
-        }
+        /// <summary>What the crop keeps of the frame, or null without one.</summary>
+        public PixelCrop? CropPixels => Crop is null ? null : Frame.Pixels(Crop);
+
+        /// <summary>The filters for the finished picture: the crop, then the preset's own -vf. Null when there are none.</summary>
+        public string? VideoFilter => CropPixels is { } pixels
+            ? Args.VideoFilter is { } preset ? $"{pixels.Filter},{preset}" : pixels.Filter
+            : Args.VideoFilter;
     }
 
     private static Item Resolve(ExportJob job, Clip clip, PresetArguments args)
@@ -203,19 +202,18 @@ public static class ExportPlanner
     private static ExportPlan Passthrough(Context ctx)
     {
         var item = ctx.Items[0];
-        var notes = new List<string>();
         var a = new List<string>(Prefix) { "-i", item.Source.Path, "-map", $"0:{item.Video.Index}" };
         if (item.Audio is not null)
             a.AddRange(["-map", $"0:{item.Audio.Index}"]);
-        if (ctx.VideoFilter(item.Video.UprightSize, notes) is { } videoFilter)
+        if (ctx.VideoFilter is { } videoFilter)
             a.AddRange(["-vf", videoFilter]);
         if (ctx.Args.AudioFilter is not null && item.Audio is not null)
             a.AddRange(["-af", ctx.Args.AudioFilter]);
         a.AddRange(ctx.Args.OutputTokens);
         a.AddRange(ContainerFlags(ctx, IsHevc(ctx.Args, item)));
         a.Add(ctx.Out);
-        notes.Insert(0, ctx.Crop is null ? "Whole file, no edits: the preset runs unchanged." : "Whole file, cropped: the preset runs on it.");
-        return new ExportPlan(ExportMode.Passthrough, [new ExportStep("Exporting", a, item.Media.Duration, true)], [], item.Media.Duration, notes);
+        var note = ctx.Crop is null ? "Whole file, no edits: the preset runs unchanged." : "Whole file, cropped: the preset runs on it.";
+        return new ExportPlan(ExportMode.Passthrough, [new ExportStep("Exporting", a, item.Media.Duration, true)], [], item.Media.Duration, [note]);
     }
 
     // ---- Encode ----------------------------------------------------------------------------------------
@@ -226,10 +224,7 @@ public static class ExportPlanner
         var inputs = new List<string>();
         var graph = new StringBuilder();
         var reference = ctx.Items[0].Video;
-        var norm = VideoNormalization(ctx.Items);
-        // Normalized clips are scaled to the first one's display size; otherwise they all come out of it unscaled.
-        var frame = SizeDiffers(ctx.Items) ? (reference.DisplayWidth, reference.DisplayHeight) : reference.UprightSize;
-        var videoFilter = ctx.VideoFilter(frame, notes);
+        var norm = VideoNormalization(ctx);
         var audioFormat = AudioFormat(ctx.Items);
         var n = ctx.Items.Count;
 
@@ -251,7 +246,7 @@ public static class ExportPlanner
             }
         }
 
-        AppendConcat(graph, n, video: true, audio: ctx.AnyAudio, videoFilter, ctx.Args.AudioFilter);
+        AppendConcat(graph, n, video: true, audio: ctx.AnyAudio, ctx.VideoFilter, ctx.Args.AudioFilter);
 
         var a = new List<string>(Prefix);
         a.AddRange(inputs);
@@ -467,7 +462,7 @@ public static class ExportPlanner
         var videoFilters = new List<string>();
         if (trim.Length > 0)
             videoFilters.Add($"trim={trim}duration={TimeFormat.Seconds(clip.Duration)},setpts=PTS-STARTPTS");
-        if (ctx.VideoFilter(item.Video.UprightSize, notes) is { } videoFilter)
+        if (ctx.VideoFilter is { } videoFilter)
             videoFilters.Add(videoFilter);
         if (videoFilters.Count > 0)
             mux.AddRange(["-vf", string.Join(',', videoFilters)]);
@@ -648,10 +643,11 @@ public static class ExportPlanner
     }
 
     /// <summary>Filters that make every clip match the first one, or "" when they already match.</summary>
-    private static string VideoNormalization(List<Item> items)
+    private static string VideoNormalization(Context ctx)
     {
+        var items = ctx.Items;
         var r = items[0].Video;
-        var sizeDiffers = SizeDiffers(items);
+        var sizeDiffers = ctx.Frame.Normalized;
         var rateDiffers = items.Any(i => !i.Video.FrameRate.Equivalent(r.FrameRate));
         var formatDiffers = items.Any(i => i.Video.PixelFormat != r.PixelFormat) && r.PixelFormat.Length > 0;
         var sb = new StringBuilder();
@@ -662,14 +658,6 @@ public static class ExportPlanner
         if (formatDiffers)
             sb.Append(",format=").Append(r.PixelFormat);
         return sb.ToString();
-    }
-
-    /// <summary>Some clip is shown at another size than the first: all are scaled and padded to the first's.</summary>
-    private static bool SizeDiffers(List<Item> items)
-    {
-        var r = items[0].Video;
-        return items.Any(i => i.Video.DisplayWidth != r.DisplayWidth || i.Video.DisplayHeight != r.DisplayHeight
-                              || !i.Video.SampleAspectRatio.Equivalent(r.SampleAspectRatio));
     }
 
     /// <summary>

@@ -185,7 +185,7 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
         Assert.Equal([ExportMode.Passthrough, ExportMode.SingleClipAudioCopy, ExportMode.Encode], [whole.Mode, single.Mode, joined.Mode]);
 
         var first = (await media.ProbeAsync(media.Sync30)).Video!;
-        var expected = _crop.ToPixels(first.Width, first.Height);
+        var expected = OutputFrame.Of([first]).Pixels(_crop);
         foreach (var output in new[] { wholeOut, singleOut, joinedOut })
         {
             var video = (await media.ProbeAsync(output)).Video!;

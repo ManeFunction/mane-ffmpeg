@@ -66,12 +66,13 @@ public class CropTests
 
     // ---- Export ------------------------------------------------------------------------------------
 
-    private static MediaInfo Media(int width = 1920, int height = 1080, int rotation = 0) => new()
+    private static MediaInfo Media(int width = 1920, int height = 1080, int rotation = 0, Rational? sar = null) => new()
     {
         Duration = S(10), FormatName = "mov,mp4,m4a,3gp,3g2,mj2",
         Video = new VideoStreamInfo
         {
             Index = 0, Codec = "h264", Width = width, Height = height, FrameRate = new Rational(30, 1), PixelFormat = "yuv420p", Rotation = rotation,
+            SampleAspectRatio = sar ?? new Rational(1, 1),
         },
         AudioStreams = [new AudioStreamInfo { Index = 1, Codec = "aac", SampleRate = 48000, Channels = 2, ChannelLayout = "stereo", Duration = S(10) }],
     };
@@ -132,6 +133,41 @@ public class CropTests
         var plan = ExportPlanner.Plan(Job(Encode, new Dictionary<string, MediaInfo> { ["a"] = Media(rotation: 90) },
             new CropRect(0, 0.25, 1, 0.5), Clip.Create("a", S(0), S(10))));
         Assert.Contains("crop=1080:960:0:480", Command(plan));
+    }
+
+    [Theory]
+    [InlineData("anamorphic")]
+    [InlineData("odd")]
+    [InlineData("portrait")]
+    [InlineData("mixed")]
+    [InlineData("mixed anamorphic")]
+    public void The_frame_the_preview_shows_is_the_frame_the_export_crops(string timeline)
+    {
+        var media = timeline switch
+        {
+            "anamorphic" => new Dictionary<string, MediaInfo> { ["a"] = Media(1440, 1080, sar: new Rational(4, 3)) },
+            "odd" => new Dictionary<string, MediaInfo> { ["a"] = Media(1279, 719) },
+            "portrait" => new Dictionary<string, MediaInfo> { ["a"] = Media(rotation: 90) },
+            "mixed" => new Dictionary<string, MediaInfo> { ["a"] = Media(1280, 720), ["b"] = Media(640, 480) },
+            _ => new Dictionary<string, MediaInfo> { ["a"] = Media(1440, 1080, sar: new Rational(4, 3)), ["b"] = Media() },
+        };
+        var clips = media.Keys.Select(id => Clip.Create(id, S(1), S(3))).ToArray();
+        var frame = OutputFrame.Of([.. media.Values.Select(m => m.Video!)]);
+        var crop = new CropRect(0.1, 0.2, 0.5, 0.6);
+        var plan = ExportPlanner.Plan(Job(Encode, media, crop, clips));
+        Assert.Contains(frame.Pixels(crop).Filter, Command(plan));
+        Assert.Contains(plan.Notes, n => n.Contains($"of the {frame.Width}×{frame.Height} frame"));
+    }
+
+    [Fact]
+    public void An_anamorphic_frame_is_cropped_in_its_stored_pixels()
+    {
+        // 1440×1080 shown as 1920×1080: alone it is cropped as stored, joined with a clip of another shape it is
+        // first scaled to its display size.
+        var anamorphic = Media(1440, 1080, sar: new Rational(4, 3)).Video!;
+        Assert.Equal(new OutputFrame(1440, 1080, 16.0 / 9, false), OutputFrame.Of([anamorphic]));
+        Assert.Equal(new OutputFrame(1920, 1080, 16.0 / 9, true), OutputFrame.Of([anamorphic, Media(1280, 720).Video!]));
+        Assert.Equal(new PixelCrop(0, 0, 720, 1080), OutputFrame.Of([anamorphic]).Pixels(LeftHalf));
     }
 
     [Fact]
