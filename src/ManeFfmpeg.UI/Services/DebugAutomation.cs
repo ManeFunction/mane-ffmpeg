@@ -536,28 +536,59 @@ internal static class DebugAutomation
         Console.WriteLine($"[snapshot] {path}");
     }
 
-    /// <summary>Synthetic mouse drag on the crop overlay, between points given as fractions of its bounds.</summary>
+    /// <summary>
+    /// Mouse drag on the crop overlay, between points given as fractions of its bounds. Sent as raw platform input, so
+    /// it is hit-tested and routed like a real mouse: it fails where a user's drag would.
+    /// </summary>
     private static async Task CropDragAsync(MainWindow window, Point from, Point to, bool shift)
     {
         var control = window.CropOverlay;
         var size = control.Bounds.Size;
         var origin = control.TranslatePoint(new Point(0, 0), window) ?? default;
         Point At(Point f) => origin + new Point(f.X * size.Width, f.Y * size.Height);
-        var pointer = new Pointer(Pointer.GetNextFreeId(), PointerType.Mouse, true);
-        var mods = shift ? KeyModifiers.Shift : KeyModifiers.None;
-        var raw = shift ? RawInputModifiers.Shift : RawInputModifiers.None;
-        ulong ts = 1;
-        control.RaiseEvent(new PointerPressedEventArgs(control, pointer, window, At(from), ts++,
-            new PointerPointProperties(raw | RawInputModifiers.LeftMouseButton, PointerUpdateKind.LeftButtonPressed), mods));
+        var mouse = new RawMouse(window);
+        var mods = shift ? RawInputModifiers.Shift : RawInputModifiers.None;
+        mouse.Send("Move", At(from), mods);
+        mouse.Send("LeftButtonDown", At(from), mods | RawInputModifiers.LeftMouseButton);
         for (var i = 1; i <= 10; i++)
         {
             var p = new Point(from.X + (to.X - from.X) * i / 10, from.Y + (to.Y - from.Y) * i / 10);
-            control.RaiseEvent(new PointerEventArgs(InputElement.PointerMovedEvent, control, pointer, window, At(p), ts++,
-                new PointerPointProperties(raw | RawInputModifiers.LeftMouseButton, PointerUpdateKind.Other), mods));
+            mouse.Send("Move", At(p), mods | RawInputModifiers.LeftMouseButton);
             await Task.Delay(16);
         }
-        control.RaiseEvent(new PointerReleasedEventArgs(control, pointer, window, At(to), ts,
-            new PointerPointProperties(raw, PointerUpdateKind.LeftButtonReleased), mods, MouseButton.Left));
+        mouse.Send("LeftButtonUp", At(to), mods);
+        Console.WriteLine($"[crop-drag] crop={window.ViewModel.State.Crop}");
+    }
+
+    /// <summary>
+    /// Mouse input as the platform delivers it, through the window's internal input callback (see the project notes):
+    /// the types it needs are public at runtime but hidden from compilation, hence reflection.
+    /// </summary>
+    private sealed class RawMouse
+    {
+        private static readonly System.Reflection.Assembly Input = typeof(InputElement).Assembly;
+        private readonly Delegate _deliver;
+        private readonly object _root;
+        private readonly object _device;
+
+        public RawMouse(Avalonia.Controls.Window window)
+        {
+            var impl = typeof(TopLevel).GetProperty("PlatformImpl")!.GetValue(window)!;
+            var topLevelImpl = impl.GetType().GetInterfaces().First(i => i.FullName == "Avalonia.Platform.ITopLevelImpl");
+            _deliver = (Delegate)topLevelImpl.GetProperty("Input")!.GetValue(impl)!;
+            _root = typeof(TopLevel).GetProperty("InputRoot", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .GetValue(window)!;
+            _device = Activator.CreateInstance(Input.GetType("Avalonia.Input.MouseDevice")!, new Pointer(Pointer.GetNextFreeId(), PointerType.Mouse, true))!;
+        }
+
+        /// <summary>Sends a RawPointerEventType (<paramref name="type"/>) at a point in window coordinates.</summary>
+        public void Send(string type, Point at, RawInputModifiers modifiers)
+        {
+            var kind = Enum.Parse(Input.GetType("Avalonia.Input.Raw.RawPointerEventType")!, type);
+            var args = Activator.CreateInstance(Input.GetType("Avalonia.Input.Raw.RawPointerEventArgs")!,
+                _device, (ulong)Environment.TickCount64, _root, kind, at, modifiers)!;
+            _deliver.DynamicInvoke(args);
+        }
     }
 
     /// <summary>Synthetic mouse drag on the timeline, in timeline seconds (x) and track rows (y).</summary>

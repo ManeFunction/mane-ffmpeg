@@ -312,6 +312,10 @@ public sealed class CropOverlay : Control
         var bounds = new Rect(Bounds.Size);
         var rect = Shown;
 
+        // Avalonia hit-tests only what was drawn: without this the inside of the rectangle (to move it, or grab an
+        // edge from within) would pass the pointer through to the video view underneath.
+        context.FillRectangle(Brushes.Transparent, bounds);
+
         // Everything outside the rectangle is dimmed: four bands around it.
         context.FillRectangle(Shade, new Rect(bounds.X, bounds.Y, bounds.Width, Math.Max(0, rect.Y - bounds.Y)));
         context.FillRectangle(Shade, new Rect(bounds.X, rect.Bottom, bounds.Width, Math.Max(0, bounds.Bottom - rect.Bottom)));

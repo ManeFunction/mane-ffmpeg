@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Fixed
+- The crop rectangle can be dragged from anywhere inside it to move it, and its edges grabbed from inside; only
+  the border line and the handles reacted to the mouse.
 
 ## [2.1.0] - 2026-11-12
 ### Added
