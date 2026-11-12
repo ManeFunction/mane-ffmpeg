@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using ManeFfmpeg.UI.Controls;
 using ManeFfmpeg.UI.ViewModels;
 using ManeFfmpeg.UI.Views;
@@ -330,7 +331,7 @@ internal static class DebugAutomation
                         var popup = new SettingsWindow();
                         popup.Show(window);
                         await Task.Delay(800);
-                        var combo = Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(popup).OfType<ComboBox>().First();
+                        var combo = popup.GetVisualDescendants().OfType<ComboBox>().First();
                         combo.Focus();
                         combo.IsDropDownOpen = true;
                         await Task.Delay(400);
@@ -445,14 +446,14 @@ internal static class DebugAutomation
                             settings.Show(window);
                             await Task.Delay(800);
                         }
-                        var combo = Avalonia.VisualTree.VisualExtensions.GetVisualDescendants((Avalonia.Visual?)settings ?? window).OfType<ComboBox>()
+                        var combo = ((Visual?)settings ?? window).GetVisualDescendants().OfType<ComboBox>()
                             .Where(c => c.IsEffectivelyVisible).ElementAt(settings is null ? int.Parse(parts[0], CultureInfo.InvariantCulture) : 0);
                         combo.IsDropDownOpen = true;
                         await Task.Delay(600);
-                        var list = (Avalonia.Controls.Control)Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(combo)
+                        var list = (Control)combo.GetVisualDescendants()
                             .OfType<Avalonia.Controls.Primitives.Popup>().First().Child!;
                         SaveRetina(list, parts[1]);
-                        foreach (var item in Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(list).OfType<ComboBoxItem>())
+                        foreach (var item in list.GetVisualDescendants().OfType<ComboBoxItem>())
                             Console.WriteLine($"[dropdown] item y={item.TranslatePoint(default, list)?.Y:0.##} h={item.Bounds.Height:0.##} font={item.FontSize}");
                         combo.IsDropDownOpen = false;
                         settings?.Close();
@@ -528,12 +529,8 @@ internal static class DebugAutomation
 
     private static void Snapshot(MainWindow window, string path)
     {
-        var size = new PixelSize((int)window.Bounds.Width, (int)window.Bounds.Height);
-        using var bitmap = new RenderTargetBitmap(size, new Vector(96, 96));
-        bitmap.Render(window);
-        bitmap.Save(path);
+        SaveControl(window, 1, path);
         window.Video.SaveFrame(path + ".frame.png");
-        Console.WriteLine($"[snapshot] {path}");
     }
 
     /// <summary>
@@ -599,26 +596,15 @@ internal static class DebugAutomation
         var y = row switch { "ruler" => TimelineLayout.RulerCenter, "video" => TimelineLayout.VideoCenter, _ => TimelineLayout.AudioCenter };
         Point At(double t) => new(TimelineLayout.X(vm.Zoom, vm.Scroll, TimeSpan.FromSeconds(t)), y);
         var origin = control.TranslatePoint(new Point(0, 0), window) ?? default;
-        var pointer = new Pointer(Pointer.GetNextFreeId(), PointerType.Mouse, true);
-        var mods = shift ? KeyModifiers.Shift : KeyModifiers.None;
-        var raw = shift ? RawInputModifiers.Shift : RawInputModifiers.None;
-        ulong ts = 1;
-        control.RaiseEvent(new PointerPressedEventArgs(control, pointer, window, origin + At(from), ts++,
-            new PointerPointProperties(raw | RawInputModifiers.LeftMouseButton, PointerUpdateKind.LeftButtonPressed), mods));
         var moves = milliseconds is { } ms ? Math.Max(1, (int)(ms / 8)) : 10;
         var presented = window.Video.Counters.Presented;
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        for (var i = 1; i <= moves; i++)
-        {
-            var t = from + (to - from) * i / moves;
-            control.RaiseEvent(new PointerEventArgs(InputElement.PointerMovedEvent, control, pointer, window, origin + At(t), ts++,
-                new PointerPointProperties(raw | RawInputModifiers.LeftMouseButton, PointerUpdateKind.Other), mods));
-            await Task.Delay(milliseconds is null ? 16 : 8);
-        }
-        if (milliseconds is not null)
-            Console.WriteLine($"[drag] {window.Video.Counters.Presented - presented} preview frames shown in {clock.ElapsedMilliseconds} ms of dragging");
-        control.RaiseEvent(new PointerReleasedEventArgs(control, pointer, window, origin + At(to), ts,
-            new PointerPointProperties(raw, PointerUpdateKind.LeftButtonReleased), mods, MouseButton.Left));
+        await SyntheticDragAsync(control, control, window, origin + At(from), origin + At(to), shift ? KeyModifiers.Shift : KeyModifiers.None,
+            moves, milliseconds is null ? 16 : 8, () =>
+            {
+                if (milliseconds is not null)
+                    Console.WriteLine($"[drag] {window.Video.Counters.Presented - presented} preview frames shown in {clock.ElapsedMilliseconds} ms of dragging");
+            });
     }
 
     /// <summary>Synthetic drag of an Audio tab item onto the timeline's audio row at <paramref name="at"/> seconds.</summary>
@@ -631,20 +617,32 @@ internal static class DebugAutomation
         var vm = window.ViewModel.Timeline;
         var from = item.TranslatePoint(new Point(40, 10), window) ?? default;
         var to = window.TimelineView.TranslatePoint(new Point(TimelineLayout.X(vm.Zoom, vm.Scroll, TimeSpan.FromSeconds(at)), TimelineLayout.AudioCenter), window) ?? default;
+        await SyntheticDragAsync(item, list, window, from, to, KeyModifiers.None,
+            beforeRelease: () => Console.WriteLine($"[drag-audio] target={vm.AudioDrop?.ClipId ?? "none"}"));
+    }
+
+    /// <summary>
+    /// A mouse drag raised straight on controls (not hit-tested): pressed on <paramref name="pressed"/>, moved and
+    /// released on <paramref name="moved"/>, in <paramref name="steps"/> moves <paramref name="delayMs"/> apart.
+    /// Points are in <paramref name="root"/>'s coordinates.
+    /// </summary>
+    private static async Task SyntheticDragAsync(Control pressed, Control moved, Window root, Point from, Point to, KeyModifiers modifiers,
+        int steps = 10, int delayMs = 16, Action? beforeRelease = null)
+    {
         var pointer = new Pointer(Pointer.GetNextFreeId(), PointerType.Mouse, true);
+        var raw = (modifiers & KeyModifiers.Shift) != 0 ? RawInputModifiers.Shift : RawInputModifiers.None;
         ulong ts = 1;
-        var pressed = new PointerPointProperties(RawInputModifiers.LeftMouseButton, PointerUpdateKind.LeftButtonPressed);
-        item.RaiseEvent(new PointerPressedEventArgs(item, pointer, window, from, ts++, pressed, KeyModifiers.None));
-        for (var i = 1; i <= 10; i++)
+        pressed.RaiseEvent(new PointerPressedEventArgs(pressed, pointer, root, from, ts++,
+            new PointerPointProperties(raw | RawInputModifiers.LeftMouseButton, PointerUpdateKind.LeftButtonPressed), modifiers));
+        for (var i = 1; i <= steps; i++)
         {
-            var p = from + (to - from) * (i / 10.0);
-            list.RaiseEvent(new PointerEventArgs(InputElement.PointerMovedEvent, list, pointer, window, p, ts++,
-                new PointerPointProperties(RawInputModifiers.LeftMouseButton, PointerUpdateKind.Other), KeyModifiers.None));
-            await Task.Delay(16);
+            moved.RaiseEvent(new PointerEventArgs(InputElement.PointerMovedEvent, moved, pointer, root, from + (to - from) * ((double)i / steps), ts++,
+                new PointerPointProperties(raw | RawInputModifiers.LeftMouseButton, PointerUpdateKind.Other), modifiers));
+            await Task.Delay(delayMs);
         }
-        Console.WriteLine($"[drag-audio] target={vm.AudioDrop?.ClipId ?? "none"}");
-        list.RaiseEvent(new PointerReleasedEventArgs(list, pointer, window, to, ts,
-            new PointerPointProperties(RawInputModifiers.None, PointerUpdateKind.LeftButtonReleased), KeyModifiers.None, MouseButton.Left));
+        beforeRelease?.Invoke();
+        moved.RaiseEvent(new PointerReleasedEventArgs(moved, pointer, root, to, ts,
+            new PointerPointProperties(raw, PointerUpdateKind.LeftButtonReleased), modifiers, MouseButton.Left));
     }
 
     private static async Task SnapshotWindowAsync(Avalonia.Controls.Window dialog, string path)
@@ -656,20 +654,18 @@ internal static class DebugAutomation
     }
 
     /// <summary>Saves a control at 2× (192 dpi), as a Retina screen shows it.</summary>
-    private static void SaveRetina(Avalonia.Controls.Control control, string path)
-    {
-        using var bitmap = new RenderTargetBitmap(
-            new PixelSize((int)Math.Ceiling(control.Bounds.Width * 2), (int)Math.Ceiling(control.Bounds.Height * 2)), new Vector(192, 192));
-        bitmap.Render(control);
-        bitmap.Save(path);
-        Console.WriteLine($"[snapshot] {path}");
-    }
+    private static void SaveRetina(Control control, string path) => SaveControl(control, 2, path);
 
-    private static void SaveSnapshot(Avalonia.Controls.Window dialog, string path)
+    private static void SaveSnapshot(Window dialog, string path) => SaveControl(dialog, 1, path);
+
+    /// <summary>Saves what a control draws at <paramref name="scale"/> times its size (a window rounded down, as before).</summary>
+    private static void SaveControl(Control control, double scale, string path)
     {
-        var size = new PixelSize((int)dialog.Bounds.Width, (int)dialog.Bounds.Height);
-        using var bitmap = new RenderTargetBitmap(size, new Vector(96, 96));
-        bitmap.Render(dialog);
+        var size = scale == 1
+            ? new PixelSize((int)control.Bounds.Width, (int)control.Bounds.Height)
+            : new PixelSize((int)Math.Ceiling(control.Bounds.Width * scale), (int)Math.Ceiling(control.Bounds.Height * scale));
+        using var bitmap = new RenderTargetBitmap(size, new Vector(96 * scale, 96 * scale));
+        bitmap.Render(control);
         bitmap.Save(path);
         Console.WriteLine($"[snapshot] {path}");
     }
