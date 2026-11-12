@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Projects exported with your own *plane copy but mp4* preset open with *copy to mp4 (w/o encode)*, which it became
   in 2.0.0, instead of asking to add it again. Any project whose preset got another id finds a preset with exactly
   the same options.
+- *Edit → Reset Crop* is disabled while nothing is cropped, instead of reporting "Crop removed".
 
 ## [2.1.0] - 2026-11-12
 ### Added

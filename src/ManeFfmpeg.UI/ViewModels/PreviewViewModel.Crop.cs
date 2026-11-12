@@ -87,7 +87,7 @@ public sealed partial class PreviewViewModel
     [RelayCommand]
     private void FinishCrop() => IsCropping = false;
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(HasCrop))]
     private void ResetCrop()
     {
         SelectedCropAspect = CropAspects[0];
@@ -97,7 +97,10 @@ public sealed partial class PreviewViewModel
     /// <summary>Crops the output to <paramref name="crop"/> as one undo step (null or the whole frame removes the crop).</summary>
     public void CommitCrop(CropRect? crop)
     {
+        var before = State;
         _owner.Commit(State.WithCrop(crop));
+        if (ReferenceEquals(State, before))
+            return;
         if (State.Crop is null)
             _owner.StatusMessage = "Crop removed: the whole frame is exported.";
         else if (CropSizeText is { } size)
@@ -137,6 +140,7 @@ public sealed partial class PreviewViewModel
         OnPropertyChanged(nameof(Crop));
         OnPropertyChanged(nameof(ShownCrop));
         OnPropertyChanged(nameof(HasCrop));
+        ResetCropCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CropSizeText));
         OnPropertyChanged(nameof(CanCrop));
         OnPropertyChanged(nameof(PreviewTitle));

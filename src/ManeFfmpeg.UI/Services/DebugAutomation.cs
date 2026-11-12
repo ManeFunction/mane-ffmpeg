@@ -461,7 +461,7 @@ internal static class DebugAutomation
                     case "crop-state":
                         Console.WriteLine($"[crop] title='{vm.Preview.PreviewTitle}' editing={vm.Preview.IsCropping} can={vm.Preview.CanCrop} " +
                                           $"crop={vm.State.Crop} shown={window.Video.Crop} picture={vm.Preview.PictureAspect:0.###} frame={vm.Preview.FrameAspect:0.###} " +
-                                          $"pixels={vm.Preview.FramePixels} lock={vm.Preview.AspectLock:0.###} status='{vm.StatusMessage}' undo={vm.History.CanUndo}");
+                                          $"pixels={vm.Preview.FramePixels} lock={vm.Preview.AspectLock:0.###} reset={vm.Preview.ResetCropCommand.CanExecute(null)} status='{vm.StatusMessage}' undo={vm.History.CanUndo}");
                         break;
                     case "snapshot":
                         await Task.Delay(300);
