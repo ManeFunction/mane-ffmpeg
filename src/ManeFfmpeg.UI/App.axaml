@@ -115,8 +115,11 @@
         <Style Selector="ComboBoxItem">
             <Setter Property="Padding" Value="11,6.5,11,5.5" />
         </Style>
-        <!-- 11 pt lists (the crop shape, a file's audio track): whole-pixel rows, 24 − 8 is even. -->
-        <Style Selector="ComboBox[FontSize=11] ComboBoxItem">
+        <!-- Compact 11 pt dropdowns (the crop shape, a file's audio track): whole-pixel rows, 24 − 8 is even. -->
+        <Style Selector="ComboBox.compact">
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+        <Style Selector="ComboBox.compact ComboBoxItem">
             <Setter Property="MinHeight" Value="24" />
             <Setter Property="Height" Value="24" />
             <Setter Property="Padding" Value="11,1,11,0" />

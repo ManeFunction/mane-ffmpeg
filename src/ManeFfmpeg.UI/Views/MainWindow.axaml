@@ -124,7 +124,7 @@
                                                                        Foreground="{StaticResource AccentWarnBrush}"
                                                                        IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                                                             <ComboBox ItemsSource="{Binding AudioChoices}" SelectedIndex="{Binding AudioStreamIndex}"
-                                                                      IsVisible="{Binding HasAudioChoice}" FontSize="11" HorizontalAlignment="Stretch"
+                                                                      IsVisible="{Binding HasAudioChoice}" Classes="compact" HorizontalAlignment="Stretch"
                                                                       ToolTip.Tip="Audio track used for this video" />
                                                         </StackPanel>
                                                         <Grid.ContextMenu>
@@ -161,7 +161,7 @@
                                                                        Foreground="{StaticResource AccentWarnBrush}"
                                                                        IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                                                             <ComboBox ItemsSource="{Binding AudioChoices}" SelectedIndex="{Binding AudioStreamIndex}"
-                                                                      IsVisible="{Binding HasAudioChoice}" FontSize="11" HorizontalAlignment="Stretch"
+                                                                      IsVisible="{Binding HasAudioChoice}" Classes="compact" HorizontalAlignment="Stretch"
                                                                       ToolTip.Tip="Audio track used from this file" />
                                                         </StackPanel>
                                                         <Grid.ContextMenu>
@@ -260,7 +260,7 @@
                                         ToolTip.Tip="Crop the exported picture (C)" />
                                 <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding Preview.IsCropping}">
                                     <ComboBox x:Name="CropAspectBox" ItemsSource="{x:Static vm:PreviewViewModel.CropAspects}"
-                                              SelectedItem="{Binding Preview.SelectedCropAspect}" MinWidth="90" Classes="small"
+                                              SelectedItem="{Binding Preview.SelectedCropAspect}" MinWidth="90" Classes="small compact"
                                               ToolTip.Tip="Shape of the crop (hold Shift while dragging to keep the current one)" />
                                     <Button Classes="tool small" Content="Reset" Command="{Binding Preview.ResetCropCommand}"
                                             IsEnabled="{Binding Preview.HasCrop}" ToolTip.Tip="Export the whole frame" />
