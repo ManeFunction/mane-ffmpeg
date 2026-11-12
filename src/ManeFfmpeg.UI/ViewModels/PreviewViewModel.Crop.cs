@@ -5,9 +5,14 @@ using ManeFfmpeg.Core.Model;
 
 namespace ManeFfmpeg.UI.ViewModels;
 
-/// <summary>A shape the crop can be held to: <see cref="Aspect"/> is width over height, 0 any shape, −1 the frame's own.</summary>
-public sealed record CropAspect(string Name, double Aspect)
+/// <summary>A shape the crop can be held to.</summary>
+/// <param name="Ratio">Width over height as shown; null for any shape, or for the frame's own.</param>
+/// <param name="IsFrame">The frame's own shape, whatever it is.</param>
+public sealed record CropAspect(string Name, double? Ratio, bool IsFrame = false)
 {
+    /// <summary>The width over height it keeps in a frame of <paramref name="frameAspect"/>, or null for any shape.</summary>
+    public double? In(double frameAspect) => IsFrame ? frameAspect > 0 ? frameAspect : null : Ratio;
+
     public override string ToString() => Name;
 }
 
@@ -16,8 +21,8 @@ public sealed partial class PreviewViewModel
 {
     public static IReadOnlyList<CropAspect> CropAspects { get; } =
     [
-        new("Free", 0),
-        new("Original", -1),
+        new("Free", null),
+        new("Original", null, IsFrame: true),
         new("16:9", 16.0 / 9),
         new("9:16", 9.0 / 16),
         new("4:3", 4.0 / 3),
@@ -58,7 +63,7 @@ public sealed partial class PreviewViewModel
     public CropRect? ShownCrop => Mode == PreviewMode.Timeline && !IsCropping ? State.Crop : null;
 
     /// <summary>The shape a drag keeps (width over height), or 0 for any.</summary>
-    public double AspectLock => SelectedCropAspect.Aspect < 0 ? FrameAspect : SelectedCropAspect.Aspect;
+    public double AspectLock => SelectedCropAspect.In(FrameAspect) ?? 0;
 
     /// <summary>There is a timeline picture to crop.</summary>
     public bool CanCrop => Mode == PreviewMode.Timeline && _owner.HasClips && !IsCompact && FrameAspect > 0;
