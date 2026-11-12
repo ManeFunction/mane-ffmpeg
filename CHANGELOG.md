@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the border line and the handles reacted to the mouse.
 - The crop size shown on the rectangle, in the preview title and in the status bar is the size exported. For
   videos with non-square pixels (anamorphic HDV/DV) and odd sizes it showed the size on screen instead.
+- Projects exported with your own *plane copy but mp4* preset open with *copy to mp4 (w/o encode)*, which it became
+  in 2.0.0, instead of asking to add it again. Any project whose preset got another id finds a preset with exactly
+  the same options.
 
 ## [2.1.0] - 2026-11-12
 ### Added

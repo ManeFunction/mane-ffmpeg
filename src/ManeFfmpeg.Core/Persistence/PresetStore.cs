@@ -78,6 +78,14 @@ public sealed class PresetStore
 
     public Preset? Find(string? id) => id is null ? null : _presets.Find(p => p.Id == id);
 
+    /// <summary>
+    /// The preset a project names: the one with its id, or else one that runs exactly like the project's copy of it
+    /// (a preset that got another id, like a "plane copy but mp4" that became "copy to mp4"). Picking it trusts no
+    /// new options. Null when there is none.
+    /// </summary>
+    public Preset? FindFor(string? id, Preset? snapshot) =>
+        Find(id) ?? (snapshot is null ? null : _presets.Find(p => p.RunsLike(snapshot.WithDefaults())));
+
     public void Save(Preset preset)
     {
         var index = _presets.FindIndex(p => p.Id == preset.Id);

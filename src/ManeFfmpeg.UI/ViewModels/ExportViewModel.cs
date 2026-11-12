@@ -149,12 +149,12 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         new() { PresetId = SelectedPreset?.Id, PresetSnapshot = SelectedPreset, OutputPath = OutputPath };
 
     /// <summary>
-    /// The project's preset. One this machine doesn't have comes from the project file and its arguments go
+    /// The project's preset, or one that runs exactly like it. One this machine doesn't have comes from the project file and its arguments go
     /// straight to ffmpeg, so it's only added when the user agrees, and never in place of an existing preset.
     /// </summary>
     internal async Task<Preset?> ResolvePresetAsync(ExportSettings settings)
     {
-        if (_app.Presets.Find(settings.PresetId) is { } known)
+        if (_app.Presets.FindFor(settings.PresetId, settings.PresetSnapshot) is { } known)
             return known;
         if (settings.PresetSnapshot is not { } snapshot || snapshot.Id != settings.PresetId || View is null)
             return null;

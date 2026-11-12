@@ -558,6 +558,13 @@ public class PresetStoreTests
                 store.Presets.Select(p => p.Name));
             Assert.Contains("\"version\": 4", File.ReadAllText(path));
             Assert.Equal(Preset.CopyToMp4.Id, store.Presets[^1].Id);
+            // A project saved with the old preset still finds it, though its id changed.
+            var saved = new Preset { Id = "mine", Name = "plane copy but mp4", Arguments = "-c:v copy -c:a copy", Extension = "mp4" };
+            store.Save(store.Presets[^1] with { Extension = "mp4" });
+            Assert.Equal(Preset.CopyToMp4.Id, store.FindFor("mine", saved)?.Id);
+            // Other options aren't taken for it.
+            Assert.Null(store.FindFor("mine", saved with { Arguments = "-c:v copy -c:a copy -map 0" }));
+            Assert.Null(store.FindFor("mine", null));
         }
         finally
         {

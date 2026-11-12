@@ -17,6 +17,11 @@ public sealed record Preset
 
     public const string DefaultAudioFallback = "-c:a aac -b:a 256k";
 
+    /// <summary>Exports exactly as <paramref name="other"/> does: the same options, extension and audio fallback.</summary>
+    public bool RunsLike(Preset other) =>
+        Arguments.Trim() == other.Arguments.Trim() && (Extension ?? "") == (other.Extension ?? "")
+        && AudioFallbackArguments.Trim() == other.AudioFallbackArguments.Trim();
+
     /// <summary>The preset with defaults for fields a hand-written or damaged file left empty.</summary>
     public Preset WithDefaults() => this with
     {
