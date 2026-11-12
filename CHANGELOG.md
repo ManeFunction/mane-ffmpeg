@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Changed
+- While cropping, the preview's close button (✕) cancels the crop: it goes back to the crop and shape you entered
+  crop mode with, and the crop changes made meanwhile leave the undo history, while the steps before stay. Outside crop
+  mode it still hides the preview. Hiding the preview while cropping (the *Hide preview* button or ⇧⌘C) cancels the
+  crop the same way, instead of keeping it.
+
 ### Fixed
 - The crop rectangle can be dragged from anywhere inside it to move it, and its edges grabbed from inside; only
   the border line and the handles reacted to the mouse.

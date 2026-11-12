@@ -331,6 +331,30 @@ public class TimelineEditorTests
         Assert.True(stack.Redo());
         Assert.Equal(TimeSpan.FromMilliseconds(20), stack.Current.Clips[0].AudioOffset);
     }
+
+    [Fact]
+    public void RewindTo_drops_the_steps_since_and_keeps_the_ones_before()
+    {
+        Timeline Nudge(Timeline t) => TimelineEditor.NudgeAudioOffset(t, new HashSet<string> { "a" }, TimeSpan.FromMilliseconds(10));
+        var initial = T(C("a", 0, 10));
+        var stack = new UndoStack<Timeline>(initial);
+        stack.Commit(Nudge(stack.Current));
+        var checkpoint = stack.Current;
+        stack.Commit(Nudge(stack.Current));
+        stack.Commit(Nudge(stack.Current));
+
+        Assert.True(stack.RewindTo(checkpoint));
+        Assert.Same(checkpoint, stack.Current);
+        Assert.False(stack.CanRedo);
+        Assert.True(stack.Undo());
+        Assert.Same(initial, stack.Current);
+        Assert.False(stack.CanUndo);
+
+        // Undone past the checkpoint: it's no longer in the history to undo.
+        Assert.False(stack.RewindTo(checkpoint));
+        Assert.Same(initial, stack.Current);
+        Assert.True(stack.CanRedo);
+    }
 }
 
 public class TimelineSnapTests

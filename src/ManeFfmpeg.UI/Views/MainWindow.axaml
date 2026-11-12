@@ -270,8 +270,8 @@
                             </StackPanel>
                             <Button Grid.Column="2" Classes="tool" Content="← Back to timeline" Command="{Binding Preview.BackToTimelineCommand}"
                                     IsVisible="{Binding Preview.IsSourceMode}" Margin="8,0,0,0" />
-                            <Button x:Name="ClosePreviewButton" Grid.Column="3" Classes="close" Command="{Binding Preview.ToggleCompactCommand}"
-                                    Margin="8,0,0,0" ToolTip.Tip="Hide the video preview (⇧⌘C)">
+                            <Button x:Name="ClosePreviewButton" Grid.Column="3" Classes="close" Command="{Binding Preview.ClosePreviewCommand}"
+                                    Margin="8,0,0,0" ToolTip.Tip="{Binding Preview.ClosePreviewTip}">
                                 <PathIcon Data="{StaticResource IconClose}" />
                             </Button>
                         </Grid>

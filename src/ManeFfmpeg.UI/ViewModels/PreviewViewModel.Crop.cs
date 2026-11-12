@@ -32,8 +32,15 @@ public sealed partial class PreviewViewModel
 
     /// <summary>The crop rectangle is shown on the preview to be dragged; the whole frame is shown meanwhile.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShownCrop), nameof(PreviewTitle))]
+    [NotifyPropertyChangedFor(nameof(ShownCrop), nameof(PreviewTitle), nameof(ClosePreviewTip))]
     public partial bool IsCropping { get; private set; }
+
+    // The edit and the shape as crop mode was entered: what cancelling the crop goes back to.
+    private ProjectState? _cropStart;
+    private CropAspect _cropStartAspect = CropAspects[0];
+
+    // Putting the shape back on cancel mustn't reshape the crop.
+    private bool _restoringAspect;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AspectLock))]
@@ -78,7 +85,7 @@ public sealed partial class PreviewViewModel
     partial void OnSelectedCropAspectChanged(CropAspect value)
     {
         // Picking a shape reshapes the crop at once; "Free" leaves it as it is.
-        if (AspectLock > 0 && FrameAspect > 0)
+        if (!_restoringAspect && AspectLock > 0 && FrameAspect > 0)
             CommitCrop((State.Crop ?? CropRect.Full).WithAspect(AspectLock, FrameAspect));
     }
 
@@ -91,8 +98,47 @@ public sealed partial class PreviewViewModel
             IsCropping = true;
     }
 
+    partial void OnIsCroppingChanged(bool value)
+    {
+        _cropStart = value ? State : null;
+        _cropStartAspect = SelectedCropAspect;
+    }
+
     [RelayCommand]
     private void FinishCrop() => IsCropping = false;
+
+    /// <summary>
+    /// Leaves crop mode, putting back the crop and shape it was entered with. The crop steps made meanwhile leave the
+    /// undo history, the steps before stay; if other edits were made meanwhile, they are kept and only the crop goes back.
+    /// </summary>
+    [RelayCommand]
+    private void CancelCrop()
+    {
+        if (!IsCropping || _cropStart is not { } start)
+            return;
+        var aspect = _cropStartAspect;
+        var changed = !ReferenceEquals(State, start);
+        if (changed && !(State.WithCrop(start.Crop).Equals(start) && _owner.History.RewindTo(start)))
+            CommitCrop(start.Crop);
+        _restoringAspect = true;
+        SelectedCropAspect = aspect;
+        _restoringAspect = false;
+        IsCropping = false;
+        if (changed)
+            _owner.StatusMessage = "Crop changes cancelled.";
+    }
+
+    /// <summary>The preview's close button: cancels the crop while cropping, otherwise hides the preview.</summary>
+    [RelayCommand]
+    private void ClosePreview()
+    {
+        if (IsCropping)
+            CancelCrop();
+        else
+            IsCompact = !IsCompact;
+    }
+
+    public string ClosePreviewTip => IsCropping ? "Cancel the crop changes" : "Hide the video preview (⇧⌘C)";
 
     [RelayCommand(CanExecute = nameof(HasCrop))]
     private void ResetCrop()

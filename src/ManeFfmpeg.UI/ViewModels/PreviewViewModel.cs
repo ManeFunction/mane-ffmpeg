@@ -78,6 +78,9 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
 
     partial void OnIsCompactChanged(bool value)
     {
+        // Hiding the preview mid-crop discards the crop changes, as the close button does.
+        if (value)
+            CancelCrop();
         if (_preview is not null)
             _preview.Compact = value;
         UpdateFrame();

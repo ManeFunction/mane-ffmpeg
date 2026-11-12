@@ -73,6 +73,30 @@ public sealed class UndoStack<T>(T initial, int capacity = 300) where T : class
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// Goes back to <paramref name="checkpoint"/>, an earlier <see cref="Current"/>, dropping the steps made since as
+    /// if they had never been made: they can't be redone, and the history before the checkpoint is kept. False,
+    /// changing nothing, when the checkpoint isn't in the history to undo (undone past, trimmed or reset).
+    /// </summary>
+    public bool RewindTo(T checkpoint)
+    {
+        EndGesture();
+        if (ReferenceEquals(checkpoint, Current))
+            return true;
+        var node = _undo.Last;
+        while (node is not null && !ReferenceEquals(node.Value, checkpoint))
+            node = node.Previous;
+        if (node is null)
+            return false;
+        while (_undo.Last != node)
+            _undo.RemoveLast();
+        _undo.RemoveLast();
+        _redo.Clear();
+        Current = checkpoint;
+        Changed?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
     public bool Undo()
     {
         EndGesture();
