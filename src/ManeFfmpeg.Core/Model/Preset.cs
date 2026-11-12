@@ -82,15 +82,6 @@ public sealed record Preset
 
     public static IReadOnlyList<Preset> BuiltIns { get; } = [ForStorage, Share, Harsh, PlaneCopy, CopyToMp4];
 
-    /// <summary>Built-in names before version 4 of the presets file, by preset id.</summary>
-    public static readonly IReadOnlyDictionary<string, string> V3Names = new Dictionary<string, string>
-    {
-        [ForStorage.Id] = "for storage",
-        [Harsh.Id] = "harsh",
-        [Share.Id] = "share",
-        [PlaneCopy.Id] = "plane copy",
-    };
-
     /// <summary>"for storage" arguments before version 2 of the presets file.</summary>
     public const string ForStorageV1Arguments = "-c:v libx265 -crf 28 -preset slow -c:a copy";
 }

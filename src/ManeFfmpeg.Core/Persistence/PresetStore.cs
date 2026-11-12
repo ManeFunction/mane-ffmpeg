@@ -44,29 +44,64 @@ public sealed class PresetStore
             presets.Insert(harsh >= 0 ? harsh + 1 : presets.Count, Preset.Share);
         }
         if (version < 4)
-        {
-            for (var i = 0; i < presets.Count; i++)
-            {
-                if (Preset.V3Names.TryGetValue(presets[i].Id, out var oldName) && presets[i].Name == oldName)
-                    presets[i] = presets[i] with { Name = Preset.BuiltIns.First(b => b.Id == presets[i].Id).Name };
-            }
-            var share = presets.FindIndex(p => p.Id == Preset.Share.Id);
-            if (share > 1)
-            {
-                var preset = presets[share];
-                presets.RemoveAt(share);
-                presets.Insert(1, preset);
-            }
-            var own = presets.FindIndex(p => p.Id != Preset.CopyToMp4.Id && p.Name is "plane copy but mp4" or "copy to mp4 (w/o encode)");
-            if (own >= 0)
-                presets[own] = presets[own] with { Id = Preset.CopyToMp4.Id, Name = Preset.CopyToMp4.Name };
-            else if (presets.All(p => p.Id != Preset.CopyToMp4.Id))
-            {
-                var copy = presets.FindIndex(p => p.Id == Preset.PlaneCopy.Id);
-                presets.Insert(copy >= 0 ? copy + 1 : presets.Count, Preset.CopyToMp4);
-            }
-        }
+            MigrateTo4(presets);
         return true;
+    }
+
+    /// <summary>Built-in names before version 4 of the presets file, by preset id.</summary>
+    private static readonly Dictionary<string, string> V3Names = new()
+    {
+        [Preset.ForStorage.Id] = "for storage",
+        [Preset.Harsh.Id] = "harsh",
+        [Preset.Share.Id] = "share",
+        [Preset.PlaneCopy.Id] = "plane copy",
+    };
+
+    /// <summary>What users called "copy to mp4" before it was built in; such a preset becomes the built-in.</summary>
+    private const string OwnCopyToMp4Name = "plane copy but mp4";
+
+    private static void MigrateTo4(List<Preset> presets)
+    {
+        RenameUneditedBuiltIns(presets);
+        MoveTo(presets, Preset.Share.Id, 1);
+        AdoptOrInsertCopyToMp4(presets);
+    }
+
+    /// <summary>Built-ins still called by their version 3 name get the new one; a name the user chose is kept.</summary>
+    private static void RenameUneditedBuiltIns(List<Preset> presets)
+    {
+        for (var i = 0; i < presets.Count; i++)
+        {
+            if (V3Names.TryGetValue(presets[i].Id, out var oldName) && presets[i].Name == oldName)
+                presets[i] = presets[i] with { Name = Preset.BuiltIns.First(b => b.Id == presets[i].Id).Name };
+        }
+    }
+
+    /// <summary>Moves a preset up to <paramref name="index"/>; one already there or above stays.</summary>
+    private static void MoveTo(List<Preset> presets, string id, int index)
+    {
+        var from = presets.FindIndex(p => p.Id == id);
+        if (from <= index)
+            return;
+        var preset = presets[from];
+        presets.RemoveAt(from);
+        presets.Insert(index, preset);
+    }
+
+    /// <summary>
+    /// The user's own "copy to mp4" becomes the built-in (keeping its options); without one, the built-in is added
+    /// after "copy".
+    /// </summary>
+    private static void AdoptOrInsertCopyToMp4(List<Preset> presets)
+    {
+        var own = presets.FindIndex(p => p.Id != Preset.CopyToMp4.Id && (p.Name == OwnCopyToMp4Name || p.Name == Preset.CopyToMp4.Name));
+        if (own >= 0)
+            presets[own] = presets[own] with { Id = Preset.CopyToMp4.Id, Name = Preset.CopyToMp4.Name };
+        else if (presets.All(p => p.Id != Preset.CopyToMp4.Id))
+        {
+            var copy = presets.FindIndex(p => p.Id == Preset.PlaneCopy.Id);
+            presets.Insert(copy >= 0 ? copy + 1 : presets.Count, Preset.CopyToMp4);
+        }
     }
 
     public IReadOnlyList<Preset> Presets => _presets;
