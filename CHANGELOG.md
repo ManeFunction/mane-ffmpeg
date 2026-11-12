@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [2.1.1] - 2026-11-12
 ### Changed
 - While cropping, the preview's close button (✕) cancels the crop: it goes back to the crop and shape you entered
   crop mode with, and the crop changes made meanwhile leave the undo history, while the steps before stay. Outside crop
