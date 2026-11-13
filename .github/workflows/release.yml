@@ -21,8 +21,8 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Check the tag matches Directory.Build.props
-        run: python .github/scripts/check_version.py --file Directory.Build.props --regex '<Version>([^<]+)</Version>'
+      - name: Check the tag matches Cargo.toml
+        run: python .github/scripts/check_version.py --file Cargo.toml --regex '^version = "([^"]+)"'
 
   build-macos:
     needs: [test, check-version]
@@ -33,9 +33,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: "10.0.x"
+      - name: Install Rust
+        env:
+          RID: ${{ matrix.rid }}
+        run: |
+          rustup toolchain install stable --profile minimal && rustup default stable
+          case "$RID" in
+            osx-arm64) rustup target add aarch64-apple-darwin ;;
+            osx-x64) rustup target add x86_64-apple-darwin ;;
+          esac
 
       - name: Build the app bundle
         env:
@@ -73,14 +79,17 @@ jobs:
     needs: [test, check-version]
     strategy:
       matrix:
-        rid: [linux-x64, linux-arm64]
-    runs-on: ubuntu-latest
+        include:
+          - rid: linux-x64
+            runner: ubuntu-latest
+          - rid: linux-arm64
+            runner: ubuntu-24.04-arm # built natively; no cross toolchain needed
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: "10.0.x"
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
 
       - name: Build the tarball
         env:
@@ -92,7 +101,7 @@ jobs:
           RID: ${{ matrix.rid }}
         run: |
           TARBALL="build/linux-$RID/mane-ffmpeg-${GITHUB_REF_NAME#v}-$RID.tar.gz"
-          test -f "$TARBALL" # the script names it after the version in Directory.Build.props
+          test -f "$TARBALL" # the script names it after the version in Cargo.toml
           tar -tzf "$TARBALL" | grep -qx "mane-ffmpeg/install.sh"
           ELF=$(file -b "build/linux-$RID/mane-ffmpeg/app/ManeFfmpeg")
           echo "$ELF"

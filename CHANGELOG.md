@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-11-13
+### Changed
+- The app is rewritten in Rust, with an egui interface drawn on the GPU (wgpu). The window keeps the same layout:
+  the export bar, the Files panel and Selection inspector, the preview with its crop overlay and transport, and the
+  timeline. Buttons and fields look a little different.
+- The app is a single executable of about 20 MB, with no bundled .NET runtime.
+- The preview's frames go straight from libmpv into a GPU texture, so 1080p60 plays smoothly.
+- Settings, presets, the waveform cache and `.mfvp` projects (formats 1 to 3) are read and written as before, so
+  2.x projects open unchanged and 2.x can open projects saved by 3.0.0 in the same format. Updating from 2.1.1 works
+  like any other update.
+- The menu bar is drawn inside each window on macOS too, instead of the system menu bar. *Edit* has no *Cut*,
+  *Copy* and *Paste* items; ⌘X, ⌘C and ⌘V still work in text fields.
+
+### Removed
+- The C# / .NET / Avalonia sources.
+
 ## [2.1.1] - 2026-11-12
 ### Changed
 - While cropping, the preview's close button (✕) cancels the crop: it goes back to the crop and shape you entered

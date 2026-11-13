@@ -1,0 +1,23 @@
+[package]
+name = "mane-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ManeFfmpeg"
+path = "src/main.rs"
+
+[dependencies]
+mane-core = { path = "../mane-core" }
+eframe = { version = "0.37", default-features = false, features = ["wgpu", "wayland", "x11", "default_fonts", "clipboard", "accesskit"] }
+egui = "0.37"
+egui-wgpu = "0.37"
+rfd = "0.18"
+regex = "1"
+png = "0.18"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSEvent", "NSWindow", "NSResponder"] }
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSURL", "NSString", "NSGeometry"] }

@@ -1,15 +1,12 @@
 #!/usr/bin/env bash
-# Deletes build output: every bin/ and obj/ under src/ and tests/. The next build recreates them.
+# Deletes build output: Cargo's target/ folder. The next build recreates it.
 # Usage: scripts/clean.sh [--all]   (--all also deletes build/, the packaged .app and Linux bundles)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 targets=()
-while IFS= read -r dir; do
-  targets+=("$dir")
-done < <(find "$ROOT/src" "$ROOT/tests" -type d \( -name bin -o -name obj \) -prune 2>/dev/null)
-
+[ -d "$ROOT/target" ] && targets+=("$ROOT/target")
 if [ "${1:-}" = "--all" ] && [ -d "$ROOT/build" ]; then
   targets+=("$ROOT/build")
 fi

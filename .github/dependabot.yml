@@ -14,3 +14,14 @@ updates:
       # own PR so its diff gets read.
       github-actions:
         patterns: ["actions/*"]
+
+  # Rust crates in Cargo.lock. Minor and patch bumps share one PR; a major bump gets its own.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      cargo:
+        update-types: [minor, patch]

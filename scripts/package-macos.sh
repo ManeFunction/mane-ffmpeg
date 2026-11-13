@@ -1,27 +1,31 @@
 #!/usr/bin/env bash
-# Builds "Mane FFmpeg.app" (self-contained, ad-hoc signed) into build/macos-<rid>/.
+# Builds "Mane FFmpeg.app" (ad-hoc signed) into build/macos-<rid>/.
 # Usage: scripts/package-macos.sh [osx-x64|osx-arm64]   (default: this Mac's architecture)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RID="${1:-$([ "$(uname -m)" = "arm64" ] && echo osx-arm64 || echo osx-x64)}"
-VERSION="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' "$ROOT/Directory.Build.props")"
+case "$RID" in
+  osx-arm64) TARGET=aarch64-apple-darwin ;;
+  osx-x64) TARGET=x86_64-apple-darwin ;;
+  *) echo "Unknown runtime: $RID" >&2; exit 1 ;;
+esac
+VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/Cargo.toml" | head -1)"
 OUT="$ROOT/build/macos-$RID"
 APP="$OUT/Mane FFmpeg.app"
-DOTNET="${DOTNET:-$(command -v dotnet || echo "$HOME/.dotnet/dotnet")}"
 
 rm -rf "$OUT"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-"$DOTNET" publish "$ROOT/src/ManeFfmpeg.UI/ManeFfmpeg.UI.csproj" -c Release -r "$RID" --self-contained true \
-  -p:UseAppHost=true -o "$APP/Contents/MacOS"
+cargo build --manifest-path "$ROOT/Cargo.toml" --release --locked -p mane-ui --target "$TARGET"
+cp "$ROOT/target/$TARGET/release/ManeFfmpeg" "$APP/Contents/MacOS/ManeFfmpeg"
 
 # Icon: app.png → AppIcon.icns
 ICONSET="$OUT/AppIcon.iconset"
 mkdir -p "$ICONSET"
 for size in 16 32 128 256 512; do
-  sips -z $size $size "$ROOT/src/ManeFfmpeg.UI/Assets/app.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
-  sips -z $((size * 2)) $((size * 2)) "$ROOT/src/ManeFfmpeg.UI/Assets/app.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+  sips -z $size $size "$ROOT/assets/app.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+  sips -z $((size * 2)) $((size * 2)) "$ROOT/assets/app.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 rm -rf "$ICONSET"

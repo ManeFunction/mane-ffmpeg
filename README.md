@@ -1,8 +1,8 @@
 # Mane FFmpeg
 
-A small macOS/Linux video editor on top of your system **ffmpeg**. Load one or more videos, cut and reorder them on a timeline, nudge a clip's audio to fix desync, preview the result, and export it with your own ffmpeg presets. Every ffmpeg and ffprobe call goes through [CliWrap](https://github.com/Tyrrrz/CliWrap). The preview runs on **libmpv**.
+A small macOS/Linux video editor on top of your system **ffmpeg**. Load one or more videos, cut and reorder them on a timeline, nudge a clip's audio to fix desync, preview the result, and export it with your own ffmpeg presets. ffmpeg and ffprobe run as separate processes. The preview runs on **libmpv**.
 
-Built with C#, .NET 10 and Avalonia 12.
+Built with Rust and [egui](https://github.com/emilk/egui) (eframe on wgpu).
 
 ![](https://raw.githubusercontent.com/wiki/ManeFunction/mane-ffmpeg/mane-ffmpeg-UI.png)
 
@@ -67,7 +67,7 @@ Built with C#, .NET 10 and Avalonia 12.
 
 ## Installation
 
-Download the latest build from the [Releases page](https://github.com/ManeFunction/mane-ffmpeg/releases/latest). The builds are self-contained, so you don't need .NET. You still need ffmpeg and libmpv, see [Requirements](#requirements).
+Download the latest build from the [Releases page](https://github.com/ManeFunction/mane-ffmpeg/releases/latest). Each build is a single native executable. You still need ffmpeg and libmpv, see [Requirements](#requirements).
 
 - **macOS**: `mane-ffmpeg-<version>-osx-arm64.zip` for Apple Silicon or `osx-x64` for Intel. Unzip it and move *Mane FFmpeg.app* to Applications. The app is signed ad hoc but not notarized, so macOS blocks the first start. Run `xattr -dr com.apple.quarantine "/Applications/Mane FFmpeg.app"`, or allow it in *System Settings → Privacy & Security*.
 - **Linux**: `mane-ffmpeg-<version>-linux-x64.tar.gz` or `linux-arm64`. Run `tar xf mane-ffmpeg-*.tar.gz && ./mane-ffmpeg/install.sh`. It installs for the current user into `~/.local/opt/mane-ffmpeg`, with a menu entry, the `.mfvp` file type and a `mane-ffmpeg` command in `~/.local/bin`.
@@ -89,27 +89,26 @@ Without libmpv, editing and exporting still work. The preview pane then shows an
 
 ## Build and run
 
-You need the [.NET 10 SDK](https://dotnet.microsoft.com/download). On Intel Macs, where Homebrew would compile it, the official script is simplest:
+You need a current stable Rust from [rustup](https://rustup.rs). Nothing else is needed at build time: X11,
+Wayland, Vulkan and libmpv are loaded when the app starts.
 
 ```sh
-curl -sSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 10.0   # installs to ~/.dotnet
-export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH
-```
-
-```sh
-dotnet run --project src/ManeFfmpeg.UI            # run
-dotnet test                                        # unit + ffmpeg integration tests
+cargo run -p mane-ui                               # run (debug build)
+cargo run -p mane-ui --release                     # run (release build)
+cargo test --workspace                             # unit, ffmpeg integration and libmpv tests
+cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check
 scripts/package-macos.sh                           # → build/macos-<rid>/Mane FFmpeg.app
 scripts/package-linux.sh                           # → build/linux-<rid>/mane-ffmpeg-<version>-<rid>.tar.gz
+scripts/clean.sh                                   # deletes target/ (--all also deletes build/)
 ```
 
-The preview player's tests run against a headless libmpv and are skipped when it can't be loaded. With IINA's copy on macOS, start the run with `DYLD_FALLBACK_LIBRARY_PATH=/Applications/IINA.app/Contents/Frameworks:$HOME/lib:/usr/local/lib:/usr/lib dotnet test`.
+The ffmpeg integration tests and the preview player's tests (against a headless libmpv) skip themselves when ffmpeg or libmpv can't be found. With IINA's copy on macOS, start the run with `DYLD_FALLBACK_LIBRARY_PATH=/Applications/IINA.app/Contents/Frameworks:$HOME/lib:/usr/local/lib:/usr/lib cargo test --workspace`.
 
-The packaged apps are self-contained, so no .NET install is needed to run them. The macOS bundle registers the `.mfvp` file type, so double-clicking a project opens it. **Settings** has a button that registers or unregisters `.mfvp` projects with the app. On macOS it sets the Launch Services default; on Linux it installs the mime type and sets the default app for the current user. When projects aren't registered, the app offers to register them at startup, after the setup step. That prompt has a "Do not show anymore" checkbox, which **Settings** can undo.
+The macOS bundle registers the `.mfvp` file type, so double-clicking a project opens it. **Settings** has a button that registers or unregisters `.mfvp` projects with the app. On macOS it sets the Launch Services default; on Linux it installs the mime type and sets the default app for the current user. When projects aren't registered, the app offers to register them at startup, after the setup step. That prompt has a "Do not show anymore" checkbox, which **Settings** can undo.
 
 ## How exports work
 
-The planner (`src/ManeFfmpeg.Core/Ffmpeg/ExportPlanner.cs`) picks one of four strategies. The exact commands are shown in the export bar.
+The planner (`crates/mane-core/src/ffmpeg/export_planner.rs`) picks one of four strategies. The exact commands are shown in the export bar.
 
 | Situation | What runs |
 |---|---|
@@ -162,9 +161,12 @@ Mouse:
 ## Project layout
 
 ```
-src/ManeFfmpeg.Core   model, editing, ffprobe/ffmpeg (planner, runner), waveforms, keyframes, libmpv binding, persistence
-src/ManeFfmpeg.UI     Avalonia UI: windows, view models, timeline control, mpv video view
-tests/                xUnit unit tests and real-ffmpeg integration tests
+crates/mane-core      no UI: model, editing, ffprobe/ffmpeg (planner, runner), waveforms, keyframes,
+                      libmpv binding and preview player, persistence, updates, platform services
+crates/mane-core/tests  unit tests and real-ffmpeg / headless libmpv integration tests
+crates/mane-ui        egui app (binary ManeFfmpeg): windows, views, dialogs, timeline, crop overlay, mpv video view;
+                      logic/ holds the gesture and layout code with its tests
+assets/               app icon and the bundled Inter font (SIL OFL)
 scripts/              macOS .app and Linux tarball packaging
 ```
 
@@ -177,10 +179,9 @@ Files on disk:
 
 - **libmpv from IINA.** It resolves its dependencies through `@rpath`, so the app needs `DYLD_FALLBACK_LIBRARY_PATH` set when it starts.
   - The packaged app sets it in `Info.plist`.
-  - `dotnet run` relaunches itself once with the variable set.
+  - `cargo run` relaunches itself once with the variable set.
 - **Stream-copy cuts.** They can only start on keyframes, and boundaries may show a frame of artifacts with open-GOP sources. That's inherent to cutting without re-encoding.
-- **Sleeping display.** The app won't start while the display is asleep, because Avalonia's macOS backend needs an active display.
-- **Development automation.** Debug builds can be driven by a script (`MANE_FFMPEG_SCRIPT=file`) for end-to-end checks. See `src/ManeFfmpeg.UI/Services/DebugAutomation.cs`.
+- **Development automation.** Debug builds can be driven by a script (`MANE_FFMPEG_SCRIPT=file`) for end-to-end checks. See `crates/mane-ui/src/debug_automation.rs`.
 
 ## Repository info
 

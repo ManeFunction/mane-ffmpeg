@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   test:
     strategy:
@@ -19,9 +22,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: "10.0.x"
+      # rustup comes with the runner images, so no third-party toolchain action is needed.
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy && rustup default stable
 
       # The ffmpeg integration tests and the libmpv preview tests skip themselves without these, so they run on
       # Linux only (apt is quick; a brew install on macOS would add minutes to every run).
@@ -29,5 +32,11 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg libmpv2
 
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
       - name: Run the tests
-        run: dotnet test ManeFfmpeg.slnx -c Release
+        run: cargo test --workspace --locked

@@ -1,23 +1,27 @@
 #!/usr/bin/env bash
-# Builds a self-contained Linux bundle into build/linux-<rid>/mane-ffmpeg and a .tar.gz next to it.
-# Usage: scripts/package-linux.sh [linux-x64|linux-arm64]   (default: linux-x64)
+# Builds the Linux bundle into build/linux-<rid>/mane-ffmpeg and a .tar.gz next to it.
+# Usage: scripts/package-linux.sh [linux-x64|linux-arm64]   (default: this machine's architecture)
 # On the target machine: tar xf mane-ffmpeg-*.tar.gz && ./mane-ffmpeg/install.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-RID="${1:-linux-x64}"
-VERSION="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' "$ROOT/Directory.Build.props")"
+RID="${1:-$([ "$(uname -m)" = "aarch64" ] && echo linux-arm64 || echo linux-x64)}"
+case "$RID" in
+  linux-x64) TARGET=x86_64-unknown-linux-gnu ;;
+  linux-arm64) TARGET=aarch64-unknown-linux-gnu ;;
+  *) echo "Unknown runtime: $RID" >&2; exit 1 ;;
+esac
+VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/Cargo.toml" | head -1)"
 OUT="$ROOT/build/linux-$RID"
 DIR="$OUT/mane-ffmpeg"
-DOTNET="${DOTNET:-$(command -v dotnet || echo "$HOME/.dotnet/dotnet")}"
 
 rm -rf "$OUT"
-mkdir -p "$DIR"
+mkdir -p "$DIR/app"
 
-"$DOTNET" publish "$ROOT/src/ManeFfmpeg.UI/ManeFfmpeg.UI.csproj" -c Release -r "$RID" --self-contained true \
-  -p:UseAppHost=true -o "$DIR/app"
+cargo build --manifest-path "$ROOT/Cargo.toml" --release --locked -p mane-ui --target "$TARGET"
+cp "$ROOT/target/$TARGET/release/ManeFfmpeg" "$DIR/app/ManeFfmpeg"
 
-cp "$ROOT/src/ManeFfmpeg.UI/Assets/app.png" "$DIR/mane-ffmpeg.png"
+cp "$ROOT/assets/app.png" "$DIR/mane-ffmpeg.png"
 
 cat > "$DIR/mane-ffmpeg.desktop" <<'DESKTOP'
 [Desktop Entry]
@@ -29,6 +33,7 @@ Icon=mane-ffmpeg
 Terminal=false
 Categories=AudioVideo;Video;AudioVideoEditing;
 MimeType=application/x-mane-ffmpeg-project;video/mp4;video/quicktime;video/x-matroska;video/webm;video/mp2t;
+StartupWMClass=mane-ffmpeg
 DESKTOP
 
 cat > "$DIR/mane-ffmpeg-mime.xml" <<'MIME'
