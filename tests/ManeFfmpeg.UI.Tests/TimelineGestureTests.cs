@@ -228,4 +228,23 @@ public class TimelineGestureTests
         Assert.Equal(TimelineZone.Empty, Zone(TimelineLayout.X(100, 0, S(5)), TimelineLayout.VideoCenter));
         Assert.Equal("b", TimelineLayout.HitTest(timeline, 100, 0, x0 + 50, TimelineLayout.AudioCenter).ClipId);
     }
+
+    [Fact]
+    public void Following_the_playhead_pages_forward_only_while_clips_lie_past_the_view()
+    {
+        // 10 s on screen of a 25 s timeline.
+        double Follow(double scroll, double playhead, double duration = 25) =>
+            TimelineLayout.FollowScroll(scroll, 10, S(playhead), S(duration));
+        Assert.Equal(0, Follow(0, 9));
+        Assert.Equal(9, Follow(0, 10));
+        // The last page ends at the timeline's end instead of leaving it near the left edge.
+        Assert.Equal(15, Follow(9, 19.6));
+        Assert.Equal(15, Follow(15, 24.8));
+        // The whole timeline on screen: no paging at the end.
+        Assert.Equal(0, Follow(0, 9.8, duration: 10));
+        // Scrolled past the end by hand: left where it is.
+        Assert.Equal(18, Follow(18, 27.8));
+        // Back before the view (a loop or a jump): pages back.
+        Assert.Equal(0, Follow(15, 0.5));
+    }
 }

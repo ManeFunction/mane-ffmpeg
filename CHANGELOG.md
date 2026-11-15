@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Fixed
+- During playback near the end of the project, the timeline no longer scrolls the end to the left edge and leaves
+  the rest of the view empty. It scrolls only while clips lie past the right edge, and stops with the project's end
+  at the right edge.
 
 ## [2.1.1] - 2026-11-12
 ### Changed

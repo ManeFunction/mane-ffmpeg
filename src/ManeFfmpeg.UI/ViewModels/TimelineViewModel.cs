@@ -224,9 +224,6 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
     {
         if (Zoom <= 0)
             return;
-        var visible = ViewportWidth / Zoom;
-        var t = Playhead.TotalSeconds;
-        if (t < Scroll || t > Scroll + visible * 0.95)
-            Scroll = Math.Max(0, t - visible * 0.1);
+        Scroll = Controls.TimelineLayout.FollowScroll(Scroll, ViewportWidth / Zoom, Playhead, Timeline.Duration);
     }
 }

@@ -27,6 +27,22 @@ public static class TimelineLayout
     public static TimeSpan Time(double zoom, double scroll, double x) =>
         TimeSpan.FromSeconds(scroll + (x - Header) / Math.Max(zoom, 1e-9));
 
+    /// <summary>
+    /// The scroll that keeps a playing playhead in view: unchanged while it is on screen, paged so it sits near the
+    /// left edge once it leaves. Paging forward stops where the timeline's end reaches the right edge, so the view
+    /// never moves past the clips into empty space; with the end already on screen it does not page at all.
+    /// </summary>
+    public static double FollowScroll(double scroll, double visibleSeconds, TimeSpan playhead, TimeSpan duration)
+    {
+        var t = playhead.TotalSeconds;
+        if (t < scroll)
+            return Math.Max(0, t - visibleSeconds * 0.1);
+        if (t <= scroll + visibleSeconds * 0.95)
+            return scroll;
+        var lastPage = Math.Max(0, duration.TotalSeconds - visibleSeconds);
+        return scroll >= lastPage ? scroll : Math.Min(t - visibleSeconds * 0.1, lastPage);
+    }
+
     public static double RulerCenter => RulerHeight / 2;
 
     public static double VideoCenter => VideoTop + VideoHeight / 2;
