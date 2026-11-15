@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Threading;
 using ManeFfmpeg.UI.Services;
 using ManeFfmpeg.UI.ViewModels;
 using ManeFfmpeg.Core.Model;
@@ -50,11 +51,17 @@ public sealed class TimelineControl : Control
     private static readonly Cursor ResizeCursor = new(StandardCursorType.SizeWestEast);
     private static readonly Cursor SlipCursor = new(StandardCursorType.SizeWestEast);
     private static readonly Cursor HandCursor = new(StandardCursorType.Hand);
+    private static readonly TimeSpan LoadingPeriod = TimeSpan.FromMilliseconds(1200);
+
+    // Redraws the "Loading…" pulse on A1 while a drawn clip waits for its waveform; stops once none does.
+    private readonly DispatcherTimer _loadingTimer = new() { Interval = TimeSpan.FromMilliseconds(60) };
+    private bool _drewLoading;
 
     public TimelineControl()
     {
         Focusable = true;
         ClipToBounds = true;
+        _loadingTimer.Tick += (_, _) => InvalidateVisual();
     }
 
     public TimelineViewModel? Timeline
@@ -86,6 +93,12 @@ public sealed class TimelineControl : Control
         InvalidateVisual();
     }
 
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        _loadingTimer.Stop();
+    }
+
     protected override void OnSizeChanged(SizeChangedEventArgs e)
     {
         base.OnSizeChanged(e);
@@ -106,6 +119,13 @@ public sealed class TimelineControl : Control
     // ---- Drawing ----------------------------------------------------------------------------------
 
     public override void Render(DrawingContext context)
+    {
+        _drewLoading = false;
+        DrawTimeline(context);
+        _loadingTimer.IsEnabled = _drewLoading;
+    }
+
+    private void DrawTimeline(DrawingContext context)
     {
         var size = Bounds.Size;
         context.FillRectangle(Background, new Rect(size));
@@ -255,6 +275,7 @@ public sealed class TimelineControl : Control
             {
                 DrawText(context, "no audio", new Point(textX + 1, audioRect.Top + (audioRect.Height - 14) / 2), TextBrush, 11);
             }
+            var loading = !audioMissing && heard is not null && vm.WaveformLoading(heard);
             if (replaced is not null)
             {
                 // On a chip of the file's color, so the name stays readable over the waveform.
@@ -264,7 +285,10 @@ public sealed class TimelineControl : Control
                 if (!audioMissing)
                     context.DrawRectangle(audioFill, InkHatchPen, chip, 6, 6);
                 context.DrawText(label, new Point(chip.X + 5, chip.Y + 1));
+                textX = chip.Right + 6;
             }
+            if (loading)
+                DrawLoading(context, textX + 1, audioRect.Center.Y, replaced is null ? LabelBrush : InkBrush);
         }
 
         if (vm.AudioDrop is { } drop && drop.ClipId == clip.Id)
@@ -344,6 +368,30 @@ public sealed class TimelineControl : Control
             }
         }
         context.DrawGeometry(null, pen, geometry);
+    }
+
+    /// <summary>
+    /// "Loading" and three dots pulsing one after another, where the waveform will be. The letters' cap height
+    /// to baseline is centered on <paramref name="midY"/> (the "g" tail hangs below, as it does in any label).
+    /// </summary>
+    private void DrawLoading(DrawingContext context, double x, double midY, IBrush brush)
+    {
+        const double dotRadius = 1.1;
+        _drewLoading = true;
+        var color = ((ISolidColorBrush)brush).Color;
+        var text = Text("Loading", new SolidColorBrush(color, 0.75), 11);
+        var capTop = text.BuildGeometry(default)?.Bounds.Top ?? 0;
+        var top = Math.Round(midY - (capTop + text.Baseline) / 2);
+        context.DrawText(text, new Point(x, top));
+        var phase = Environment.TickCount64 % (long)LoadingPeriod.TotalMilliseconds / LoadingPeriod.TotalMilliseconds;
+        var y = top + text.Baseline - dotRadius;
+        for (var i = 0; i < 3; i++)
+        {
+            var t = phase - i * 0.15;
+            var lit = Math.Max(0, Math.Sin(2 * Math.PI * (t - Math.Floor(t))));
+            var dot = new SolidColorBrush(color, 0.2 + 0.8 * lit);
+            context.DrawEllipse(dot, null, new Point(x + text.Width + 2.5 + dotRadius + i * 4, y), dotRadius, dotRadius);
+        }
     }
 
     /// <returns>The badge's width.</returns>

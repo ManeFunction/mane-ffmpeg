@@ -83,6 +83,15 @@ public sealed class SourceCatalog(IMediaAnalyzers analyzers)
             ? analyzers.Waveforms?.TryGet(source.Path, info, audio.Index)
             : null;
 
+    /// <summary>
+    /// The source's waveform is on its way: the file is still being probed, or its chosen audio stream's waveform
+    /// is being built. False once it's there, and when it never will be (no audio, no ffmpeg, a failed file).
+    /// </summary>
+    public bool WaveformLoading(SourceMedia source) =>
+        Status(source.Id) == SourceStatus.Analyzing
+        || (Info(source.Id) is { } info && info.Audio(source.AudioStreamIndex) is { } audio
+            && analyzers.Waveforms?.IsLoading(source.Path, info, audio.Index) == true);
+
     public KeyframeIndex? Keyframes(SourceMedia source) =>
         Info(source.Id) is { } info ? analyzers.Keyframes?.TryGet(source.Path, info) : null;
 

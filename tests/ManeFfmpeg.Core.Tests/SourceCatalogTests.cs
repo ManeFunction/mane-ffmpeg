@@ -58,6 +58,23 @@ public class SourceCatalogTests(FfmpegFixture media) : IClassFixture<FfmpegFixtu
     }
 
     [FfmpegFact]
+    public async Task A_waveform_is_loading_until_it_is_there_or_never_will_be()
+    {
+        var catalog = Catalog();
+        var source = new SourceMedia { Id = "s", Path = media.Sync30 };
+        var silent = new SourceMedia { Id = "n", Path = media.NoAudio };
+        var gone = new SourceMedia { Id = "g", Path = Path.Combine(media.Directory, "gone.mp4") };
+        catalog.Sync([source, silent, gone], []);
+        Assert.True(catalog.WaveformLoading(source));
+        Assert.False(catalog.WaveformLoading(gone));
+
+        await Wait.Until(() => catalog.Waveform(source) is not null, "the waveform");
+        Assert.False(catalog.WaveformLoading(source));
+        await Wait.Until(() => catalog.Status("n") == SourceStatus.Ready, "the file without audio");
+        Assert.False(catalog.WaveformLoading(silent));
+    }
+
+    [FfmpegFact]
     public async Task Keyframes_are_scanned_when_wanted_or_asked_for()
     {
         var catalog = Catalog();

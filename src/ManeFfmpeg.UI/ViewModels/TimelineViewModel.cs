@@ -101,6 +101,9 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
 
     public Waveform? Waveform(SourceMedia source) => owner.Catalog.Waveform(source);
 
+    /// <summary>The source is still being probed or its waveform built (A1 shows "Loading…" meanwhile).</summary>
+    public bool WaveformLoading(SourceMedia source) => owner.Catalog.WaveformLoading(source);
+
     public KeyframeIndex? Keyframes(SourceMedia source) => owner.Catalog.Keyframes(source);
 
     public void Seek(TimeSpan time, bool scrubbing) => owner.Preview.SeekTo(Clamp(time), scrubbing);

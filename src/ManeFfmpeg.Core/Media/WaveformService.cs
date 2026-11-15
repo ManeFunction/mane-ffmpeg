@@ -44,6 +44,10 @@ public sealed class WaveformService(FfmpegTools tools)
     public Waveform? TryGet(string path, MediaInfo media, int audioStreamIndex) =>
         _cache.TryGetValue(Key(path, media, audioStreamIndex), out var lazy) && lazy.Value.IsCompletedSuccessfully ? lazy.Value.Result : null;
 
+    /// <summary>The waveform was asked for and is still being read or built.</summary>
+    public bool IsLoading(string path, MediaInfo media, int audioStreamIndex) =>
+        _cache.TryGetValue(Key(path, media, audioStreamIndex), out var lazy) && !lazy.Value.IsCompleted;
+
     /// <summary>
     /// The waveform of stream <paramref name="audioStreamIndex"/> (absolute index) of <paramref name="path"/> as probed
     /// in <paramref name="media"/>, or null if it has none.
