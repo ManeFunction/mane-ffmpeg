@@ -516,4 +516,16 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
         Assert.True(waveform.Max(TimeSpan.FromSeconds(2.0), TimeSpan.FromSeconds(2.1)) > 150);
         Assert.True(waveform.Max(TimeSpan.FromSeconds(2.5), TimeSpan.FromSeconds(3.5)) < 10);
     }
+
+    [FfmpegFact]
+    public async Task Waveform_follows_the_audio_timestamps()
+    {
+        var info = await media.ProbeAsync(media.AudioGap);
+        var waveform = await new WaveformService(FfmpegFixture.Tools!).GetAsync(media.AudioGap, info, info.AudioStreams[0].Index);
+        Assert.NotNull(waveform);
+        Assert.InRange(waveform!.Duration.TotalSeconds, 8.9, 9.1);
+        Assert.True(waveform.Max(TimeSpan.FromSeconds(3.0), TimeSpan.FromSeconds(4.0)) < 10);
+        Assert.True(waveform.Max(TimeSpan.FromSeconds(5.0), TimeSpan.FromSeconds(5.1)) > 150);
+        Assert.True(waveform.Max(TimeSpan.FromSeconds(7.0), TimeSpan.FromSeconds(7.1)) > 150);
+    }
 }

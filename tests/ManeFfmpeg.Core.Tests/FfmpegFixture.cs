@@ -40,6 +40,11 @@ public sealed partial class FfmpegFixture : IDisposable
         Cli.Wrap(Tools!.Ffmpeg).WithArguments(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-t", "3",
             "-i", "aevalsrc='if(between(t\\,0.3\\,0.4)\\,0.5*sin(2*PI*880*t)\\,0)':s=44100:c=stereo", "-c:a", "aac", "-b:a", "128k", Tone])
             .ExecuteAsync().GetAwaiter().GetResult();
+        AudioGap = Path.Combine(Directory, "gap.m4a");
+        Cli.Wrap(Tools!.Ffmpeg).WithArguments(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-t", "8",
+            "-i", "aevalsrc='if(lt(mod(t\\,2)\\,0.1)\\,0.5*sin(2*PI*1000*t)\\,0)':s=48000:c=stereo",
+            "-af", "asetpts='PTS+gte(T\\,3)*48000'", "-c:a", "aac", "-b:a", "128k", AudioGap])
+            .ExecuteAsync().GetAwaiter().GetResult();
     }
 
     public string Directory { get; }
@@ -50,6 +55,12 @@ public sealed partial class FfmpegFixture : IDisposable
 
     /// <summary>3 s of audio only (AAC, 44.1 kHz) with one 880 Hz beep at 0.3–0.4 s.</summary>
     public string Tone { get; } = "";
+
+    /// <summary>
+    /// 8 s of audio only (AAC, 48 kHz) beeping every 2 s, stamped 1 s later from 3 s on: a 1 s timestamp gap,
+    /// so the beeps play at 0, 2, 5 and 7 s of its 9 s.
+    /// </summary>
+    public string AudioGap { get; } = "";
 
     private string Generate(string name, int seconds, string size, string rate, string codecArgs, bool audio = true)
     {

@@ -32,12 +32,17 @@ public sealed class Waveform(byte[] peaks)
     }
 }
 
-/// <summary>Builds waveforms with ffmpeg (mono, 8 kHz) and caches them in memory and on disk.</summary>
+/// <summary>
+/// Builds waveforms with ffmpeg (mono, 8 kHz) and caches them in memory and on disk. The samples are laid out by
+/// their timestamps, as the preview and the exports play them: gaps are filled with silence and audio stamped
+/// over audio already played is dropped (some recorders squeeze bursts of packets into a few milliseconds).
+/// Decoded back to back instead, such a file's waveform drifts later than the sound and runs past its end.
+/// </summary>
 public sealed class WaveformService(FfmpegTools tools)
 {
     private const int SampleRate = 8000;
     private const int SamplesPerBucket = SampleRate / Waveform.BucketsPerSecond;
-    private static readonly byte[] Magic = "MFWF1"u8.ToArray();
+    private static readonly byte[] Magic = "MFWF2"u8.ToArray();
 
     private readonly ConcurrentDictionary<string, Lazy<Task<Waveform?>>> _cache = new();
 
@@ -70,7 +75,7 @@ public sealed class WaveformService(FfmpegTools tools)
         var peaks = new List<byte>();
         var result = await Cli.Wrap(tools.Ffmpeg)
             .WithArguments([.. FfmpegTools.Quiet, "-i", path, "-map", $"0:{stream}",
-                "-ac", "1", "-ar", SampleRate.ToString(), "-f", "s16le", "-acodec", "pcm_s16le", "pipe:1"])
+                "-af", $"aresample={SampleRate}:async=1:first_pts=0", "-ac", "1", "-f", "s16le", "-acodec", "pcm_s16le", "pipe:1"])
             .WithStandardOutputPipe(PipeTarget.Create(async (output, ct) =>
             {
                 var buffer = new byte[SamplesPerBucket * 2 * 256];

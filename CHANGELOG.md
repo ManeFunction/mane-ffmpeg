@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - During playback near the end of the project, the timeline no longer scrolls the end to the left edge and leaves
   the rest of the view empty. It scrolls only while clips lie past the right edge, and stops with the project's end
   at the right edge.
+- The audio row's waveform lines up with the sound you hear and ends where the audio ends. For files whose audio
+  timestamps have gaps or bursts of packets (some recorders write them), it drifted later than the sound and ran
+  past the clip's end. Waveforms cached by earlier versions are rebuilt.
 
 ## [2.1.1] - 2026-11-12
 ### Changed
