@@ -2,6 +2,10 @@ using System.Diagnostics;
 using System.Runtime.Versioning;
 using CliWrap;
 using CliWrap.Buffered;
+using ManeFfmpeg.Core.Platforms;
+using ManeFfmpeg.Core.Platforms.Linux;
+using ManeFfmpeg.Core.Platforms.Mac;
+using ManeFfmpeg.Core.Platforms.Windows;
 using ManeFfmpeg.Core.Updates;
 
 namespace ManeFfmpeg.Core.Tests;
@@ -103,16 +107,16 @@ public class ApplyUpdateScriptTests
         File.WriteAllText(path, text);
     }
 
-    private async Task<string> RunAsync(bool runInstaller = false, IReadOnlyList<int>? waitFor = null, bool macOS = false, string? staged = null)
+    private async Task<string> RunAsync(bool runInstaller = false, IReadOnlyList<int>? waitFor = null, string? staged = null)
     {
-        var plan = new UpdateInstaller.ApplyPlan(macOS ? ReleasePackage.MacApp : ReleasePackage.LinuxTarball, Installed, staged ?? Staged, new Version(1, 2, 3), waitFor ?? [],
-            Relaunch: false, Reopen: [], runInstaller, Log, CleanUp: Path.Combine(_dir, "work"));
-        var script = UpdateInstaller.WriteApplyScript(Path.Combine(_dir, "work"), plan);
+        var plan = new UpdatePlan(Installed, staged ?? Staged, new Version(1, 2, 3), waitFor ?? [], Relaunch: false, Reopen: [], Log,
+            CleanUp: Path.Combine(_dir, "work"));
+        var script = new LinuxPlatform().WriteUpdateScript(Path.Combine(_dir, "work"), plan, runInstaller);
         await Cli.Wrap("/bin/sh").WithArguments([script]).WithValidation(CommandResultValidation.None).ExecuteBufferedAsync();
         return File.ReadAllText(Log);
     }
 
-    [Fact]
+    [UnixFact]
     public async Task Replaces_the_app_folder()
     {
         WriteFile(Path.Combine(Installed, "ManeFfmpeg"), "old");
@@ -128,7 +132,7 @@ public class ApplyUpdateScriptTests
         Assert.False(Directory.Exists(Path.Combine(_dir, "work")));
     }
 
-    [Fact]
+    [UnixFact]
     public async Task Keeps_the_old_version_when_the_new_one_is_missing()
     {
         WriteFile(Path.Combine(Installed, "ManeFfmpeg"), "old");
@@ -140,7 +144,7 @@ public class ApplyUpdateScriptTests
         Assert.Equal(["app"], Directory.GetFileSystemEntries(Path.Combine(_dir, "opt")).Select(Path.GetFileName));
     }
 
-    [Fact]
+    [UnixFact]
     public async Task Runs_the_new_install_script_for_the_standard_install()
     {
         WriteFile(Path.Combine(Installed, "ManeFfmpeg"), "old");
@@ -156,7 +160,7 @@ public class ApplyUpdateScriptTests
         Assert.Equal(["app"], Directory.GetFileSystemEntries(Path.Combine(_dir, "opt")).Select(Path.GetFileName));
     }
 
-    [Fact]
+    [UnixFact]
     public async Task Restores_the_old_version_when_the_install_script_fails()
     {
         WriteFile(Path.Combine(Installed, "ManeFfmpeg"), "old");
@@ -170,7 +174,7 @@ public class ApplyUpdateScriptTests
         Assert.Equal("old", File.ReadAllText(Path.Combine(Installed, "ManeFfmpeg")));
     }
 
-    [Fact]
+    [UnixFact]
     public async Task Waits_for_the_app_to_quit()
     {
         WriteFile(Path.Combine(Installed, "ManeFfmpeg"), "old");
@@ -184,19 +188,16 @@ public class ApplyUpdateScriptTests
         Assert.Equal("new", File.ReadAllText(Path.Combine(Installed, "ManeFfmpeg")));
     }
 
-    [Fact]
+    [MacFact] // uses ditto
     public async Task Replaces_a_mac_app_bundle()
     {
-        if (!OperatingSystem.IsMacOS())
-            return; // uses ditto
         var bundle = Path.Combine(_dir, "Applications", "Mane FFmpeg.app");
         WriteFile(Path.Combine(bundle, "Contents", "MacOS", "ManeFfmpeg"), "old");
         var staged = Path.Combine(_dir, "work", "new", "Mane FFmpeg.app");
         WriteFile(Path.Combine(staged, "Contents", "MacOS", "ManeFfmpeg"), "new");
-        var plan = new UpdateInstaller.ApplyPlan(ReleasePackage.MacApp, bundle, staged, new Version(1, 2, 3), [], Relaunch: false, Reopen: [],
-            RunInstaller: false, Log, CleanUp: Path.Combine(_dir, "work"));
+        var plan = new UpdatePlan(bundle, staged, new Version(1, 2, 3), [], Relaunch: false, Reopen: [], Log, CleanUp: Path.Combine(_dir, "work"));
 
-        var script = UpdateInstaller.WriteApplyScript(Path.Combine(_dir, "work"), plan);
+        var script = new MacPlatform().WriteUpdateScript(Path.Combine(_dir, "work"), plan);
         await Cli.Wrap("/bin/sh").WithArguments([script]).WithValidation(CommandResultValidation.None).ExecuteBufferedAsync();
 
         Assert.Contains("Installed.", File.ReadAllText(Log));
@@ -206,23 +207,32 @@ public class ApplyUpdateScriptTests
 }
 
 /// <summary>Each platform's package rules, checked on any system.</summary>
-public class ReleasePackageTests
+#pragma warning disable CA1416 // WindowsPlatform's package rules are plain path logic, so they're checked everywhere.
+public class PlatformPackageTests
 {
+    private static readonly IPlatform Mac = new MacPlatform();
+    private static readonly LinuxPlatform Linux = new();
+    private static readonly IPlatform Windows = new WindowsPlatform();
+
     [Fact]
     public void Assets_are_named_like_the_release_workflow_names_them()
     {
-        Assert.Equal("mane-ffmpeg-1.2.3-osx-arm64.zip", ReleasePackage.MacApp.AssetName(new Version(1, 2, 3), "osx-arm64"));
-        Assert.Equal("mane-ffmpeg-1.2.3-linux-x64.tar.gz", ReleasePackage.LinuxTarball.AssetName(new Version(1, 2, 3), "linux-x64"));
-        Assert.Equal(("osx", "linux"), (ReleasePackage.MacApp.Platform, ReleasePackage.LinuxTarball.Platform));
+        var version = new Version(1, 2, 3);
+        Assert.Equal("mane-ffmpeg-1.2.3-osx-arm64.zip", UpdateInstaller.AssetName(Mac, version, "osx-arm64"));
+        Assert.Equal("mane-ffmpeg-1.2.3-linux-x64.tar.gz", UpdateInstaller.AssetName(Linux, version, "linux-x64"));
+        Assert.Equal("mane-ffmpeg-1.2.3-win-x64.zip", UpdateInstaller.AssetName(Windows, version, "win-x64"));
+        Assert.Equal(("osx", "linux", "win"), (Mac.RuntimePrefix, Linux.RuntimePrefix, Windows.RuntimePrefix));
     }
 
     [Fact]
     public void The_staged_app_is_where_each_package_keeps_it()
     {
-        Assert.Equal("/w/new/Mane FFmpeg.app/Contents/MacOS/ManeFfmpeg",
-            ReleasePackage.MacApp.ExecutableIn(Path.Combine("/w/new", ReleasePackage.MacApp.StagedName)));
-        Assert.Equal("/w/new/mane-ffmpeg/app/ManeFfmpeg",
-            ReleasePackage.LinuxTarball.ExecutableIn(Path.Combine("/w/new", ReleasePackage.LinuxTarball.StagedName)));
+        Assert.Equal(Path.Combine("/w/new", "Mane FFmpeg.app", "Contents", "MacOS", "ManeFfmpeg"),
+            Mac.UpdateExecutableIn(Path.Combine("/w/new", Mac.UpdateStagedName)));
+        Assert.Equal(Path.Combine("/w/new", "mane-ffmpeg", "app", "ManeFfmpeg"),
+            Linux.UpdateExecutableIn(Path.Combine("/w/new", Linux.UpdateStagedName)));
+        Assert.Equal(Path.Combine("/w/new", "Mane FFmpeg", "ManeFfmpeg.exe"),
+            Windows.UpdateExecutableIn(Path.Combine("/w/new", Windows.UpdateStagedName)));
     }
 
     [Fact]
@@ -233,28 +243,45 @@ public class ReleasePackageTests
         {
             var bundle = Path.Combine(dir, "Mane FFmpeg.app");
             var executable = Path.Combine(bundle, "Contents", "MacOS", "ManeFfmpeg");
-            Assert.Null(ReleasePackage.MacApp.InstalledPath(executable));
+            Assert.Null(Mac.UpdateInstalledPath(executable));
             Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
             File.WriteAllText(Path.Combine(bundle, "Contents", "Info.plist"), "");
-            Assert.Equal(bundle, ReleasePackage.MacApp.InstalledPath(executable));
-            Assert.Null(ReleasePackage.MacApp.InstalledPath(Path.Combine(dir, "bin", "ManeFfmpeg")));
+            Assert.Equal(bundle, Mac.UpdateInstalledPath(executable));
+            Assert.Null(Mac.UpdateInstalledPath(Path.Combine(dir, "bin", "ManeFfmpeg")));
         }
         finally
         {
             Directory.Delete(dir, recursive: true);
         }
-        Assert.NotNull(ReleasePackage.MacApp.CannotReplaceReason("/private/var/folders/x/AppTranslocation/1/d/Mane FFmpeg.app"));
-        Assert.Null(ReleasePackage.MacApp.CannotReplaceReason("/Applications/Mane FFmpeg.app"));
+        Assert.NotNull(Mac.UpdateCannotReplaceReason("/private/var/folders/x/AppTranslocation/1/d/Mane FFmpeg.app"));
+        Assert.Null(Mac.UpdateCannotReplaceReason("/Applications/Mane FFmpeg.app"));
     }
 
     [Fact]
     public void A_linux_copy_is_the_bundle_s_app_folder()
     {
-        Assert.Equal("/opt/x/app", ReleasePackage.LinuxTarball.InstalledPath("/opt/x/app/ManeFfmpeg"));
-        Assert.Null(ReleasePackage.LinuxTarball.InstalledPath("/usr/bin/ManeFfmpeg"));
+        Assert.Equal(Path.Combine("/opt/x", "app"), Linux.UpdateInstalledPath(Path.Combine("/opt/x", "app", "ManeFfmpeg")));
+        Assert.Null(Linux.UpdateInstalledPath("/usr/bin/ManeFfmpeg"));
         var standard = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "opt", "mane-ffmpeg", "app");
-        Assert.True(ReleasePackage.LinuxTarball.RunsInstaller(standard));
-        Assert.False(ReleasePackage.LinuxTarball.RunsInstaller("/opt/x/app"));
-        Assert.False(ReleasePackage.MacApp.RunsInstaller(standard));
+        Assert.True(Linux.RunsInstallerFor(standard));
+        Assert.False(Linux.RunsInstallerFor(Path.GetFullPath("/opt/x/app")));
+    }
+
+    [Fact]
+    public void A_windows_copy_is_the_folder_marked_as_a_package()
+    {
+        var dir = Directory.CreateTempSubdirectory("mane-ffmpeg-win").FullName;
+        try
+        {
+            var executable = Path.Combine(dir, "ManeFfmpeg.exe");
+            Assert.Null(Windows.UpdateInstalledPath(executable));
+            File.WriteAllText(Path.Combine(dir, WindowsPlatform.PackageMarker), "");
+            Assert.Equal(dir, Windows.UpdateInstalledPath(executable));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 }
+#pragma warning restore CA1416

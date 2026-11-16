@@ -77,10 +77,10 @@
                 </Grid>
 
                 <TextBox IsVisible="{Binding Export.ShowCommand}" Text="{Binding Export.CommandPreview, Mode=OneWay}" IsReadOnly="True"
-                         TextWrapping="Wrap" MaxHeight="110" FontFamily="Menlo, DejaVu Sans Mono, monospace" FontSize="11"
+                         TextWrapping="Wrap" MaxHeight="110" FontFamily="Menlo, Consolas, DejaVu Sans Mono, monospace" FontSize="11"
                          AcceptsReturn="True" />
                 <TextBox IsVisible="{Binding Export.ExportLog, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding Export.ExportLog, Mode=OneWay}"
-                         IsReadOnly="True" TextWrapping="Wrap" MaxHeight="110" FontFamily="Menlo, DejaVu Sans Mono, monospace"
+                         IsReadOnly="True" TextWrapping="Wrap" MaxHeight="110" FontFamily="Menlo, Consolas, DejaVu Sans Mono, monospace"
                          FontSize="11" AcceptsReturn="True" />
             </StackPanel>
         </Border>
@@ -352,7 +352,7 @@
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
                             <TextBlock Text="{Binding TimelineDurationText}" VerticalAlignment="Center" Classes="dim" FontFeatures="tnum" Margin="0,0,8,0" />
                             <Button Classes="tool" Content="{Binding Preview.PreviewToggleText}" Command="{Binding Preview.ToggleCompactCommand}"
-                                    Margin="0,0,8,0" ToolTip.Tip="Show or hide the video preview (⇧⌘C)" />
+                                    Margin="0,0,8,0" ToolTip.Tip="{Binding Preview.CompactTip}" />
                             <Button Classes="tool" Content="−" Command="{Binding ZoomOutCommand}" ToolTip.Tip="Zoom out (−)" />
                             <Button Classes="tool" Content="Fit" Command="{Binding ZoomFitCommand}" ToolTip.Tip="Fit timeline" />
                             <Button Classes="tool" Content="+" Command="{Binding ZoomInCommand}" ToolTip.Tip="Zoom in (+)" />

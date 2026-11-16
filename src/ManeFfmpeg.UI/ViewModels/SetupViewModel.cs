@@ -1,29 +1,30 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ManeFfmpeg.UI.Services;
-using ManeFfmpeg.Core;
 using ManeFfmpeg.Core.Mpv;
 using ManeFfmpeg.Core.Persistence;
+using ManeFfmpeg.Core.Platforms;
 
 namespace ManeFfmpeg.UI.ViewModels;
 
 public enum SetupStep
 {
-    /// <summary>Homebrew is missing; its installer is offered first.</summary>
-    NeedsHomebrew,
-    /// <summary>Homebrew's installer runs in Terminal.</summary>
-    WaitingForHomebrew,
+    /// <summary>The package manager is missing; installing it is offered first.</summary>
+    NeedsManager,
+    /// <summary>The package manager's installer runs (in Terminal, or the Microsoft Store).</summary>
+    WaitingForManager,
     Ready,
     Installing,
     Installed,
     Failed,
 }
 
-/// <summary>A missing tool and the Homebrew formula that provides it.</summary>
-public sealed partial class SetupComponent(string name, string formula, string purpose) : ObservableObject
+/// <summary>A missing tool and the package that provides it.</summary>
+public sealed partial class SetupComponent(string name, string package, string purpose) : ObservableObject
 {
+    /// <summary>"ffmpeg" or "libmpv".</summary>
     public string Name { get; } = name;
-    public string Formula { get; } = formula;
+    public string Package { get; } = package;
     public string Purpose { get; } = purpose;
 
     [ObservableProperty]
@@ -31,56 +32,66 @@ public sealed partial class SetupComponent(string name, string formula, string p
 }
 
 /// <summary>
-/// Installs missing components (ffmpeg, libmpv) with Homebrew on macOS, and Homebrew itself first when it's missing.
-/// Homebrew's installer runs in Terminal; <c>brew install</c> runs here with its output shown.
+/// Installs missing components (ffmpeg, libmpv) with the platform's package manager (<see cref="IToolInstaller"/>:
+/// Homebrew on macOS, winget on Windows), and the package manager itself first when it's missing. The install runs here
+/// with its output shown.
 /// </summary>
 public sealed partial class SetupViewModel : ViewModelBase, IDisposable
 {
     private const int LogLines = 300;
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
 
     private readonly AppServices _app = AppServices.Instance;
-    private readonly Func<string?> _findBrew;
-    private readonly Func<string, Task> _openInTerminal;
+    private readonly IToolInstaller _installer;
     private readonly string _workDirectory;
     private readonly Queue<string> _log = new();
     private CancellationTokenSource? _cts;
-    private string? _brew;
+    private string? _manager;
 
     /// <param name="components">What to offer; <see cref="MissingComponents"/> by default.</param>
-    /// <param name="findBrew">Finds brew; tests and debug automation replace it and the next two.</param>
-    /// <param name="openInTerminal">Runs Homebrew's installer script in a terminal.</param>
-    /// <param name="workDirectory">Where the installer script and its status file go.</param>
-    public SetupViewModel(IEnumerable<SetupComponent>? components = null, Func<string?>? findBrew = null,
-        Func<string, Task>? openInTerminal = null, string? workDirectory = null)
+    /// <param name="installer">The package manager; the platform's by default. Tests and debug automation replace it.</param>
+    /// <param name="workDirectory">Where the package manager's installer keeps its files.</param>
+    public SetupViewModel(IEnumerable<SetupComponent>? components = null, IToolInstaller? installer = null, string? workDirectory = null)
     {
-        _findBrew = findBrew ?? Homebrew.Find;
-        _openInTerminal = openInTerminal ?? Homebrew.OpenInTerminalAsync;
-        _workDirectory = workDirectory ?? Path.Combine(AppPaths.TempDirectory, "homebrew");
-        Components = [.. components ?? MissingComponents()];
+        _installer = installer ?? Platform.Current.ToolInstaller
+            ?? throw new PlatformNotSupportedException("The app doesn't install tools on this system.");
+        _workDirectory = workDirectory ?? Path.Combine(AppPaths.TempDirectory, "setup");
+        Components = [.. components ?? MissingComponents(_installer)];
         foreach (var component in Components)
             component.PropertyChanged += (_, _) => OnSelectionChanged();
-        _brew = _findBrew();
-        Step = _brew is null ? SetupStep.NeedsHomebrew : SetupStep.Ready;
+        _manager = _installer.FindManager();
+        Step = _manager is null ? SetupStep.NeedsManager : SetupStep.Ready;
         AskAtStartup = _app.Settings.Current.AskToInstallAtStartup;
-        AppLog.Write($"Setup: offering {string.Join(", ", Components.Select(c => c.Name))}; brew: {_brew ?? "not found"}");
+        AppLog.Write($"Setup: offering {string.Join(", ", Components.Select(c => c.Name))}; {_installer.ManagerName}: {_manager ?? "not found"}");
     }
 
-    /// <summary>Whether something this dialog installs is missing. Homebrew installs are offered on macOS only.</summary>
-    public static bool IsNeeded => OperatingSystem.IsMacOS() && MissingComponents().Any();
+    /// <summary>Whether something this dialog installs is missing, on a platform where it installs things.</summary>
+    public static bool IsNeeded => Platform.Current.ToolInstaller is { } installer && MissingComponents(installer).Any();
 
     public static bool ShouldAskAtStartup => IsNeeded && AppServices.Instance.Settings.Current.AskToInstallAtStartup;
 
-    /// <summary>Everything the dialog can install.</summary>
-    public static IEnumerable<SetupComponent> AllComponents() =>
-    [
-        new SetupComponent("ffmpeg", "ffmpeg", "Reads, analyzes and exports your videos. Required."),
-        new SetupComponent("libmpv", "mpv", "Plays the preview. Editing and exporting work without it."),
-    ];
+    /// <summary>Everything the dialog can install with <paramref name="installer"/>.</summary>
+    public static IEnumerable<SetupComponent> AllComponents(IToolInstaller installer) =>
+        new[]
+        {
+            ("ffmpeg", "Reads, analyzes and exports your videos. Required."),
+            ("libmpv", "Plays the preview. Editing and exporting work without it."),
+        }
+        .Where(c => installer.PackageFor(c.Item1) is not null)
+        .Select(c => new SetupComponent(c.Item1, installer.PackageFor(c.Item1)!, c.Item2));
 
-    public static IEnumerable<SetupComponent> MissingComponents() => AllComponents().Where(c => c.Formula == "ffmpeg"
-        ? AppServices.Instance.Tools is null
-        : !MpvLibrary.IsLoaded);
+    public static IEnumerable<SetupComponent> MissingComponents(IToolInstaller installer) =>
+        AllComponents(installer).Where(c => !IsAvailable(c.Name));
+
+    private static bool IsAvailable(string component) =>
+        component == "ffmpeg" ? AppServices.Instance.Tools is not null : MpvLibrary.IsLoaded;
+
+    public string ManagerName => _installer.ManagerName;
+
+    public string Introduction => _installer.Introduction;
+
+    public string ManagerTitle => $"{_installer.ManagerName.ToUpperInvariant()} ISN'T INSTALLED";
+
+    public string ManagerExplanation => _installer.ManagerSetupExplanation;
 
     public IReadOnlyList<SetupComponent> Components { get; }
 
@@ -88,7 +99,7 @@ public sealed partial class SetupViewModel : ViewModelBase, IDisposable
     public Action? RequestClose { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowHomebrew), nameof(CanEditComponents), nameof(IsInstalling), nameof(IsInstalled),
+    [NotifyPropertyChangedFor(nameof(ShowManager), nameof(CanEditComponents), nameof(IsInstalling), nameof(IsInstalled),
         nameof(PrimaryText), nameof(SecondaryText), nameof(HasSecondary))]
     [NotifyCanExecuteChangedFor(nameof(ContinueCommand))]
     public partial SetupStep Step { get; private set; }
@@ -99,7 +110,7 @@ public sealed partial class SetupViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     public partial bool StatusIsError { get; private set; }
 
-    /// <summary>brew's recent output; null until an install starts.</summary>
+    /// <summary>The package manager's recent output; null until an install starts.</summary>
     [ObservableProperty]
     public partial string? Log { get; private set; }
 
@@ -112,22 +123,22 @@ public sealed partial class SetupViewModel : ViewModelBase, IDisposable
             _app.Settings.Update(s => s with { AskToInstallAtStartup = value });
     }
 
-    public bool ShowHomebrew => Step is SetupStep.NeedsHomebrew or SetupStep.WaitingForHomebrew;
+    public bool ShowManager => Step is SetupStep.NeedsManager or SetupStep.WaitingForManager;
 
-    public bool CanEditComponents => Step is SetupStep.NeedsHomebrew or SetupStep.Ready or SetupStep.Failed;
+    public bool CanEditComponents => Step is SetupStep.NeedsManager or SetupStep.Ready or SetupStep.Failed;
 
     public bool IsInstalling => Step == SetupStep.Installing;
 
     public bool IsInstalled => Step == SetupStep.Installed;
 
-    public string HomebrewCommand => Homebrew.InstallerCommand;
+    public string ManagerCommand => _installer.ManagerInstallCommand;
 
-    public string InstallCommand => $"brew install {string.Join(' ', Selected.Select(c => c.Formula))}";
+    public string InstallCommand => _installer.InstallCommand(Selected.Select(c => c.Package));
 
     public string PrimaryText => Step switch
     {
-        SetupStep.NeedsHomebrew => "Install Homebrew…",
-        SetupStep.WaitingForHomebrew => "Waiting for Homebrew…",
+        SetupStep.NeedsManager => $"Install {_installer.ManagerName}…",
+        SetupStep.WaitingForManager => $"Waiting for {_installer.ManagerName}…",
         SetupStep.Installing => "Installing…",
         SetupStep.Installed => "Done",
         SetupStep.Failed => "Try Again",
@@ -147,7 +158,7 @@ public sealed partial class SetupViewModel : ViewModelBase, IDisposable
 
     private bool CanContinue() => Step switch
     {
-        SetupStep.WaitingForHomebrew or SetupStep.Installing => false,
+        SetupStep.WaitingForManager or SetupStep.Installing => false,
         SetupStep.Installed => true,
         _ => Selected.Any(),
     };
@@ -157,8 +168,8 @@ public sealed partial class SetupViewModel : ViewModelBase, IDisposable
     {
         switch (Step)
         {
-            case SetupStep.NeedsHomebrew:
-                await InstallHomebrewAsync();
+            case SetupStep.NeedsManager:
+                await InstallManagerAsync();
                 break;
             case SetupStep.Installed:
                 RequestClose?.Invoke();
@@ -169,7 +180,7 @@ public sealed partial class SetupViewModel : ViewModelBase, IDisposable
         }
     }
 
-    /// <summary>"Not Now" and "Close" close the dialog; "Stop" stops brew.</summary>
+    /// <summary>"Not Now" and "Close" close the dialog; "Stop" stops the install.</summary>
     [RelayCommand]
     private void Dismiss()
     {
@@ -179,27 +190,29 @@ public sealed partial class SetupViewModel : ViewModelBase, IDisposable
             RequestClose?.Invoke();
     }
 
-    private async Task InstallHomebrewAsync()
+    private async Task InstallManagerAsync()
     {
+        var name = _installer.ManagerName;
         ShowStatus(null);
+        string waiting;
         try
         {
-            await _openInTerminal(Homebrew.WriteInstallerScript(_workDirectory));
+            waiting = await _installer.StartManagerInstallAsync(_workDirectory);
         }
         catch (Exception ex)
         {
-            ShowStatus($"Couldn't open Terminal: {ex.Message}", error: true);
+            ShowStatus(ex.Message, error: true);
             return;
         }
-        AppLog.Write("Setup: Homebrew's installer opened in Terminal");
-        Step = SetupStep.WaitingForHomebrew;
-        ShowStatus("Follow the steps in Terminal. This window continues once Homebrew is installed.");
+        AppLog.Write($"Setup: {name}'s installer started");
+        Step = SetupStep.WaitingForManager;
+        ShowStatus(waiting);
 
         int code;
         _cts = new CancellationTokenSource();
         try
         {
-            code = await WaitForInstallerAsync(_cts.Token);
+            code = await _installer.WaitForManagerInstallAsync(_workDirectory, _cts.Token);
         }
         catch (OperationCanceledException)
         {
@@ -210,31 +223,16 @@ public sealed partial class SetupViewModel : ViewModelBase, IDisposable
             _cts.Dispose();
             _cts = null;
         }
-        AppLog.Write($"Setup: Homebrew's installer exited with {code}");
-        _brew = code == 0 ? _findBrew() : null;
-        if (_brew is not null)
+        AppLog.Write($"Setup: {name}'s installer exited with {code}");
+        _manager = code == 0 ? _installer.FindManager() : null;
+        if (_manager is not null)
         {
             Step = SetupStep.Ready;
-            ShowStatus("Homebrew is installed. Choose Install to continue.");
+            ShowStatus($"{name} is installed. Choose Install to continue.");
             return;
         }
-        Step = SetupStep.NeedsHomebrew;
-        ShowStatus(code switch
-        {
-            0 => "Homebrew's installer finished, but brew wasn't found in /opt/homebrew or /usr/local.",
-            129 or 130 or 143 => "Homebrew's installer was stopped before it finished.",
-            _ => $"Homebrew's installer failed (exit code {code}). Terminal shows what went wrong.",
-        }, error: true);
-    }
-
-    private async Task<int> WaitForInstallerAsync(CancellationToken ct)
-    {
-        while (true)
-        {
-            if (Homebrew.ReadInstallerStatus(_workDirectory) is { } code)
-                return code;
-            await Task.Delay(PollInterval, ct);
-        }
+        Step = SetupStep.NeedsManager;
+        ShowStatus(_installer.DescribeManagerInstallFailure(code), error: true);
     }
 
     private async Task InstallComponentsAsync()
@@ -245,8 +243,7 @@ public sealed partial class SetupViewModel : ViewModelBase, IDisposable
         lock (_log)
             _log.Clear();
         Log = "";
-        ShowStatus($"Installing {names}. This usually takes a few minutes; on older macOS versions Homebrew builds " +
-                   "from source, which can take an hour or more.");
+        ShowStatus($"Installing {names}. {_installer.InstallingHint}");
         AppLog.Write($"Setup: {InstallCommand}");
 
         int code;
@@ -254,7 +251,7 @@ public sealed partial class SetupViewModel : ViewModelBase, IDisposable
         IProgress<string> progress = new Progress<string>(AppendLog);
         try
         {
-            code = await Homebrew.InstallAsync(_brew!, [.. chosen.Select(c => c.Formula)], progress.Report, _cts.Token);
+            code = await _installer.InstallAsync(_manager!, [.. chosen.Select(c => c.Package)], progress.Report, _cts.Token);
         }
         catch (OperationCanceledException)
         {
@@ -265,7 +262,7 @@ public sealed partial class SetupViewModel : ViewModelBase, IDisposable
         catch (Exception ex)
         {
             Step = SetupStep.Failed;
-            ShowStatus($"Couldn't run Homebrew: {ex.Message}", error: true);
+            ShowStatus($"Couldn't run {_installer.ManagerName}: {ex.Message}", error: true);
             return;
         }
         finally
@@ -273,29 +270,28 @@ public sealed partial class SetupViewModel : ViewModelBase, IDisposable
             _cts.Dispose();
             _cts = null;
         }
-        AppLog.Write($"Setup: brew exited with {code}");
+        AppLog.Write($"Setup: {_installer.ManagerName} exited with {code}");
         if (code != 0)
         {
             Step = SetupStep.Failed;
-            ShowStatus($"Homebrew couldn't install {names} (exit code {code}). Its output above shows why.", error: true);
+            ShowStatus($"{_installer.ManagerName} couldn't install {names} (exit code {code}). Its output above shows why.", error: true);
             return;
         }
 
         // libmpv first: the ToolsChanged raised when ffmpeg is located again also starts the open windows' previews.
         _app.LoadMpv();
         await _app.LocateToolsAsync();
-        var missing = MissingComponents().Select(c => c.Formula).ToHashSet();
-        var unusable = chosen.Where(c => missing.Contains(c.Formula)).ToList();
+        var unusable = chosen.Where(c => !IsAvailable(c.Name)).ToList();
         if (unusable.Count == 0)
         {
             Step = SetupStep.Installed;
-            var ready = chosen.Select(c => c.Formula == "ffmpeg" && _app.Tools?.Version is { } v ? $"ffmpeg {v}" : c.Name);
+            var ready = chosen.Select(c => c.Name == "ffmpeg" && _app.Tools?.Version is { } v ? $"ffmpeg {v}" : c.Name);
             ShowStatus($"✓ {string.Join(" and ", ready)} {(chosen.Count == 1 ? "is" : "are")} ready.");
             return;
         }
         Step = SetupStep.Failed;
-        var mpvError = unusable.Any(c => c.Formula == "mpv") ? $" {MpvLibrary.LoadError}" : "";
-        ShowStatus($"Homebrew installed {string.Join(" and ", unusable.Select(c => c.Name))}, but the app still can't use it. " +
+        var mpvError = unusable.Any(c => c.Name == "libmpv") ? $" {MpvLibrary.LoadError}" : "";
+        ShowStatus($"{_installer.ManagerName} installed {string.Join(" and ", unusable.Select(c => c.Name))}, but the app still can't use it. " +
                    $"Check the paths in Settings.{mpvError}", error: true);
     }
 
@@ -322,6 +318,6 @@ public sealed partial class SetupViewModel : ViewModelBase, IDisposable
         ContinueCommand.NotifyCanExecuteChanged();
     }
 
-    /// <summary>Stops waiting for Homebrew's installer, or stops brew.</summary>
+    /// <summary>Stops waiting for the package manager's installer, or stops the install.</summary>
     public void Dispose() => _cts?.Cancel();
 }

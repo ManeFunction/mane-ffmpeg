@@ -108,8 +108,48 @@ jobs:
           name: mane-ffmpeg-${{ matrix.rid }}
           path: dist/
 
+  build-windows:
+    needs: [test, check-version]
+    strategy:
+      matrix:
+        rid: [win-x64, win-arm64]
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Build the zip
+        env:
+          RID: ${{ matrix.rid }}
+        run: scripts/package-windows.sh "$RID"
+
+      - name: Check the zip
+        env:
+          RID: ${{ matrix.rid }}
+        run: |
+          ZIP="build/windows-$RID/mane-ffmpeg-${GITHUB_REF_NAME#v}-$RID.zip"
+          test -f "$ZIP" # the script names it after the version in Directory.Build.props
+          python .github/scripts/check_windows_zip.py "$ZIP" "$RID"
+          mkdir -p dist
+          cp "$ZIP" dist/
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mane-ffmpeg-${{ matrix.rid }}
+          path: dist/
+
   github-release:
-    needs: [build-macos, build-linux]
+    needs: [build-macos, build-linux, build-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write # required to create a GitHub Release
@@ -153,7 +193,10 @@ jobs:
             echo "  \`xattr -dr com.apple.quarantine \"/Applications/Mane FFmpeg.app\"\` or allow it in"
             echo "  *System Settings > Privacy & Security*."
             echo "- Linux: \`linux-x64\` or \`linux-arm64\`. \`tar xf mane-ffmpeg-*.tar.gz && ./mane-ffmpeg/install.sh\`."
-            echo "- Both need ffmpeg, and libmpv for the preview; see the README's Requirements."
+            echo "- Windows: \`win-x64\` or \`win-arm64\`. Unzip anywhere and run *Mane FFmpeg\\ManeFfmpeg.exe*. The app"
+            echo "  isn't signed, so SmartScreen asks on the first start: *More info > Run anyway*. libmpv is included."
+            echo "- All need ffmpeg (Windows: \`winget install Gyan.FFmpeg\`, which the app offers), and macOS and Linux need"
+            echo "  libmpv for the preview; see the README's Requirements."
           } > release_notes.md
 
       - name: Create GitHub Release

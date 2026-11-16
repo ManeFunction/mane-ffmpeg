@@ -15,7 +15,7 @@ public sealed partial class ChangelogView : StackPanel
     public static readonly StyledProperty<string?> MarkdownProperty =
         AvaloniaProperty.Register<ChangelogView, string?>(nameof(Markdown));
 
-    private static readonly FontFamily CodeFont = new("Menlo, DejaVu Sans Mono, monospace");
+    private static readonly FontFamily CodeFont = new("Menlo, Consolas, DejaVu Sans Mono, monospace");
 
     public ChangelogView() => Spacing = 4;
 

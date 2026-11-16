@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - The audio row (A1) shows a small animated "Loading…" while a clip's file is analyzed and its waveform is built,
   instead of staying empty until the waveform appears.
+- Windows builds (`win-x64`, `win-arm64`) with every feature of the macOS and Linux ones: preview with a bundled
+  libmpv, export with pause and resume, keeping the computer awake, notifications, the `.mfvp` file type and updates
+  that install themselves. When ffmpeg is missing, the app offers to install it with winget.
+
+### Changed
+- Everything that differs between macOS, Linux and Windows now sits behind one platform layer
+  (`src/ManeFfmpeg.Core/Platforms`), with one implementation per system.
+- Projects store the relative paths of their media with `/` on every system, so a project made on Windows still
+  finds its media on macOS and Linux.
+- Tooltips show shortcuts the way the system writes them: ⇧⌘C on macOS, Ctrl+Shift+C on Linux and Windows.
 
 ### Fixed
 - During playback near the end of the project, the timeline no longer scrolls the end to the left edge and leaves

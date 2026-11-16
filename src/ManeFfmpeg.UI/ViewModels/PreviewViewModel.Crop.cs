@@ -2,6 +2,7 @@ using Avalonia;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ManeFfmpeg.Core.Model;
+using ManeFfmpeg.UI.Services;
 
 namespace ManeFfmpeg.UI.ViewModels;
 
@@ -138,7 +139,9 @@ public sealed partial class PreviewViewModel
             IsCompact = !IsCompact;
     }
 
-    public string ClosePreviewTip => IsCropping ? "Cancel the crop changes" : "Hide the video preview (⇧⌘C)";
+    public string ClosePreviewTip => IsCropping ? "Cancel the crop changes" : $"Hide the video preview ({EditMenu.ShortcutText('C', shift: true)})";
+
+    public string CompactTip => $"Show or hide the video preview ({EditMenu.ShortcutText('C', shift: true)})";
 
     [RelayCommand(CanExecute = nameof(HasCrop))]
     private void ResetCrop()

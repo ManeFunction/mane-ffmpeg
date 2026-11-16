@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using CommunityToolkit.Mvvm.Input;
+using ManeFfmpeg.Core.Platforms;
 
 namespace ManeFfmpeg.UI.Services;
 
@@ -11,7 +12,13 @@ namespace ManeFfmpeg.UI.Services;
 /// </summary>
 public static class EditMenu
 {
-    public static KeyModifiers CommandModifier => OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
+    public static KeyModifiers CommandModifier => Platform.Current.CommandKey == CommandKey.Meta ? KeyModifiers.Meta : KeyModifiers.Control;
+
+    /// <summary>How a menu shortcut reads in a tooltip: "⇧⌘C" on macOS, "Ctrl+Shift+C" elsewhere.</summary>
+    public static string ShortcutText(char key, bool shift = false) =>
+        Platform.Current.CommandKey == CommandKey.Meta
+            ? $"{(shift ? "⇧" : "")}⌘{key}"
+            : $"Ctrl+{(shift ? "Shift+" : "")}{key}";
 
     public static NativeMenu Create(Window window, Action? undo = null, Action? redo = null, Action? selectAll = null)
     {
@@ -83,13 +90,13 @@ public static class EditMenu
     }
 
     /// <summary>
-    /// Outside macOS the menu is drawn inside the window, and Avalonia shows the items' shortcuts there without
+    /// Without a global menu bar (outside macOS) the menu is drawn inside the window, and Avalonia shows the items' shortcuts there without
     /// acting on them. Binds each item's shortcut to its command on the window, after the menu is built. Keys a
     /// text field handles itself (Ctrl+C in a text box) never reach these bindings.
     /// </summary>
     public static void BindShortcuts(Window window)
     {
-        if (OperatingSystem.IsMacOS() || NativeMenu.GetMenu(window) is not { } menu)
+        if (Platform.Current.HasGlobalAppMenu || NativeMenu.GetMenu(window) is not { } menu)
             return;
         foreach (var item in Items(menu))
             if (item is { Gesture: { } gesture, Command: { } command })

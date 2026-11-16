@@ -94,7 +94,7 @@ public class CropTests
         Keyframes = media.Keys.ToDictionary(id => id, _ => new KeyframeIndex([.. Enumerable.Range(0, 10).Select(i => S(i))], TimeSpan.Zero)),
     };
 
-    private static string Command(ExportPlan plan) => plan.CommandText("ffmpeg");
+    private static string Command(ExportPlan plan) => plan.ShCommands();
 
     [Fact]
     public void A_whole_file_is_cropped_by_the_preset_run()

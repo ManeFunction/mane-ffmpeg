@@ -29,7 +29,7 @@
                 </Border>
                 <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,6,Auto">
                     <TextBlock Text="ffmpeg path" VerticalAlignment="Center" />
-                    <TextBox Grid.Column="1" Text="{Binding FfmpegPath}" PlaceholderText="automatic (PATH, Homebrew, /usr/bin…)" />
+                    <TextBox Grid.Column="1" Text="{Binding FfmpegPath}" PlaceholderText="{Binding FfmpegPlaceholder}" />
                     <TextBlock Grid.Row="2" Text="ffprobe path" VerticalAlignment="Center" />
                     <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding FfprobePath}" PlaceholderText="automatic (next to ffmpeg)" />
                 </Grid>
@@ -44,7 +44,7 @@
                 </Border>
                 <Grid ColumnDefinitions="110,*">
                     <TextBlock Text="libmpv path" VerticalAlignment="Center" />
-                    <TextBox Grid.Column="1" Text="{Binding LibMpvPath}" PlaceholderText="automatic (Homebrew, MacPorts, IINA, system)" />
+                    <TextBox Grid.Column="1" Text="{Binding LibMpvPath}" PlaceholderText="{Binding LibMpvPlaceholder}" />
                 </Grid>
                 <CheckBox Content="Hardware video decoding for preview" IsChecked="{Binding HardwareDecoding}" />
                 <TextBlock Text="Restart the app after applying to use the new player settings." FontSize="12"

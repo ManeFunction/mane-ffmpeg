@@ -41,7 +41,8 @@ public static class ProjectFile
         {
             Id = s.Id,
             Path = s.Path,
-            RelativePath = Path.GetRelativePath(dir, s.Path),
+            // With "/" on every system, so a project made on Windows still finds its media on macOS and Linux.
+            RelativePath = Path.GetRelativePath(dir, s.Path).Replace(Path.DirectorySeparatorChar, '/'),
             FileSize = s.FileSize,
             LastWriteUtc = s.LastWriteUtc,
             AudioStream = s.AudioStreamIndex,

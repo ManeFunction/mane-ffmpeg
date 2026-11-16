@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.Versioning;
 using CliWrap;
 using CliWrap.Buffered;
+using ManeFfmpeg.Core.Platforms.Mac;
 
 namespace ManeFfmpeg.Core.Tests;
 
@@ -30,19 +31,19 @@ public class HomebrewTests
         return Homebrew.ReadInstallerStatus(WorkDirectory);
     }
 
-    [Fact]
+    [UnixFact]
     public async Task Installer_script_reports_success()
     {
         Assert.Equal(0, await RunInstallerScriptAsync("echo installing; exit 0"));
     }
 
-    [Fact]
+    [UnixFact]
     public async Task Installer_script_reports_the_installers_exit_code()
     {
         Assert.Equal(7, await RunInstallerScriptAsync("exit 7"));
     }
 
-    [Fact]
+    [UnixFact]
     public async Task Installer_script_reports_a_failed_download()
     {
         // An empty download would otherwise run as an empty script and "succeed".
@@ -51,7 +52,7 @@ public class HomebrewTests
         Assert.Equal(1, Homebrew.ReadInstallerStatus(WorkDirectory));
     }
 
-    [Fact]
+    [UnixFact]
     public async Task Installer_script_reports_a_closed_window_as_a_failure()
     {
         var installer = Executable("install.sh", "sleep 30");
@@ -64,7 +65,7 @@ public class HomebrewTests
         Assert.Equal(129, Homebrew.ReadInstallerStatus(WorkDirectory));
     }
 
-    [Fact]
+    [UnixFact]
     public void Installer_status_is_unknown_until_the_script_has_written_it()
     {
         Homebrew.WriteInstallerScript(WorkDirectory);
@@ -73,7 +74,7 @@ public class HomebrewTests
         Assert.Null(Homebrew.ReadInstallerStatus(WorkDirectory));
     }
 
-    [Fact]
+    [UnixFact]
     public void Writing_the_installer_script_forgets_the_last_run()
     {
         Homebrew.WriteInstallerScript(WorkDirectory);
@@ -82,7 +83,7 @@ public class HomebrewTests
         Assert.Null(Homebrew.ReadInstallerStatus(WorkDirectory));
     }
 
-    [Fact]
+    [UnixFact]
     public async Task Install_passes_the_formulae_and_streams_stdout_and_stderr_in_order()
     {
         var brew = Executable("brew", "echo \"args: $*\"; echo 'Error: no bottle' >&2; echo \"hints: $HOMEBREW_NO_ENV_HINTS\"; exit 3");
@@ -92,7 +93,7 @@ public class HomebrewTests
         Assert.Equal(["args: install ffmpeg mpv", "Error: no bottle", "hints: 1"], lines);
     }
 
-    [Fact]
+    [UnixFact]
     public async Task Stopping_an_install_interrupts_brew_like_ctrl_c()
     {
         // "ready" comes after the trap is set; a SIGINT before that would just kill the shell.

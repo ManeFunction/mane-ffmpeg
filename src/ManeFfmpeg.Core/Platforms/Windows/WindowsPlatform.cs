@@ -1,0 +1,125 @@
+using System.Diagnostics;
+using System.Runtime.Versioning;
+using ManeFfmpeg.Core.Persistence;
+
+namespace ManeFfmpeg.Core.Platforms.Windows;
+
+/// <summary>
+/// Windows. The other areas are in the WindowsPlatform.*.cs files next to this one. The release zip bundles libmpv
+/// (libmpv-2.dll next to ManeFfmpeg.exe); ffmpeg comes from winget, Scoop, Chocolatey or a folder the user picks.
+/// </summary>
+[SupportedOSPlatform("windows")]
+public sealed partial class WindowsPlatform : IPlatform
+{
+    /// <summary>The bundled libmpv's file name, as the packaging script puts it next to the executable.</summary>
+    public const string BundledLibMpv = "libmpv-2.dll";
+
+    private static string Home => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    private static string LocalAppData => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+    public PlatformKind Kind => PlatformKind.Windows;
+    public string RuntimePrefix => "win";
+    public CommandKey CommandKey => CommandKey.Control;
+    public bool HasGlobalAppMenu => false;
+    public bool OpensFilesThroughEvents => false;
+    public string FileManagerName => "Explorer";
+    public StringComparison PathComparison => StringComparison.OrdinalIgnoreCase;
+
+    // Folders
+
+    public string ConfigDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppPaths.AppName);
+    public string CacheDirectory => Path.Combine(LocalAppData, AppPaths.AppName, "Cache");
+    public string LogDirectory => Path.Combine(LocalAppData, AppPaths.AppName, "Logs");
+
+    // Tools
+
+    /// <summary>
+    /// PATH, then where the package managers put their commands. A winget install made while the app runs changes PATH
+    /// only for processes started later, so its Links folder is searched explicitly.
+    /// </summary>
+    public IEnumerable<string> ToolSearchDirectories()
+    {
+        var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var path = Environment.GetEnvironmentVariable("PATH") ?? "";
+        var dirs = path.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(dir => dir.Trim('"'))
+            .Concat([
+                Path.Combine(LocalAppData, "Microsoft", "WinGet", "Links"),
+                Path.Combine(programFiles, "WinGet", "Links"),
+                Path.Combine(LocalAppData, "Microsoft", "WindowsApps"),
+                Path.Combine(Home, "scoop", "shims"),
+                Path.Combine(programData, "chocolatey", "bin"),
+                Path.Combine(programFiles, "ffmpeg", "bin"),
+                Path.Combine(Path.GetPathRoot(programFiles) ?? @"C:\", "ffmpeg", "bin"),
+                AppContext.BaseDirectory,
+            ]);
+        foreach (var dir in dirs)
+            if (dir.Length > 0 && seen.Add(dir))
+                yield return dir;
+    }
+
+    public string ExecutableFileName(string tool) => tool.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? tool : tool + ".exe";
+
+    public string FfmpegMissingHint => "ffmpeg wasn't found. Install it (winget install Gyan.FFmpeg) or set its path in Settings.";
+    public string FfmpegSearchDescription => "automatic (PATH, winget, Scoop, Chocolatey…)";
+
+    /// <summary>PowerShell: bare when nothing in it means anything to PowerShell, else in single quotes.</summary>
+    public string QuoteCommandArgument(string argument) =>
+        argument.Length > 0 && argument.All(c => char.IsLetterOrDigit(c) || @"-_./:=+%\".Contains(c))
+            ? argument
+            : PowerShellQuote(argument);
+
+    public string CommandLinePrefix => "& ";
+
+    /// <summary>A PowerShell string literal: single quotes, with single quotes inside doubled.</summary>
+    internal static string PowerShellQuote(string value) => "'" + value.Replace("'", "''") + "'";
+
+    // libmpv
+
+    public IEnumerable<string> LibMpvCandidates(string? explicitPath)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitPath))
+            yield return explicitPath;
+        // mpv builds have called the DLL libmpv-2.dll since 0.36, and mpv-2.dll / mpv-1.dll before.
+        foreach (var name in LibMpvLoaderNames)
+            yield return Path.Combine(AppContext.BaseDirectory, name);
+    }
+
+    /// <summary>The loader looks in the app folder, System32 and PATH.</summary>
+    public IReadOnlyList<string> LibMpvLoaderNames => [BundledLibMpv, "mpv-2.dll", "mpv-1.dll"];
+
+    public string LibMpvInstallHint =>
+        $"{BundledLibMpv} comes with the app, next to ManeFfmpeg.exe. If it's missing, download the mpv-dev build from " +
+        "https://github.com/shinchiro/mpv-winbuild-cmake/releases and put its DLL there, or set the libmpv path in Settings.";
+
+    public string LibMpvSearchDescription => $"automatic ({BundledLibMpv} next to the app, PATH)";
+
+    public IReadOnlyDictionary<string, string>? LibMpvRelaunchEnvironment(string libMpvPath) => null;
+
+    public IReadOnlyList<int> ProcessesToWaitFor(bool relaunched) => [Environment.ProcessId];
+
+    // File manager
+
+    public void RevealInFileManager(string path)
+    {
+        try
+        {
+            // Explorer parses its own command line: the switch and the quoted path are one argument.
+            Process.Start(new ProcessStartInfo("explorer.exe") { Arguments = $"/select,\"{path}\"", UseShellExecute = false });
+        }
+        catch (Exception)
+        {
+            // Nothing to do if Explorer can't be started.
+        }
+    }
+
+    // Setup
+
+    public IToolInstaller ToolInstaller { get; } = new WingetInstaller();
+
+    // Windows: Avalonia's own move and resize show no torn frame here.
+
+    public bool TryChangeWindowFrame(nint handle, string? handleDescriptor, double topDown, double grow) => false;
+}

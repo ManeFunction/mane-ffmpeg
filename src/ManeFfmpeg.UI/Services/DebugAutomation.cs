@@ -388,7 +388,8 @@ internal static class DebugAutomation
                         // script it clicks Install and also snapshots while brew runs (<png>.running.png).
                         var parts = arg.Split(' ', 2);
                         var brew = parts[0] == "nobrew" ? null : parts[0];
-                        var setup = new SetupViewModel(SetupViewModel.AllComponents(), () => brew, _ => Task.CompletedTask);
+                        var installer = new Core.Platforms.Mac.HomebrewInstaller(() => brew, _ => Task.CompletedTask);
+                        var setup = new SetupViewModel(SetupViewModel.AllComponents(installer), installer);
                         var dialog = new SetupWindow(setup);
                         dialog.Show(window);
                         await Task.Delay(800);

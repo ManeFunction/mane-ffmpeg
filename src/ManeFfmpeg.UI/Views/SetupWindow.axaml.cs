@@ -18,7 +18,7 @@ public partial class SetupWindow : Window
         InitializeComponent();
         DataContext = vm;
         vm.RequestClose = Close;
-        // The log follows brew's output.
+        // The log follows the package manager's output.
         vm.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(SetupViewModel.Log))
@@ -32,7 +32,7 @@ public partial class SetupWindow : Window
                 return;
             e.Cancel = true;
             if (await Dialogs.AskAsync(this, "Stop installing?",
-                    "Homebrew is still installing. You can install again later from Settings.", "Stop", "Keep Installing") != 0)
+                    $"{vm.ManagerName} is still installing. You can install again later from Settings.", "Stop", "Keep Installing") != 0)
                 return;
             _closeConfirmed = true;
             Close();

@@ -1,10 +1,10 @@
 using System.Diagnostics;
 using System.Globalization;
-using System.Runtime.InteropServices;
 using CliWrap;
 using CliWrap.Buffered;
 using ManeFfmpeg.Core.Model;
 using ManeFfmpeg.Core.Persistence;
+using ManeFfmpeg.Core.Platforms;
 
 namespace ManeFfmpeg.Core.Ffmpeg;
 
@@ -21,20 +21,11 @@ public sealed record ExportResult(ExportOutcome Outcome, string Message, TimeSpa
 
 /// <summary>
 /// Runs one <see cref="ExportPlan"/> with ffmpeg, reporting progress and cleaning up after itself.
-/// The export can be paused: ffmpeg is frozen with SIGSTOP and continues with SIGCONT.
+/// The export can be paused: ffmpeg is frozen where it is (<see cref="IPlatform.Freeze"/>) and continues on resume.
 /// </summary>
-public sealed partial class ExportRunner(FfmpegTools tools)
+public sealed class ExportRunner(FfmpegTools tools)
 {
     private const int LogLines = 40;
-
-    /// <summary>
-    /// Runs ffmpeg ($0) as a child of sh instead of this process, and prints its pid on the progress pipe.
-    /// A stopped child of this process would hang .NET on macOS: waitid reports it as exited, so the runtime's
-    /// SIGCHLD handler loops trying to reap it and holds the lock every Process.Start needs.
-    /// </summary>
-    private const string Wrapper = "\"$0\" \"$@\" & echo \"" + PidKey + "$!\"; wait $!";
-
-    private const string PidKey = "mane_ffmpeg_pid=";
 
     private readonly Lock _lock = new();
 
@@ -47,8 +38,8 @@ public sealed partial class ExportRunner(FfmpegTools tools)
     /// <summary>The running ffmpeg, which a pause has to stop.</summary>
     private int? _processId;
 
-    /// <summary>While ffmpeg is stopped: kills it if this process dies, since nothing else would ever continue it.</summary>
-    private Process? _guard;
+    /// <summary>ffmpeg while it's frozen.</summary>
+    private IFrozenProcess? _frozen;
 
     /// <summary>Freezes ffmpeg where it is and holds the next step until <see cref="Resume"/>. Works before the run starts too.</summary>
     public void Pause()
@@ -60,7 +51,7 @@ public sealed partial class ExportRunner(FfmpegTools tools)
             _resumed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _clock.Stop();
             if (_processId is { } pid)
-                Freeze(pid);
+                _frozen = Platform.Current.Freeze(pid);
         }
     }
 
@@ -70,9 +61,8 @@ public sealed partial class ExportRunner(FfmpegTools tools)
         {
             if (_resumed is null)
                 return;
-            if (_processId is { } pid)
-                Signal(pid, ContinueSignal);
-            ReleaseGuard();
+            _frozen?.Resume();
+            _frozen = null;
             _clock.Start();
             _resumed.SetResult();
             _resumed = null;
@@ -125,26 +115,15 @@ public sealed partial class ExportRunner(FfmpegTools tools)
                     ? shift.ArgumentsFor(TimeFormat.Seconds(await ConcatShiftAsync(shift.ListPath, ct)))
                     : step.Arguments;
 
-                var command = Cli.Wrap("/bin/sh")
-                    .WithArguments(["-c", Wrapper, tools.Ffmpeg, .. arguments])
-                    .WithStandardOutputPipe(PipeTarget.ToDelegate(line =>
+                var command = Platform.Current.StartPausable(tools.Ffmpeg, arguments, OnStarted, parser.Feed, line =>
+                {
+                    lock (log)
                     {
-                        if (line.StartsWith(PidKey, StringComparison.Ordinal))
-                            OnStarted(int.Parse(line.AsSpan(PidKey.Length), CultureInfo.InvariantCulture));
-                        else
-                            parser.Feed(line);
-                    }))
-                    .WithStandardErrorPipe(PipeTarget.ToDelegate(line =>
-                    {
-                        lock (log)
-                        {
-                            log.Enqueue(line);
-                            if (log.Count > LogLines)
-                                log.Dequeue();
-                        }
-                    }))
-                    .WithValidation(CommandResultValidation.None)
-                    .ExecuteAsync(ct);
+                        log.Enqueue(line);
+                        if (log.Count > LogLines)
+                            log.Dequeue();
+                    }
+                }, ct);
                 CommandResult result;
                 try
                 {
@@ -155,7 +134,8 @@ public sealed partial class ExportRunner(FfmpegTools tools)
                     lock (_lock)
                     {
                         _processId = null;
-                        ReleaseGuard();
+                        _frozen?.Release();
+                        _frozen = null;
                     }
                 }
 
@@ -197,7 +177,7 @@ public sealed partial class ExportRunner(FfmpegTools tools)
             _processId = pid;
             // Paused while ffmpeg was starting.
             if (_resumed is not null)
-                Freeze(pid);
+                _frozen = Platform.Current.Freeze(pid);
         }
     }
 
@@ -224,64 +204,6 @@ public sealed partial class ExportRunner(FfmpegTools tools)
         var ran = p.Position.TotalSeconds / speed - paused.TotalSeconds;
         return ran > 0 ? p.Position.TotalSeconds / ran : speed;
     }
-
-    // kill(2) signal numbers: macOS uses the BSD ones.
-    private static int StopSignal => OperatingSystem.IsMacOS() ? 17 : 19;
-    private static int ContinueSignal => OperatingSystem.IsMacOS() ? 19 : 18;
-
-    private void Freeze(int pid)
-    {
-        Signal(pid, StopSignal);
-        _guard = StartGuard(pid);
-    }
-
-    /// <summary>
-    /// A stopped ffmpeg outlives a crash or a force quit and never wakes up (a launched app's process group is
-    /// already orphaned, so the kernel doesn't continue it either). The guard reads a pipe from this process:
-    /// a line means "resumed", the end of the file means this process is gone, and then it kills ffmpeg.
-    /// </summary>
-    private static Process? StartGuard(int pid)
-    {
-        try
-        {
-            return Process.Start(new ProcessStartInfo("/bin/sh")
-            {
-                ArgumentList = { "-c", "read -r line || kill -KILL \"$0\"", pid.ToString(CultureInfo.InvariantCulture) },
-                UseShellExecute = false,
-                RedirectStandardInput = true,
-            });
-        }
-        catch (Exception ex)
-        {
-            AppLog.Write($"Can't watch the paused ffmpeg: {ex.Message}");
-            return null;
-        }
-    }
-
-    private void ReleaseGuard()
-    {
-        if (_guard is null)
-            return;
-        try
-        {
-            _guard.StandardInput.WriteLine("resumed");
-            _guard.StandardInput.Close();
-        }
-        catch (IOException)
-        {
-        }
-        _guard.Dispose();
-        _guard = null;
-    }
-
-    private static void Signal(int pid, int signal)
-    {
-        if (Kill(pid, signal) != 0)
-            AppLog.Write($"Can't send signal {signal} to ffmpeg (pid {pid}): errno {Marshal.GetLastPInvokeError()}");
-    }
-
-    [LibraryImport("libc", EntryPoint = "kill", SetLastError = true)]
-    private static partial int Kill(int pid, int signal);
 
     /// <summary>How far ffmpeg will shift a concat input: minus its start time.</summary>
     private async Task<TimeSpan> ConcatShiftAsync(string list, CancellationToken ct)

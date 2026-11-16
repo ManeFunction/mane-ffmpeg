@@ -39,28 +39,29 @@ internal static class Program
             .LogToTrace();
 
     /// <summary>
-    /// A libmpv bundled inside another app (IINA) finds its dependencies only when
-    /// DYLD_FALLBACK_LIBRARY_PATH is set at process start, so restart once with it and wait.
+    /// Some libmpv copies load only with an environment variable set at process start (IINA's on macOS needs
+    /// DYLD_FALLBACK_LIBRARY_PATH), so restart once with it and wait.
     /// </summary>
     private static int? TryRelaunchForBundledMpv(string[] args)
     {
-        if (!OperatingSystem.IsMacOS() || Environment.GetEnvironmentVariable(RelaunchedVariable) == "1")
+        if (Environment.GetEnvironmentVariable(RelaunchedVariable) == "1")
             return null;
         var settings = new SettingsStore().Current;
-        if (MpvLibrary.RelaunchEnvironment(settings.LibMpvPath) is not { } fallbackPath)
+        if (MpvLibrary.RelaunchEnvironment(settings.LibMpvPath) is not { } environment)
             return null;
 
         var processPath = Environment.ProcessPath;
         if (processPath is null)
             return null;
-        AppLog.Write($"Relaunching with DYLD_FALLBACK_LIBRARY_PATH for {MpvLibrary.Find(settings.LibMpvPath)}");
+        AppLog.Write($"Relaunching with {string.Join(", ", environment.Keys)} for {MpvLibrary.Find(settings.LibMpvPath)}");
         var start = new ProcessStartInfo(processPath) { UseShellExecute = false };
         // Started as "dotnet ManeFfmpeg.dll": pass the dll path through.
         if (Path.GetFileNameWithoutExtension(processPath) == "dotnet")
             start.ArgumentList.Add(Environment.GetCommandLineArgs()[0]);
         foreach (var arg in args)
             start.ArgumentList.Add(arg);
-        start.Environment["DYLD_FALLBACK_LIBRARY_PATH"] = fallbackPath;
+        foreach (var (name, value) in environment)
+            start.Environment[name] = value;
         start.Environment[RelaunchedVariable] = "1";
         try
         {

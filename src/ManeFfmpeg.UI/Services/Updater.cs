@@ -4,6 +4,7 @@ using ManeFfmpeg.Core.Persistence;
 using ManeFfmpeg.Core.Updates;
 using ManeFfmpeg.UI.ViewModels;
 using ManeFfmpeg.UI.Views;
+using ManeFfmpeg.Core.Platforms;
 
 namespace ManeFfmpeg.UI.Services;
 
@@ -182,11 +183,6 @@ public sealed class Updater
     }
 
     /// <summary>This process, and on macOS the one Program relaunched it from: it waits for this one and then exits too.</summary>
-    private static List<int> ProcessesToWaitFor()
-    {
-        List<int> pids = [Environment.ProcessId];
-        if (Environment.GetEnvironmentVariable(Program.RelaunchedVariable) == "1")
-            pids.Add(UpdateInstaller.ParentProcessId());
-        return pids;
-    }
+    private static IReadOnlyList<int> ProcessesToWaitFor() =>
+        Platform.Current.ProcessesToWaitFor(relaunched: Environment.GetEnvironmentVariable(Program.RelaunchedVariable) == "1");
 }

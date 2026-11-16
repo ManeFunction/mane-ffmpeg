@@ -16,8 +16,8 @@ public sealed class MpvFactAttribute : FactAttribute
     {
         if (FfmpegFixture.Tools is null)
             Skip = "ffmpeg/ffprobe not found";
-        else if (MpvLibrary.RelaunchEnvironment(null) is { } fallback)
-            Skip = $"libmpv needs DYLD_FALLBACK_LIBRARY_PATH={fallback.Split(':')[0]} for the test run";
+        else if (MpvLibrary.RelaunchEnvironment(null) is { } environment)
+            Skip = $"libmpv needs {string.Join(" ", environment.Select(e => $"{e.Key}={e.Value.Split(':')[0]}"))} for the test run";
         else if (!MpvLibrary.TryLoad(null))
             Skip = $"libmpv not found: {MpvLibrary.LoadError}";
     }

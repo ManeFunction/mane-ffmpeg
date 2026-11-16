@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using CliWrap;
 using CliWrap.Buffered;
+using ManeFfmpeg.Core.Platforms;
 
 namespace ManeFfmpeg.Core.Ffmpeg;
 
@@ -24,7 +25,7 @@ public static partial class FfmpegLocator
         var ffmpeg = Executables.Find("ffmpeg", ffmpegOverride);
         if (ffmpeg is null)
             return null;
-        var sibling = Path.Combine(Path.GetDirectoryName(ffmpeg)!, "ffprobe");
+        var sibling = Path.Combine(Path.GetDirectoryName(ffmpeg)!, Platform.Current.ExecutableFileName("ffprobe"));
         var ffprobe = !string.IsNullOrWhiteSpace(ffprobeOverride)
             ? Executables.Find("ffprobe", ffprobeOverride)
             : File.Exists(sibling) ? sibling : Executables.Find("ffprobe");

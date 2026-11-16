@@ -4,6 +4,7 @@ using ManeFfmpeg.Core.Media;
 using ManeFfmpeg.Core.Model;
 using ManeFfmpeg.Core.Mpv;
 using ManeFfmpeg.Core.Persistence;
+using ManeFfmpeg.Core.Platforms;
 
 namespace ManeFfmpeg.UI.Services;
 
@@ -45,9 +46,7 @@ public sealed class AppServices : IMediaAnalyzers
         var changed = tools != Tools;
         Tools = tools;
         ToolsError = tools is null
-            ? OperatingSystem.IsMacOS()
-                ? "ffmpeg wasn't found. Install it (brew install ffmpeg) or set its path in Settings."
-                : "ffmpeg wasn't found. Install it with your package manager or set its path in Settings."
+            ? Platform.Current.FfmpegMissingHint
             : tools.IsTooOld ? $"{tools.VersionText} is older than 5.0; some features may fail." : null;
         // Applying settings locates the tools again; the same tools keep what they've already analyzed.
         if (changed)

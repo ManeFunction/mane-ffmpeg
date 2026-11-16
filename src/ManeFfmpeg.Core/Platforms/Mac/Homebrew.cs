@@ -1,11 +1,13 @@
+using System.Runtime.Versioning;
 using CliWrap;
 
-namespace ManeFfmpeg.Core;
+namespace ManeFfmpeg.Core.Platforms.Mac;
 
 /// <summary>
 /// Installs missing tools with Homebrew (macOS). Homebrew's own installer asks for the user's password and to
 /// press Return, so it runs in Terminal and reports back through a status file; <c>brew install</c> runs here.
 /// </summary>
+[UnsupportedOSPlatform("windows")]
 public static class Homebrew
 {
     /// <summary>The installer behind the one-liner on brew.sh.</summary>
@@ -58,9 +60,8 @@ public static class Homebrew
             exit $code
 
             """);
-        if (!OperatingSystem.IsWindows())
-            File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
-                | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+            | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
         return script;
     }
 
@@ -108,5 +109,5 @@ public static class Homebrew
         return result.ExitCode;
     }
 
-    private static string Quote(string value) => "'" + value.Replace("'", "'\\''") + "'";
+    private static string Quote(string value) => UnixPlatform.Quote(value);
 }

@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using ManeFfmpeg.UI.ViewModels;
 using ManeFfmpeg.Core;
+using ManeFfmpeg.Core.Platforms.Mac;
 
 namespace ManeFfmpeg.UI.Tests;
 
@@ -30,18 +31,18 @@ public class SetupViewModelTests
     }
 
     private SetupViewModel Create(Func<string?> findBrew, Func<string, Task>? openInTerminal = null) =>
-        new(Ffmpeg(), findBrew, openInTerminal ?? (_ => Task.CompletedTask), _dir);
+        new(Ffmpeg(), new HomebrewInstaller(findBrew, openInTerminal ?? (_ => Task.CompletedTask)), _dir);
 
-    [Fact]
+    [UnixFact]
     public void Without_Homebrew_it_offers_to_install_Homebrew_first()
     {
         var vm = Create(() => null);
-        Assert.Equal(SetupStep.NeedsHomebrew, vm.Step);
-        Assert.True(vm.ShowHomebrew);
+        Assert.Equal(SetupStep.NeedsManager, vm.Step);
+        Assert.True(vm.ShowManager);
         Assert.Equal("Install Homebrew…", vm.PrimaryText);
     }
 
-    [Fact]
+    [UnixFact]
     public async Task Once_Homebrew_is_installed_it_offers_the_components()
     {
         string? brew = null;
@@ -52,7 +53,7 @@ public class SetupViewModelTests
             return Task.CompletedTask;
         });
         var running = vm.ContinueCommand.ExecuteAsync(null);
-        await Until(() => vm.Step == SetupStep.WaitingForHomebrew);
+        await Until(() => vm.Step == SetupStep.WaitingForManager);
         Assert.False(vm.ContinueCommand.CanExecute(null));
         Assert.EndsWith(".command", Assert.Single(opened));
 
@@ -65,7 +66,7 @@ public class SetupViewModelTests
         Assert.False(vm.StatusIsError);
     }
 
-    [Fact]
+    [UnixFact]
     public async Task A_stopped_Homebrew_installer_can_be_tried_again()
     {
         var vm = Create(() => null, _ =>
@@ -74,13 +75,13 @@ public class SetupViewModelTests
             return Task.CompletedTask;
         });
         await vm.ContinueCommand.ExecuteAsync(null);
-        Assert.Equal(SetupStep.NeedsHomebrew, vm.Step);
+        Assert.Equal(SetupStep.NeedsManager, vm.Step);
         Assert.True(vm.StatusIsError);
         Assert.Contains("stopped", vm.Status);
         Assert.True(vm.ContinueCommand.CanExecute(null));
     }
 
-    [Fact]
+    [UnixFact]
     public void Install_needs_something_selected()
     {
         var vm = Create(() => "/opt/homebrew/bin/brew");
@@ -91,7 +92,7 @@ public class SetupViewModelTests
         Assert.False(vm.ContinueCommand.CanExecute(null));
     }
 
-    [Fact]
+    [UnixFact]
     public async Task A_failed_install_shows_brews_output_and_can_be_tried_again()
     {
         var brew = FakeBrew("echo '==> Fetching ffmpeg'; echo 'Error: no bottle available' >&2; exit 1");
@@ -103,7 +104,7 @@ public class SetupViewModelTests
         await Until(() => vm.Log?.Contains("Error: no bottle available") == true);
     }
 
-    [Fact]
+    [UnixFact]
     public async Task Stop_ends_a_running_install()
     {
         var brew = FakeBrew("trap 'kill $!; exit 130' INT\necho ready\nsleep 30 &\nwait");
@@ -118,7 +119,7 @@ public class SetupViewModelTests
         Assert.Equal("Installation stopped.", vm.Status);
     }
 
-    [Fact]
+    [UnixFact]
     public async Task A_successful_install_locates_the_tools_again()
     {
         if (Executables.Find("ffmpeg") is null)

@@ -10,6 +10,7 @@ using ManeFfmpeg.UI.Services;
 using ManeFfmpeg.UI.ViewModels;
 using ManeFfmpeg.Core.Model;
 using ManeFfmpeg.Core.Persistence;
+using ManeFfmpeg.Core.Platforms;
 
 namespace ManeFfmpeg.UI.Views;
 
@@ -128,7 +129,7 @@ public partial class MainWindow : Window, IMainWindowView
         var closeItem = new NativeMenuItem("Close Window") { Gesture = new KeyGesture(Key.W, Cmd), Command = new RelayCommand(Close) };
         file.Items.Add(new NativeMenuItemSeparator());
         file.Items.Add(closeItem);
-        if (!OperatingSystem.IsMacOS())
+        if (!Platform.Current.HasGlobalAppMenu)
         {
             var settings = new NativeMenuItem("Settings…");
             settings.Click += (_, _) => ShowSettings();
@@ -344,7 +345,7 @@ public partial class MainWindow : Window, IMainWindowView
         var paths = DroppedPaths(e);
         e.DragEffects = paths is { Count: > 0 } ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
-        // Audio files from Finder over a clip replace its sound when dropped: show which clip.
+        // Audio files from the file manager over a clip replace its sound when dropped: show which clip.
         var audio = paths?.FirstOrDefault(LooksLikeAudio);
         var clip = audio is null ? null : ClipAt(e.GetPosition(TimelineView));
         ViewModel.Timeline.ShowAudioDrop(audio is null || clip is null
@@ -561,7 +562,8 @@ public partial class MainWindow : Window, IMainWindowView
     private void ResizeKeepingBottom(double from, double to)
     {
         var top = TopForHeight(from, to);
-        var moved = MacWindowFrame.TryChange(this, (top - Position.Y) / DesktopScaling, to - from);
+        var moved = TryGetPlatformHandle() is { } handle
+            && Platform.Current.TryChangeWindowFrame(handle.Handle, handle.HandleDescriptor, (top - Position.Y) / DesktopScaling, to - from);
         Height = to;
         if (!moved)
         {
@@ -723,18 +725,5 @@ public partial class MainWindow : Window, IMainWindowView
 
     public void ShowSettings() => new SettingsWindow().ShowDialog(this);
 
-    public void RevealInFileManager(string path)
-    {
-        try
-        {
-            if (OperatingSystem.IsMacOS())
-                Process.Start(new ProcessStartInfo("/usr/bin/open") { ArgumentList = { "-R", path }, UseShellExecute = false });
-            else
-                Process.Start(new ProcessStartInfo("xdg-open") { ArgumentList = { Path.GetDirectoryName(path)! }, UseShellExecute = false });
-        }
-        catch (Exception)
-        {
-            // Nothing to do if no file manager is available.
-        }
-    }
+    public void RevealInFileManager(string path) => Platform.Current.RevealInFileManager(path);
 }

@@ -10,6 +10,7 @@ using ManeFfmpeg.UI.ViewModels;
 using ManeFfmpeg.UI.Views;
 using ManeFfmpeg.Core.Desktop;
 using ManeFfmpeg.Core.Persistence;
+using ManeFfmpeg.Core.Platforms;
 
 namespace ManeFfmpeg.UI;
 
@@ -68,7 +69,7 @@ public partial class App : Application
                 await new SetupWindow().ShowDialog(first);
             await OfferProjectFileAssociationAsync(first);
             // macOS turns file arguments into "open document" events (OnActivated) as well; open them only once.
-            var files = OperatingSystem.IsMacOS() ? [] : args.Where(File.Exists).ToList();
+            var files = Platform.Current.OpensFilesThroughEvents ? [] : args.Where(File.Exists).ToList();
             if (files.Count > 0)
                 await WindowManager.Instance.OpenFilesAsync(files, first);
         }

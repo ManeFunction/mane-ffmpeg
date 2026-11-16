@@ -4,16 +4,6 @@ using ManeFfmpeg.Core.Power;
 
 namespace ManeFfmpeg.Core.Tests;
 
-/// <summary>Skips the test outside macOS.</summary>
-public sealed class MacFactAttribute : FactAttribute
-{
-    public MacFactAttribute()
-    {
-        if (!OperatingSystem.IsMacOS())
-            Skip = "macOS only";
-    }
-}
-
 public class SleepInhibitorTests
 {
     private static async Task<string> AssertionsAsync() =>

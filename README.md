@@ -1,6 +1,6 @@
 # Mane FFmpeg
 
-A small macOS/Linux video editor on top of your system **ffmpeg**. Load one or more videos, cut and reorder them on a timeline, nudge a clip's audio to fix desync, preview the result, and export it with your own ffmpeg presets. Every ffmpeg and ffprobe call goes through [CliWrap](https://github.com/Tyrrrz/CliWrap). The preview runs on **libmpv**.
+A small macOS/Linux/Windows video editor on top of your system **ffmpeg**. Load one or more videos, cut and reorder them on a timeline, nudge a clip's audio to fix desync, preview the result, and export it with your own ffmpeg presets. Every ffmpeg and ffprobe call goes through [CliWrap](https://github.com/Tyrrrz/CliWrap). The preview runs on **libmpv**.
 
 Built with C#, .NET 10 and Avalonia 12.
 
@@ -67,23 +67,26 @@ Built with C#, .NET 10 and Avalonia 12.
 
 ## Installation
 
-Download the latest build from the [Releases page](https://github.com/ManeFunction/mane-ffmpeg/releases/latest). The builds are self-contained, so you don't need .NET. You still need ffmpeg and libmpv, see [Requirements](#requirements).
+Download the latest build from the [Releases page](https://github.com/ManeFunction/mane-ffmpeg/releases/latest). The builds are self-contained, so you don't need .NET. You still need ffmpeg (and libmpv on macOS and Linux), see [Requirements](#requirements).
 
 - **macOS**: `mane-ffmpeg-<version>-osx-arm64.zip` for Apple Silicon or `osx-x64` for Intel. Unzip it and move *Mane FFmpeg.app* to Applications. The app is signed ad hoc but not notarized, so macOS blocks the first start. Run `xattr -dr com.apple.quarantine "/Applications/Mane FFmpeg.app"`, or allow it in *System Settings → Privacy & Security*.
 - **Linux**: `mane-ffmpeg-<version>-linux-x64.tar.gz` or `linux-arm64`. Run `tar xf mane-ffmpeg-*.tar.gz && ./mane-ffmpeg/install.sh`. It installs for the current user into `~/.local/opt/mane-ffmpeg`, with a menu entry, the `.mfvp` file type and a `mane-ffmpeg` command in `~/.local/bin`.
+- **Windows**: `mane-ffmpeg-<version>-win-x64.zip` or `win-arm64`. Unzip it anywhere you can write to (not *Program Files*, so it can update itself) and run *Mane FFmpeg\ManeFfmpeg.exe*. The app isn't signed, so SmartScreen asks on the first start: *More info → Run anyway*. libmpv comes with it (`libmpv-2.dll`, an LGPL build of mpv; see `THIRD-PARTY-NOTICES.txt`).
 
 ## Requirements
 
-| | macOS | Linux |
-|---|---|---|
-| ffmpeg + ffprobe (5.0+) | `brew install ffmpeg` | `sudo apt install ffmpeg` (or your distro's package) |
-| libmpv (0.33+) for preview | IINA.app installed (its libmpv is used), or `brew install mpv` | `sudo apt install libmpv2` · `dnf install mpv-libs` · `pacman -S mpv` |
-| Notifications | built in (`osascript`) | `notify-send` (libnotify) or `gdbus` |
-| Staying awake during exports | built in (IOKit power assertion) | `systemd-inhibit` (systemd) |
+| | macOS | Linux | Windows (10, 11) |
+|---|---|---|---|
+| ffmpeg + ffprobe (5.0+) | `brew install ffmpeg` | `sudo apt install ffmpeg` (or your distro's package) | `winget install Gyan.FFmpeg` (or Scoop, Chocolatey, any build) |
+| libmpv (0.33+) for preview | IINA.app installed (its libmpv is used), or `brew install mpv` | `sudo apt install libmpv2` · `dnf install mpv-libs` · `pacman -S mpv` | included |
+| Notifications | built in (`osascript`) | `notify-send` (libnotify) or `gdbus` | built in (toasts through Windows PowerShell) |
+| Staying awake during exports | built in (IOKit power assertion) | `systemd-inhibit` (systemd) | built in (power request) |
 
-The app finds ffmpeg in your PATH, `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin` and similar places. Apps started from Finder don't get your shell PATH, so this matters. You can also set the paths in **Settings**.
+The app finds ffmpeg in your PATH and the usual install folders: `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin` and similar on macOS and Linux; winget's, Scoop's and Chocolatey's command folders on Windows. Apps started from Finder don't get your shell PATH, so this matters. You can also set the paths in **Settings**.
 
-On macOS, when ffmpeg or libmpv is missing, the app offers to install it with Homebrew at startup, or later from **Settings → Install Missing Components…**. If Homebrew itself is missing, its official installer opens in Terminal first, because it asks for your password. `brew install` then runs inside the dialog with its output shown. On macOS versions Homebrew no longer supports, it builds from source, which can take an hour or more.
+When ffmpeg (or, on macOS, libmpv) is missing, the app offers to install it at startup, or later from **Settings → Install Missing Components…**:
+- On macOS it uses Homebrew. If Homebrew itself is missing, its official installer opens in Terminal first, because it asks for your password. `brew install` then runs inside the dialog with its output shown. On macOS versions Homebrew no longer supports, it builds from source, which can take an hour or more.
+- On Windows it uses winget, which comes with Windows as *App Installer*. If winget is missing, the Microsoft Store opens on App Installer's page first. `winget install Gyan.FFmpeg` then runs inside the dialog.
 
 Without libmpv, editing and exporting still work. The preview pane then shows an install hint.
 
@@ -101,11 +104,15 @@ dotnet run --project src/ManeFfmpeg.UI            # run
 dotnet test                                        # unit + ffmpeg integration tests
 scripts/package-macos.sh                           # → build/macos-<rid>/Mane FFmpeg.app
 scripts/package-linux.sh                           # → build/linux-<rid>/mane-ffmpeg-<version>-<rid>.tar.gz
+scripts/package-windows.sh                         # → build/windows-<rid>/mane-ffmpeg-<version>-<rid>.zip (needs 7-Zip)
 ```
+
+The Windows package cross-builds from macOS or Linux. It downloads the pinned libmpv build named at the top of the
+script and checks its SHA-256.
 
 The preview player's tests run against a headless libmpv and are skipped when it can't be loaded. With IINA's copy on macOS, start the run with `DYLD_FALLBACK_LIBRARY_PATH=/Applications/IINA.app/Contents/Frameworks:$HOME/lib:/usr/local/lib:/usr/lib dotnet test`.
 
-The packaged apps are self-contained, so no .NET install is needed to run them. The macOS bundle registers the `.mfvp` file type, so double-clicking a project opens it. **Settings** has a button that registers or unregisters `.mfvp` projects with the app. On macOS it sets the Launch Services default; on Linux it installs the mime type and sets the default app for the current user. When projects aren't registered, the app offers to register them at startup, after the setup step. That prompt has a "Do not show anymore" checkbox, which **Settings** can undo.
+The packaged apps are self-contained, so no .NET install is needed to run them. The macOS bundle registers the `.mfvp` file type, so double-clicking a project opens it. **Settings** has a button that registers or unregisters `.mfvp` projects with the app. On macOS it sets the Launch Services default; on Linux it installs the mime type and sets the default app for the current user; on Windows it registers the file type for the current user (if you picked another app for `.mfvp` in *Open with*, Windows keeps your choice). When projects aren't registered, the app offers to register them at startup, after the setup step. That prompt has a "Do not show anymore" checkbox, which **Settings** can undo.
 
 ## How exports work
 
@@ -147,31 +154,32 @@ The integration tests check A/V sync of real exports. They use synthetic video w
 | I / O / Enter | Mark In / Out / add the range (source preview) |
 | C | Crop the picture on the preview; Enter or Esc finishes |
 | Esc | Finish cropping / back to the timeline / clear the selection; closes Presets, Settings and message dialogs (as Cancel) |
-| ⌘Z / ⇧⌘Z | Undo / redo (Ctrl on Linux) |
+| ⌘Z / ⇧⌘Z | Undo / redo (Ctrl on Linux and Windows) |
 | ⌘N, ⌘O, ⌘S, ⇧⌘S, ⌘E, ⌘W | New window, open, save, save as, export, close |
 | ⌘+ / ⌘− / ⌘0, or ⌘/Ctrl+wheel | Zoom in, zoom out, fit |
-| ⇧⌘C (Ctrl+Shift+C on Linux) | Compact mode: hide the video preview (also the *Compact* button) |
+| ⇧⌘C (Ctrl+Shift+C on Linux and Windows) | Compact mode: hide the video preview (also the *Compact* button) |
 
 Mouse:
 - Click the ruler or a clip to seek; drag on the ruler to scrub. Hold Shift while scrubbing to snap the playhead to clip
   edges and to where a clip's audio starts, runs out or loops (shifted or short audio inside a clip).
 - Click a clip to select it; Shift extends the selection, ⌘/Ctrl toggles a clip in or out of it.
 - Drag a clip to reorder it, drag its edges to trim, and drag on the audio row to slip its audio (hold Shift for fine steps).
-- Drag an audio file from *Files → Audio* (or Finder) onto a clip to replace its sound.
+- Drag an audio file from *Files → Audio* (or Finder, Explorer) onto a clip to replace its sound.
 
 ## Project layout
 
 ```
 src/ManeFfmpeg.Core   model, editing, ffprobe/ffmpeg (planner, runner), waveforms, keyframes, libmpv binding, persistence
+  Platforms/          everything that differs between systems: IPlatform, with MacPlatform, LinuxPlatform, WindowsPlatform
 src/ManeFfmpeg.UI     Avalonia UI: windows, view models, timeline control, mpv video view
 tests/                xUnit unit tests and real-ffmpeg integration tests
-scripts/              macOS .app and Linux tarball packaging
+scripts/              macOS .app, Linux tarball and Windows zip packaging
 ```
 
 Files on disk:
-- Settings and presets: `~/Library/Application Support/Mane FFmpeg/` (Linux: `~/.config/mane-ffmpeg/`).
-- Caches (waveforms, the silence file used by previews): `~/Library/Caches/Mane FFmpeg/` (Linux: `~/.cache/mane-ffmpeg/`).
-- Log: `~/Library/Logs/Mane FFmpeg/app.log` (Linux: `~/.cache/mane-ffmpeg/app.log`).
+- Settings and presets: `~/Library/Application Support/Mane FFmpeg/` (Linux: `~/.config/mane-ffmpeg/`, Windows: `%APPDATA%\Mane FFmpeg\`).
+- Caches (waveforms, the silence file used by previews): `~/Library/Caches/Mane FFmpeg/` (Linux: `~/.cache/mane-ffmpeg/`, Windows: `%LOCALAPPDATA%\Mane FFmpeg\Cache\`).
+- Log: `~/Library/Logs/Mane FFmpeg/app.log` (Linux: `~/.cache/mane-ffmpeg/app.log`, Windows: `%LOCALAPPDATA%\Mane FFmpeg\Logs\app.log`).
 
 ## Notes and limitations
 

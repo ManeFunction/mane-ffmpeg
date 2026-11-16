@@ -5,6 +5,7 @@ using ManeFfmpeg.Core.Desktop;
 using ManeFfmpeg.Core.Mpv;
 using ManeFfmpeg.Core.Notifications;
 using ManeFfmpeg.Core.Persistence;
+using ManeFfmpeg.Core.Platforms;
 
 namespace ManeFfmpeg.UI.ViewModels;
 
@@ -62,7 +63,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool IsBusy { get; private set; }
 
-    /// <summary>Something can be installed with Homebrew (see <see cref="SetupViewModel"/>).</summary>
+    public string FfmpegPlaceholder => Platform.Current.FfmpegSearchDescription;
+
+    public string LibMpvPlaceholder => Platform.Current.LibMpvSearchDescription;
+
+    /// <summary>Something can be installed with the platform's package manager (see <see cref="SetupViewModel"/>).</summary>
     [ObservableProperty]
     public partial bool CanInstall { get; private set; }
 

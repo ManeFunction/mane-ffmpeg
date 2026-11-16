@@ -241,10 +241,4 @@ public sealed class PresetArguments
             tokens.Add(current.ToString());
         return tokens;
     }
-
-    /// <summary>Quotes a token for display in a copyable shell command.</summary>
-    public static string ShellQuote(string token) =>
-        token.Length > 0 && token.All(c => char.IsLetterOrDigit(c) || "-_./:=+,@%".Contains(c))
-            ? token
-            : "'" + token.Replace("'", "'\\''") + "'";
 }

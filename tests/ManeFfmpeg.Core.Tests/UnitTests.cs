@@ -1,11 +1,12 @@
 using System.Collections.Immutable;
 using System.Globalization;
-using ManeFfmpeg.Core.Desktop;
+using System.Runtime.Versioning;
 using ManeFfmpeg.Core.Editing;
 using ManeFfmpeg.Core.Ffmpeg;
 using ManeFfmpeg.Core.Model;
 using ManeFfmpeg.Core.Mpv;
 using ManeFfmpeg.Core.Persistence;
+using ManeFfmpeg.Core.Platforms.Linux;
 
 namespace ManeFfmpeg.Core.Tests;
 
@@ -625,11 +626,10 @@ public class PresetStoreTests
         Assert.False(analysis.Arguments.AudioCopy);
     }
 
-    [Fact]
+    [UnixFact]
+    [UnsupportedOSPlatform("windows")]
     public void An_unwritable_folder_keeps_changes_in_memory_and_reports_it()
     {
-        if (OperatingSystem.IsWindows())
-            return;
         var dir = Directory.CreateTempSubdirectory("presets-ro");
         try
         {
@@ -705,7 +705,9 @@ public class ProgressParserTests
     }
 }
 
-public class ProjectFileAssociationTests
+/// <summary>The Linux association's text rules, which are plain strings, so they're checked everywhere.</summary>
+[UnsupportedOSPlatform("windows")]
+public class LinuxProjectFileTests
 {
     [Theory]
     [InlineData("/opt/mane/ManeFfmpeg", "\"/opt/mane/ManeFfmpeg\"")]
@@ -713,7 +715,7 @@ public class ProjectFileAssociationTests
     [InlineData("/x/$HOME`id`/100%/ManeFfmpeg", "\"/x/\\\\$HOME\\\\`id\\\\`/100%%/ManeFfmpeg\"")]
     [InlineData("/x/a\\b\"c", "\"/x/a\\\\\\\\b\\\\\"c\"")]
     public void Quotes_the_executable_for_a_desktop_entry(string path, string expected) =>
-        Assert.Equal(expected, ProjectFileAssociation.ExecArgument(path));
+        Assert.Equal(expected, LinuxPlatform.ExecArgument(path));
 
     [Fact]
     public void Removes_only_the_project_type_from_mimeapps_list()
@@ -721,7 +723,7 @@ public class ProjectFileAssociationTests
         const string list = "[Default Applications]\nvideo/mp4=vlc.desktop\napplication/x-mane-ffmpeg-project=mane-ffmpeg.desktop\n\n" +
                             "[Added Associations]\napplication/x-mane-ffmpeg-project=mane-ffmpeg.desktop;\napplication/x-mane-ffmpeg-project-old=x.desktop;\n";
         Assert.Equal("[Default Applications]\nvideo/mp4=vlc.desktop\n\n[Added Associations]\napplication/x-mane-ffmpeg-project-old=x.desktop;\n",
-            ProjectFileAssociation.WithoutAssociations(list, "application/x-mane-ffmpeg-project"));
+            LinuxPlatform.WithoutAssociations(list, "application/x-mane-ffmpeg-project"));
     }
 }
 

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using ManeFfmpeg.Core.Media;
 using ManeFfmpeg.Core.Model;
+using ManeFfmpeg.Core.Platforms;
 
 namespace ManeFfmpeg.Core.Ffmpeg;
 
@@ -74,9 +75,10 @@ public sealed record ExportPlan(
     /// <summary>Where the planned files and intermediates go; the runner creates and deletes it.</summary>
     public string WorkDirectory { get; init; } = "";
 
-    /// <summary>The commands as a copyable shell snippet.</summary>
-    public string CommandText(string ffmpeg)
+    /// <summary>The commands as a snippet to copy into a terminal: this platform's (sh, or PowerShell on Windows) by default.</summary>
+    public string CommandText(string ffmpeg, IPlatform? platform = null)
     {
+        platform ??= Platform.Current;
         var sb = new StringBuilder();
         foreach (var file in Files)
             sb.Append("# ").Append(file.Path).Append(":\n# ").Append(file.Content.TrimEnd().Replace("\n", "\n# ")).Append("\n\n");
@@ -85,8 +87,8 @@ public sealed record ExportPlan(
             if (step.Shift is { } shift)
                 sb.Append("# ").Append(ConcatShift.Placeholder).Append(": minus the start time of ").Append(shift.ListPath)
                   .Append(", probed before this runs\n");
-            sb.Append(PresetArguments.ShellQuote(ffmpeg)).Append(' ')
-              .AppendJoin(' ', step.Arguments.Select(PresetArguments.ShellQuote)).Append("\n\n");
+            sb.Append(platform.CommandLinePrefix).Append(platform.QuoteCommandArgument(ffmpeg)).Append(' ')
+              .AppendJoin(' ', step.Arguments.Select(platform.QuoteCommandArgument)).Append("\n\n");
         }
         return sb.ToString().TrimEnd();
     }
@@ -695,12 +697,11 @@ public static class ExportPlanner
             : false;
 
     /// <summary>
-    /// Whether two paths name the same file: compared after resolving symbolic links, and ignoring case on macOS
-    /// and Windows, whose usual file systems treat "clip.mp4" and "clip.MP4" as one file.
+    /// Whether two paths name the same file: compared after resolving symbolic links, and ignoring case where the usual
+    /// file systems treat "clip.mp4" and "clip.MP4" as one file (<see cref="IPlatform.PathComparison"/>).
     /// </summary>
     private static bool SameFile(string a, string b) =>
-        string.Equals(RealPath(a), RealPath(b),
-            OperatingSystem.IsMacOS() || OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        string.Equals(RealPath(a), RealPath(b), Platform.Current.PathComparison);
 
     private static string RealPath(string path)
     {
