@@ -98,7 +98,8 @@ public class ExportPlannerTests
             """.ReplaceLineEndings("\n"), plan.ShCommands());
     }
 
-    [Fact]
+    // Unix only: Path.Combine joins the fake "/work" folder with a backslash on Windows.
+    [UnixFact]
     public void Transport_stream_copy_with_an_offset_snapshot()
     {
         // Video-only segments cut half a frame before each keyframe's decode time; audio is filtered and shifted.
