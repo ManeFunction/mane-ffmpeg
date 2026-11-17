@@ -447,12 +447,14 @@ public static class ExportPlanner
         var (lead, readFrom, readLength, _) = placement;
 
         var preSeek = readFrom > AudioPreSeek ? readFrom - AudioPreSeek : TimeSpan.Zero;
-        var tmp = Path.Combine(ctx.Job.WorkDirectory, "audio.mka");
+        // NUT, not Matroska: since ffmpeg 9 Matroska stores AAC's encoder delay (priming) as CodecDelay even for a cut from
+        // mid-file, and reading it back drops the first packet and plays the audio a packet early.
+        var tmp = Path.Combine(ctx.Job.WorkDirectory, "audio.nut");
 
         var extract = new List<string>(Prefix)
         {
             "-ss", TimeFormat.Seconds(preSeek), "-i", heard.File.Path, "-map", $"0:{heard.Stream.Index}", "-c", "copy",
-            "-ss", TimeFormat.Seconds(readFrom - preSeek), "-t", TimeFormat.Seconds(readLength), "-f", "matroska", tmp,
+            "-ss", TimeFormat.Seconds(readFrom - preSeek), "-t", TimeFormat.Seconds(readLength), "-f", "nut", tmp,
         };
 
         var mux = new List<string>(Prefix);
