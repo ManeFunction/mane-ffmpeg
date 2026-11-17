@@ -257,7 +257,7 @@ public class PlatformPackageTests
         Assert.Null(Mac.UpdateCannotReplaceReason("/Applications/Mane FFmpeg.app"));
     }
 
-    [Fact]
+    [UnixFact]
     public void A_linux_copy_is_the_bundle_s_app_folder()
     {
         Assert.Equal(Path.Combine("/opt/x", "app"), Linux.UpdateInstalledPath(Path.Combine("/opt/x", "app", "ManeFfmpeg")));
