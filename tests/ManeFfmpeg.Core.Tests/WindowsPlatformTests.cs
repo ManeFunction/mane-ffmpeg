@@ -187,10 +187,14 @@ public class WindowsPlatformTests
             Assert.True(tree.Count >= 2, "ping didn't start");
             Assert.Equal(process.Id, tree[0]);
 
+            // A thread that is already blocked (cmd.exe waiting for ping) shows as suspended only once the kernel has
+            // delivered the suspend to it, a moment after NtSuspendProcess returns; likewise for resuming.
             var frozen = Windows.Freeze(process.Id);
-            Assert.All(tree, id => Assert.True(IsSuspended(id), $"pid {id} runs"));
+            foreach (var id in tree)
+                await Wait.Until(() => IsSuspended(id), $"pid {id} to be suspended");
             frozen.Resume();
-            Assert.All(tree, id => Assert.False(IsSuspended(id), $"pid {id} is still suspended"));
+            foreach (var id in tree)
+                await Wait.Until(() => !IsSuspended(id), $"pid {id} to be resumed");
         }
         finally
         {
