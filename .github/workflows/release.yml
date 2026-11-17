@@ -156,7 +156,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # full history + tags -- needed to diff against the previous release tag
+          fetch-depth: 0 # tags -- needed to find the previous tag for the Full Changelog link
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -169,22 +169,12 @@ jobs:
         run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
 
       - name: Build release notes
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # This version's whole section from CHANGELOG.md, the Downloads note, then the Full Changelog compare link.
         run: |
           PREV_TAG=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
-          RANGE="${PREV_TAG:+$PREV_TAG..}${GITHUB_REF_NAME}"
-
-          python3 .github/scripts/categorize_changelog.py "$RANGE" > changelog_section.md
-
-          gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
-            -f tag_name="$GITHUB_REF_NAME" --jq .body > auto_notes.md
 
           {
-            cat auto_notes.md
-            echo ""
-            echo ""
-            cat changelog_section.md
+            python3 .github/scripts/release_notes.py --no-link
             echo ""
             echo "## Downloads"
             echo ""
@@ -197,6 +187,12 @@ jobs:
             echo "  isn't signed, so SmartScreen asks on the first start: *More info > Run anyway*. libmpv is included."
             echo "- All need ffmpeg (Windows: \`winget install Gyan.FFmpeg\`, which the app offers), and macOS and Linux need"
             echo "  libmpv for the preview; see the README's Requirements."
+            echo ""
+            if [ -n "$PREV_TAG" ]; then
+              echo "**Full Changelog**: https://github.com/$GITHUB_REPOSITORY/compare/$PREV_TAG...$GITHUB_REF_NAME"
+            else
+              echo "**Full Changelog**: https://github.com/$GITHUB_REPOSITORY/commits/$GITHUB_REF_NAME"
+            fi
           } > release_notes.md
 
       - name: Create GitHub Release
