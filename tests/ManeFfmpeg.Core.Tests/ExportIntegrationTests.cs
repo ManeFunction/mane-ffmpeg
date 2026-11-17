@@ -375,10 +375,18 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
         }
     }
 
-    /// <summary>Pids of the processes whose command line mentions <paramref name="text"/>.</summary>
-    private static async Task<string> ProcessesMentioningAsync(string text) =>
-        (await Cli.Wrap("pgrep").WithArguments(["-f", text]).WithValidation(CommandResultValidation.None).ExecuteBufferedAsync())
-        .StandardOutput.Trim();
+    /// <summary>Pids of the processes whose command line mentions <paramref name="text"/> (on Windows, of the ffmpeg.exe ones).</summary>
+    private static async Task<string> ProcessesMentioningAsync(string text)
+    {
+        // Windows has no pgrep, and .NET doesn't expose other processes' command lines there; CIM does. Matching only
+        // ffmpeg.exe keeps PowerShell, whose own command line holds the text, out; the text travels in a variable.
+        var command = OperatingSystem.IsWindows()
+            ? Cli.Wrap("powershell").WithArguments(["-NoProfile", "-NonInteractive", "-Command",
+                    "Get-CimInstance Win32_Process -Filter \"Name='ffmpeg.exe'\" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($env:MANE_MENTION) } | ForEach-Object { $_.ProcessId }"])
+                .WithEnvironmentVariables(env => env.Set("MANE_MENTION", text))
+            : Cli.Wrap("pgrep").WithArguments(["-f", text]);
+        return (await command.WithValidation(CommandResultValidation.None).ExecuteBufferedAsync()).StandardOutput.Trim();
+    }
 
     [FfmpegFact]
     public async Task Cancel_removes_partial_output()
