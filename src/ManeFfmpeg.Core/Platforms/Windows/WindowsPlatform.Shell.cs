@@ -71,17 +71,14 @@ public sealed partial class WindowsPlatform
     private const string Classes = @"Software\Classes";
     private const int ShcneAssocChanged = 0x08000000;
 
-    private static string? Executable() =>
-        Environment.ProcessPath is { } path && Path.GetFileNameWithoutExtension(path) != "dotnet" ? path : null;
-
-    public bool CanRegisterProjectFiles => Executable() is not null;
+    public bool CanRegisterProjectFiles => Platform.RunningExecutable is not null;
 
     /// <summary>The open command Explorer runs for <paramref name="executable"/>.</summary>
     internal static string OpenCommand(string executable) => $"\"{executable}\" \"%1\"";
 
     public Task<bool> IsProjectFileHandlerAsync()
     {
-        if (Executable() is not { } executable)
+        if (Platform.RunningExecutable is not { } executable)
             return Task.FromResult(false);
         using var extension = Registry.CurrentUser.OpenSubKey($@"{Classes}\{Extension}");
         using var command = Registry.CurrentUser.OpenSubKey($@"{Classes}\{ProgId}\shell\open\command");
@@ -91,7 +88,7 @@ public sealed partial class WindowsPlatform
 
     public Task RegisterProjectFilesAsync()
     {
-        var executable = Executable()!;
+        var executable = Platform.RunningExecutable!;
         using (var progId = Registry.CurrentUser.CreateSubKey($@"{Classes}\{ProgId}"))
         {
             progId.SetValue(null, "Mane FFmpeg project");

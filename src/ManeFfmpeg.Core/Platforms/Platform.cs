@@ -14,6 +14,16 @@ public static class Platform
 
     public static IPlatform Current => Detected.Value;
 
+    /// <summary>
+    /// The app's own executable: <see cref="Environment.ProcessPath"/>, or null when it's <c>dotnet</c> running
+    /// <c>ManeFfmpeg.dll</c> (<c>dotnet run</c>), which nothing should register or replace.
+    /// </summary>
+    public static string? RunningExecutable => AppExecutable(Environment.ProcessPath);
+
+    /// <summary><paramref name="processPath"/>, or null when it's missing or the <c>dotnet</c> host.</summary>
+    internal static string? AppExecutable(string? processPath) =>
+        processPath is not null && Path.GetFileNameWithoutExtension(processPath) != "dotnet" ? processPath : null;
+
     private static IPlatform Detect()
     {
         if (OperatingSystem.IsWindows())

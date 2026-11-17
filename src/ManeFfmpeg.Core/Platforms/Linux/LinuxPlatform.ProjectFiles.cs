@@ -22,10 +22,7 @@ public sealed partial class LinuxPlatform
 
     private static string MimeAppsList => Path.Combine(Xdg("XDG_CONFIG_HOME", ".config"), "mimeapps.list");
 
-    private static string? Executable() =>
-        Environment.ProcessPath is { } path && Path.GetFileNameWithoutExtension(path) != "dotnet" ? path : null;
-
-    public override bool CanRegisterProjectFiles => Executable() is not null;
+    public override bool CanRegisterProjectFiles => Platform.RunningExecutable is not null;
 
     public override async Task<bool> IsProjectFileHandlerAsync()
     {
@@ -44,7 +41,7 @@ public sealed partial class LinuxPlatform
         AtomicFile.WriteAllText(MimePackage, MimeXml);
         // install.sh puts one in place for the installed copy; keep it.
         if (!File.Exists(DesktopFile))
-            AtomicFile.WriteAllText(DesktopFile, DesktopEntry(Executable()!));
+            AtomicFile.WriteAllText(DesktopFile, DesktopEntry(Platform.RunningExecutable!));
         await RunAsync("update-mime-database", Path.Combine(DataHome, "mime"));
         await RunAsync("update-desktop-database", Path.GetDirectoryName(DesktopFile)!);
         await RunAsync("xdg-mime", "default", DesktopId, MimeType);

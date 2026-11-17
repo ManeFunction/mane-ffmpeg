@@ -51,10 +51,9 @@ public static class UpdateInstaller
     /// </summary>
     public static string? InstalledPath(string? processPath = null)
     {
-        processPath ??= Environment.ProcessPath;
-        if (processPath is null || Path.GetFileNameWithoutExtension(processPath) == "dotnet")
-            return null;
-        return Platform.Current.UpdateInstalledPath(processPath);
+        return Platform.AppExecutable(processPath ?? Environment.ProcessPath) is { } executable
+            ? Platform.Current.UpdateInstalledPath(executable)
+            : null;
     }
 
     /// <summary>Why the copy at <paramref name="installed"/> can't replace itself, or null when it can.</summary>
