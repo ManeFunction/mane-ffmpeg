@@ -26,6 +26,7 @@ public sealed record ExportResult(ExportOutcome Outcome, string Message, TimeSpa
 public sealed class ExportRunner(FfmpegTools tools)
 {
     private const int LogLines = 40;
+    private const int DeleteAttempts = 30;
 
     private readonly Lock _lock = new();
 
@@ -141,7 +142,7 @@ public sealed class ExportRunner(FfmpegTools tools)
 
                 if (result.ExitCode != 0)
                 {
-                    DeleteOutput(outputPath, outputTouched);
+                    await DeleteOutputAsync(outputPath, outputTouched);
                     string text;
                     lock (log)
                         text = string.Join('\n', log);
@@ -156,17 +157,17 @@ public sealed class ExportRunner(FfmpegTools tools)
         }
         catch (OperationCanceledException)
         {
-            DeleteOutput(outputPath, outputTouched);
+            await DeleteOutputAsync(outputPath, outputTouched);
             return new ExportResult(ExportOutcome.Cancelled, "Export cancelled", RunningTime());
         }
         catch (Exception ex)
         {
-            DeleteOutput(outputPath, outputTouched);
+            await DeleteOutputAsync(outputPath, outputTouched);
             return new ExportResult(ExportOutcome.Failed, ex.Message, RunningTime(), ex.ToString());
         }
         finally
         {
-            TryDeleteDirectory(workDirectory);
+            await TryDeleteDirectoryAsync(workDirectory);
         }
     }
 
@@ -217,35 +218,35 @@ public sealed class ExportRunner(FfmpegTools tools)
             : TimeSpan.Zero;
     }
 
-    private static void DeleteOutput(string path, bool touched)
-    {
-        if (!touched)
-            return;
-        try
-        {
-            if (File.Exists(path))
-                File.Delete(path);
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
-    }
+    private static Task DeleteOutputAsync(string path, bool touched) =>
+        touched ? WhileLockedAsync(() => { if (File.Exists(path)) File.Delete(path); }) : Task.CompletedTask;
 
-    private static void TryDeleteDirectory(string path)
+    private static Task TryDeleteDirectoryAsync(string path) =>
+        WhileLockedAsync(() => { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); });
+
+    /// <summary>
+    /// Runs <paramref name="delete"/>, retrying for a couple of seconds while the files are in use. On Windows a killed
+    /// ffmpeg holds its files until it has fully exited, and CliWrap only waits for the process it started, which for
+    /// Chocolatey's and Scoop's ffmpeg.exe is a shim whose child is the real ffmpeg.
+    /// </summary>
+    private static async Task WhileLockedAsync(Action delete)
     {
-        try
+        for (var attempt = 1; ; attempt++)
         {
-            if (Directory.Exists(path))
-                Directory.Delete(path, recursive: true);
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
+            try
+            {
+                delete();
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                if (attempt == DeleteAttempts)
+                {
+                    AppLog.Write($"Can't clean up after the export: {ex.Message}");
+                    return;
+                }
+            }
+            await Task.Delay(100);
         }
     }
 }
