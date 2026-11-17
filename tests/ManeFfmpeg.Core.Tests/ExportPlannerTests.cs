@@ -57,6 +57,24 @@ public class ExportPlannerTests
         Assert.Equal("/work", plan.WorkDirectory);
     }
 
+    [Theory]
+    // ffmpeg 9 puts AAC's priming into Matroska as CodecDelay, so AAC is cut into NUT.
+    [InlineData("aac", "nut", "audio.nut")]
+    // NUT has no tag for ALAC (or TrueHD): everything else is cut into Matroska.
+    [InlineData("alac", "matroska", "audio.mka")]
+    [InlineData("mp3", "matroska", "audio.mka")]
+    public void Single_clip_cuts_the_audio_into_a_container_that_carries_its_codec(string codec, string format, string file)
+    {
+        var info = Media(10);
+        info = info with { AudioStreams = [info.AudioStreams[0] with { Codec = codec }] };
+        var plan = ExportPlanner.Plan(Job(Encode, new Dictionary<string, MediaInfo> { ["a"] = info }, C("a", 1, 4, 200)));
+        Assert.Equal(ExportMode.SingleClipAudioCopy, plan.Mode);
+        var cut = plan.Steps[0].Arguments;
+        Assert.Equal(format, cut[cut.ToList().IndexOf("-f") + 1]);
+        Assert.EndsWith(file, cut[^1]);
+        Assert.Contains(plan.Steps[1].Arguments, a => a.EndsWith(file));
+    }
+
     [Fact]
     public void Stream_copy_copies_matching_audio_and_shifts_filtered_audio()
     {

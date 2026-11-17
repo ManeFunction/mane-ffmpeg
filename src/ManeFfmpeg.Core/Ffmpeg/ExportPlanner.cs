@@ -435,6 +435,15 @@ public static class ExportPlanner
 
     // ---- Single clip, lossless audio -------------------------------------------------------------------
 
+    /// <summary>
+    /// The container the audio is cut into: Matroska carries every codec. AAC goes into NUT instead, because since ffmpeg 9
+    /// Matroska stores AAC's encoder delay (priming) as CodecDelay even for a cut from mid-file, and reading it back drops
+    /// the first packet and plays the audio a packet early. NUT can't carry every codec (ALAC comes back as an unknown
+    /// codec), so it's only for AAC.
+    /// </summary>
+    internal static (string Extension, string Format) AudioCutContainer(string codec) =>
+        codec == "aac" ? ("nut", "nut") : ("mka", "matroska");
+
     private static ExportPlan? SingleClipAudioCopy(Context ctx)
     {
         var item = ctx.Items[0];
@@ -447,18 +456,21 @@ public static class ExportPlanner
         var (lead, readFrom, readLength, _) = placement;
 
         var preSeek = readFrom > AudioPreSeek ? readFrom - AudioPreSeek : TimeSpan.Zero;
-        // NUT, not Matroska: since ffmpeg 9 Matroska stores AAC's encoder delay (priming) as CodecDelay even for a cut from
-        // mid-file, and reading it back drops the first packet and plays the audio a packet early.
-        var tmp = Path.Combine(ctx.Job.WorkDirectory, "audio.nut");
+        var (extension, format) = AudioCutContainer(heard.Stream.Codec);
+        var tmp = Path.Combine(ctx.Job.WorkDirectory, "audio." + extension);
 
         var extract = new List<string>(Prefix)
         {
             "-ss", TimeFormat.Seconds(preSeek), "-i", heard.File.Path, "-map", $"0:{heard.Stream.Index}", "-c", "copy",
-            "-ss", TimeFormat.Seconds(readFrom - preSeek), "-t", TimeFormat.Seconds(readLength), "-f", "nut", tmp,
+            "-ss", TimeFormat.Seconds(readFrom - preSeek), "-t", TimeFormat.Seconds(readLength), "-f", format, tmp,
         };
 
         var mux = new List<string>(Prefix);
         var trim = Input(mux, item, clip.In, clip.Duration);
+        // The copied cut starts at the first whole packet at or after readFrom, and its timestamps say how far after
+        // (up to a packet: 21 ms of AAC, 85 ms of ALAC). ffmpeg moves an input's start to zero, which would play the
+        // audio that much early; "-seek_timestamp 1 -ss 0" keeps its timestamps as they are.
+        mux.AddRange(["-seek_timestamp", "1", "-ss", "0"]);
         if (lead > TimeSpan.Zero)
             mux.AddRange(["-itsoffset", TimeFormat.Seconds(lead)]);
         mux.AddRange(["-i", tmp, "-map", $"0:{item.Video.Index}", "-map", "1:a:0"]);

@@ -27,8 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The audio row's waveform lines up with the sound you hear and ends where the audio ends. For files whose audio
   timestamps have gaps or bursts of packets (some recorders write them), it drifted later than the sound and ran
   past the clip's end. Waveforms cached by earlier versions are rebuilt.
-- With ffmpeg 9, exporting a single clip whose audio is copied without re-encoding no longer plays the audio about
-  a frame (~30 ms) early.
+- With ffmpeg 9, exporting a single clip whose AAC audio is copied without re-encoding no longer plays the audio
+  about a frame (~30 ms) early.
+- Exporting a single clip whose audio is copied without re-encoding no longer plays the audio up to one audio packet
+  early (up to 85 ms for ALAC, up to 21 ms for AAC).
 
 ## [2.1.1] - 2026-11-12
 ### Changed

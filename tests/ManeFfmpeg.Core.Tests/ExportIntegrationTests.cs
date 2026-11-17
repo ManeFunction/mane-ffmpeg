@@ -157,6 +157,18 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
     }
 
     [FfmpegFact]
+    public async Task Single_clip_keeps_alac_audio_lossless_with_offset()
+    {
+        var preset = FastEncode with { Extension = "mov" };
+        var (plan, _, output) = await ExportAsync(preset, "mov", [("a", media.SyncAlac)], C("a", 1.5, 6.0, +120));
+        Assert.Equal(ExportMode.SingleClipAudioCopy, plan.Mode);
+        var (flashes, beeps, _) = await media.MeasureAsync(output);
+        AssertTimes([0.5, 2.5], flashes, FrameTolerance, "flashes");
+        AssertTimes([0.62, 2.62], beeps, BeepTolerance, "beeps");
+        Assert.Equal("alac", (await media.ProbeAsync(output)).AudioStreams[0].Codec);
+    }
+
+    [FfmpegFact]
     public async Task Single_clip_offset_past_file_start_adds_leading_silence()
     {
         var (plan, _, output) = await ExportAsync(FastEncode, "mp4", [("a", media.Sync30)], C("a", 0.0, 4.0, +500));
