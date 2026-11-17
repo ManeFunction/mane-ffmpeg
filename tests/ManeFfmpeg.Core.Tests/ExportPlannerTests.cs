@@ -95,7 +95,7 @@ public class ExportPlannerTests
         var plan = ExportPlanner.Plan(Job(Encode, media, C("a", 1, 3), C("a", 5, 6, 120)));
         Assert.Equal("""
             ffmpeg -nostdin -hide_banner -loglevel error -nostats -stats_period 0.5 -progress pipe:1 -y -ss 1.000000 -t 2.000000 -i /m/a.src -ss 5.000000 -t 1.000000 -i /m/a.src -ss 1.000000 -t 2.000000 -i /m/a.src -ss 4.880000 -t 1.000000 -i /m/a.src -filter_complex '[0:0]trim=duration=2.000000,setpts=PTS-STARTPTS[v0];[1:0]trim=duration=1.000000,setpts=PTS-STARTPTS[v1];[2:1]aformat=sample_rates=48000:channel_layouts=stereo,apad=whole_dur=2.000000,atrim=duration=2.000000,asetpts=N/SR/TB[a0];[3:1]aformat=sample_rates=48000:channel_layouts=stereo,apad=whole_dur=1.000000,atrim=duration=1.000000,asetpts=N/SR/TB[a1];[v0][a0][v1][a1]concat=n=2:v=1:a=1[vout][aout]' -map '[vout]' -map '[aout]' -c:v libx264 -crf 20 -c:a aac -b:a 256k -movflags +faststart /out/edit.mp4
-            """, plan.ShCommands());
+            """.ReplaceLineEndings("\n"), plan.ShCommands());
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public class ExportPlannerTests
 
             # $SHIFT: minus the start time of /work/segments.ffconcat, probed before this runs
             ffmpeg -nostdin -hide_banner -loglevel error -nostats -stats_period 0.5 -progress pipe:1 -y -f concat -safe 0 -i /work/segments.ffconcat -ss 0.000000 -t 3.000000 -i /m/t.src -ss 0.000000 -t 7.960000 -i /m/t.src -filter_complex '[1:1]atrim=start=0.000000:duration=3.000000,asetpts=PTS-STARTPTS,aformat=sample_rates=48000:channel_layouts=stereo,apad=whole_dur=3.000000,atrim=duration=3.000000,asetpts=N/SR/TB[a0];[2:1]atrim=start=4.960000:duration=3.000000,asetpts=PTS-STARTPTS,aformat=sample_rates=48000:channel_layouts=stereo,apad=whole_dur=3.000000,atrim=duration=3.000000,asetpts=N/SR/TB[a1];[a0][a1]concat=n=2:v=0:a=1[ashift];[ashift]asetpts=PTS+$SHIFT/TB[aout]' -map 0:0 -map '[aout]' -c:v copy -c:a aac -b:a 256k -movflags +faststart /out/edit.mp4
-            """, plan.ShCommands());
+            """.ReplaceLineEndings("\n"), plan.ShCommands());
     }
 }
 
@@ -222,6 +222,6 @@ public class ReplacedAudioPlannerTests
         var plan = ExportPlanner.Plan(Job(Encode, Both, C(1, 8, loop: true, offset: 0.5)));
         Assert.Equal("""
             ffmpeg -nostdin -hide_banner -loglevel error -nostats -stats_period 0.5 -progress pipe:1 -y -ss 1.000000 -t 7.000000 -i /m/a.src -t 3.000000 -i /m/t.m4a -t 3.000000 -i /m/t.m4a -t 3.000000 -i /m/t.m4a -t 0.500000 -i /m/t.m4a -filter_complex '[0:0]trim=duration=7.000000,setpts=PTS-STARTPTS[v0];[1:0]atrim=start=2.500000:duration=0.500000,asetpts=PTS-STARTPTS,aformat=sample_rates=44100:channel_layouts=stereo,apad=whole_len=22050,atrim=end_sample=22050[lp1];[2:0]aformat=sample_rates=44100:channel_layouts=stereo,apad=whole_len=132300,atrim=end_sample=132300[lp2];[3:0]aformat=sample_rates=44100:channel_layouts=stereo,apad=whole_len=132300,atrim=end_sample=132300[lp3];[4:0]aformat=sample_rates=44100:channel_layouts=stereo,apad=whole_len=22050,atrim=end_sample=22050[lp4];[lp1][lp2][lp3][lp4]concat=n=4:v=0:a=1,asetpts=N/SR/TB[a0];[v0][a0]concat=n=1:v=1:a=1[vout][aout]' -map '[vout]' -map '[aout]' -c:v libx264 -crf 20 -c:a aac -b:a 256k -movflags +faststart /out/edit.mp4
-            """, plan.ShCommands());
+            """.ReplaceLineEndings("\n"), plan.ShCommands());
     }
 }
