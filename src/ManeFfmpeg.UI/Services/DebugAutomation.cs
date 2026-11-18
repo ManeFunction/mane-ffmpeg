@@ -11,6 +11,7 @@ using ManeFfmpeg.UI.Controls;
 using ManeFfmpeg.UI.ViewModels;
 using ManeFfmpeg.UI.Views;
 using ManeFfmpeg.Core.Model;
+using ManeFfmpeg.Core.Platforms;
 
 namespace ManeFfmpeg.UI.Services;
 
@@ -384,11 +385,22 @@ internal static class DebugAutomation
                     }
                     case "setup-snapshot":
                     {
-                        // setup-snapshot nobrew|<fake brew> <png>: the install dialog offering everything. With a fake brew
-                        // script it clicks Install and also snapshots while brew runs (<png>.running.png).
+                        // setup-snapshot none|<fake manager> <png>: this platform's install dialog offering everything. With
+                        // a fake brew (macOS) or winget (Windows) script it clicks Install and also snapshots while the
+                        // manager runs (<png>.running.png). "nobrew" still means none.
                         var parts = arg.Split(' ', 2);
-                        var brew = parts[0] == "nobrew" ? null : parts[0];
-                        var installer = new Core.Platforms.Mac.HomebrewInstaller(() => brew, _ => Task.CompletedTask);
+                        var brew = parts[0] is "none" or "nobrew" ? null : parts[0];
+                        IToolInstaller? installer = Platform.Current.Kind switch
+                        {
+                            PlatformKind.MacOS => new Core.Platforms.Mac.HomebrewInstaller(() => brew, _ => Task.CompletedTask),
+                            PlatformKind.Windows => new Core.Platforms.Windows.WingetInstaller(() => brew, _ => { }),
+                            _ => null,
+                        };
+                        if (installer is null)
+                        {
+                            Console.WriteLine("[setup] this platform has no install dialog");
+                            break;
+                        }
                         var setup = new SetupViewModel(SetupViewModel.AllComponents(installer), installer);
                         var dialog = new SetupWindow(setup);
                         dialog.Show(window);
