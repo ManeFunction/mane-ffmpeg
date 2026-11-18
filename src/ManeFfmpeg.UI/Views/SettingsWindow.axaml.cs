@@ -1,3 +1,4 @@
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using ManeFfmpeg.UI.Services;
@@ -14,7 +15,27 @@ public partial class SettingsWindow : Window
         DataContext = vm;
         EditMenu.Attach(this);
         this.CloseOnEscape();
-        Closed += (_, _) => vm.DiscardThemePreview();
+        Updater.Instance.BusyChanged += ShowUpdateBusy;
+        ShowUpdateBusy();
+        Closed += (_, _) =>
+        {
+            Updater.Instance.BusyChanged -= ShowUpdateBusy;
+            vm.DiscardThemePreview();
+        };
+    }
+
+    /// <summary>The same check as the menu's "Check for Updates…"; the update window opens over Settings.</summary>
+    private void OnCheckNowClicked(object? sender, RoutedEventArgs e) =>
+        _ = Updater.Instance.CheckAndOfferAsync(manual: true, owner: this);
+
+    /// <summary>Like the menu item, the button can't be clicked while a check or the update window is open.</summary>
+    private void ShowUpdateBusy()
+    {
+        var busy = Updater.Instance.IsBusy;
+        CheckNowLabel.Classes.Set("ghost", busy);
+        CheckingLabel.Classes.Set("ghost", !busy);
+        AutomationProperties.SetName(CheckNowButton, busy ? CheckingLabel.Text : CheckNowLabel.Text);
+        CheckNowButton.IsEnabled = !busy;
     }
 
     private void OnCancelClicked(object? sender, RoutedEventArgs e) => Close();

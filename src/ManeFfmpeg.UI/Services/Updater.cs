@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using ManeFfmpeg.Core.Persistence;
 using ManeFfmpeg.Core.Updates;
@@ -54,7 +55,8 @@ public sealed class Updater
     /// </summary>
     /// <param name="manual">The user asked: look even when automatic checks are off, and offer a release they skipped.</param>
     /// <param name="offerAfter">Work the window must wait for (the startup dialogs); the check itself runs meanwhile.</param>
-    public async Task CheckAndOfferAsync(bool manual = false, Task? offerAfter = null)
+    /// <param name="owner">The window the update window opens over (a dialog the check started from); by default the last project window.</param>
+    public async Task CheckAndOfferAsync(bool manual = false, Task? offerAfter = null, Window? owner = null)
     {
         if (IsBusy)
             return;
@@ -72,7 +74,7 @@ public sealed class Updater
             if (offerAfter is not null)
                 await offerAfter;
             if (offer is not null)
-                await ShowOfferAsync(offer);
+                await ShowOfferAsync(offer, owner);
         }
         finally
         {
@@ -108,9 +110,10 @@ public sealed class Updater
     }
 
     /// <summary>Shows the update window for <paramref name="offer"/> and carries out what the user picks there.</summary>
-    private async Task ShowOfferAsync(UpdateOffer offer)
+    private async Task ShowOfferAsync(UpdateOffer offer, Window? owner)
     {
-        if (WindowManager.Instance.Windows.LastOrDefault() is not { } owner)
+        owner ??= WindowManager.Instance.Windows.LastOrDefault();
+        if (owner is null)
             return;
         var vm = new UpdateViewModel(offer, CurrentVersion, _http, _installed);
         await new UpdateWindow(vm).ShowDialog(owner);

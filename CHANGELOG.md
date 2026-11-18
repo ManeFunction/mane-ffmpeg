@@ -6,7 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Added
+- Settings has a "Check Now" button next to "Check for updates at startup". It runs the same check as the menu's
+  "Check for Updates…", and the update window opens over Settings.
+
 ### Fixed
+- In Settings, the Register/Unregister button keeps its width when its label changes, so the buttons beside it no
+  longer jump.
 - In the "Install Missing Components" window, the installer's output wraps long lines instead of needing a
   horizontal scroll to read them.
 - Windows: installing ffmpeg no longer fails with "exit code -1978335189" when winget already has it. winget
