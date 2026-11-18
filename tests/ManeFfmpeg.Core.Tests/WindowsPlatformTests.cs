@@ -72,6 +72,25 @@ public class WindowsPlatformRuleTests
         Assert.Equal(installed, WingetInstaller.MeansAlreadyInstalled(code));
 
     [Fact]
+    public void Path_entries_are_trimmed_unquoted_and_expanded()
+    {
+        const string variable = "MANE_FFMPEG_TEST_TOOLS";
+        Environment.SetEnvironmentVariable(variable, @"D:\Tools");
+        try
+        {
+            Assert.Equal(
+                [@"C:\a", @"C:\Program Files\b", @"D:\Tools\bin", @"%MANE_FFMPEG_UNSET%\x"],
+                WindowsPlatform.SplitPath(@" C:\a ;;  ;""C:\Program Files\b"";%MANE_FFMPEG_TEST_TOOLS%\bin;%MANE_FFMPEG_UNSET%\x;"));
+            Assert.Empty(WindowsPlatform.SplitPath(null));
+            Assert.Empty(WindowsPlatform.SplitPath(" ; ;"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variable, null);
+        }
+    }
+
+    [Fact]
     public void Portable_winget_packages_are_searched_newest_first()
     {
         var root = Directory.CreateTempSubdirectory("mane-ffmpeg-winget").FullName;
