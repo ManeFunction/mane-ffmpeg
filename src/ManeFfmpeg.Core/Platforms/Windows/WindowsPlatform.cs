@@ -43,7 +43,7 @@ public sealed partial class WindowsPlatform : IPlatform
     /// PATH, then where the package managers put their commands. A winget install made while the app runs changes PATH
     /// only for processes started later, so the user's and the system's PATH are also read from the registry, and
     /// winget's Links folders are searched explicitly. Without Developer Mode or admin rights winget can't make the
-    /// symlink in Links for a portable package (Gyan.FFmpeg is one) and adds the package's folder to PATH instead, so
+    /// symlink in Links for a portable package (<see cref="WingetInstaller.FfmpegPackage"/> is one) and adds the package's folder to PATH instead, so
     /// that folder is searched too.
     /// </summary>
     public IEnumerable<string> ToolSearchDirectories()
@@ -64,8 +64,8 @@ public sealed partial class WindowsPlatform : IPlatform
                 Path.Combine(Path.GetPathRoot(programFiles) ?? @"C:\", "ffmpeg", "bin"),
                 AppContext.BaseDirectory,
             ])
-            .Concat(WingetPackageBinDirectories(Path.Combine(LocalAppData, "Microsoft", "WinGet", "Packages"), "Gyan.FFmpeg"))
-            .Concat(WingetPackageBinDirectories(Path.Combine(programFiles, "WinGet", "Packages"), "Gyan.FFmpeg"));
+            .Concat(WingetInstaller.FfmpegBinDirectories(Path.Combine(LocalAppData, "Microsoft", "WinGet", "Packages")))
+            .Concat(WingetInstaller.FfmpegBinDirectories(Path.Combine(programFiles, "WinGet", "Packages")));
         foreach (var dir in dirs)
             if (dir.Length > 0 && seen.Add(dir))
                 yield return dir;
@@ -88,32 +88,9 @@ public sealed partial class WindowsPlatform : IPlatform
         }
     }
 
-    /// <summary>
-    /// The bin folders of a portable winget package under <paramref name="packagesRoot"/>, newest version first:
-    /// winget unpacks Gyan.FFmpeg to Packages\Gyan.FFmpeg_&lt;source&gt;\ffmpeg-&lt;version&gt;-full_build\bin.
-    /// </summary>
-    internal static IEnumerable<string> WingetPackageBinDirectories(string packagesRoot, string packageId)
-    {
-        try
-        {
-            if (!Directory.Exists(packagesRoot))
-                return [];
-            return Directory.EnumerateDirectories(packagesRoot, packageId + "_*")
-                .SelectMany(package => Directory.EnumerateDirectories(package))
-                .Select(version => Path.Combine(version, "bin"))
-                .Where(Directory.Exists)
-                .OrderByDescending(bin => bin, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return [];
-        }
-    }
-
     public string ExecutableFileName(string tool) => tool.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? tool : tool + ".exe";
 
-    public string FfmpegMissingHint => "ffmpeg wasn't found. Install it (winget install Gyan.FFmpeg) or set its path in Settings.";
+    public string FfmpegMissingHint => $"ffmpeg wasn't found. Install it (winget install {WingetInstaller.FfmpegPackage}) or set its path in Settings.";
     public string FfmpegSearchDescription => "automatic (PATH, winget, Scoop, Chocolatey…)";
 
     /// <summary>PowerShell: bare when nothing in it means anything to PowerShell, else in single quotes.</summary>

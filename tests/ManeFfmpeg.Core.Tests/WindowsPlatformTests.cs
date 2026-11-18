@@ -84,8 +84,8 @@ public class WindowsPlatformRuleTests
             Directory.CreateDirectory(Path.Combine(root, "Other.Package_x", "y", "bin"));
             Assert.Equal(
                 [Path.Combine(package, "ffmpeg-8.0-full_build", "bin"), Path.Combine(package, "ffmpeg-7.1-full_build", "bin")],
-                WindowsPlatform.WingetPackageBinDirectories(root, "Gyan.FFmpeg"));
-            Assert.Empty(WindowsPlatform.WingetPackageBinDirectories(Path.Combine(root, "missing"), "Gyan.FFmpeg"));
+                WingetInstaller.FfmpegBinDirectories(root));
+            Assert.Empty(WingetInstaller.FfmpegBinDirectories(Path.Combine(root, "missing")));
         }
         finally
         {
