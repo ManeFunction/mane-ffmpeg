@@ -128,6 +128,10 @@ jobs:
         with:
           python-version: "3.13"
 
+      # package-windows.sh unpacks libmpv with 7-Zip. The runner image has it today; install it if a new image doesn't.
+      - name: Make sure 7-Zip is installed
+        run: command -v 7zz || command -v 7z || command -v 7za || choco install 7zip -y --no-progress
+
       - name: Build the zip
         env:
           RID: ${{ matrix.rid }}

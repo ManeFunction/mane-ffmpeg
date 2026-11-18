@@ -25,16 +25,17 @@ jobs:
 
       # The ffmpeg integration tests and the libmpv preview tests skip themselves without these, so they run on
       # Linux and Windows (a brew install on macOS would add minutes to every run).
-      - name: Install ffmpeg and libmpv
+      - name: Install ffmpeg and libmpv (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg libmpv2
 
       # The same pinned libmpv-2.dll the Windows release bundles, found on PATH by the tests.
-      - name: Install ffmpeg and libmpv
+      - name: Install ffmpeg and libmpv (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
           choco install ffmpeg -y --no-progress
+          command -v 7zz || command -v 7z || command -v 7za || choco install 7zip -y --no-progress
           scripts/package-windows.sh --libmpv-only win-x64 "$RUNNER_TEMP/libmpv"
           echo "$RUNNER_TEMP/libmpv" >> "$GITHUB_PATH"
 
