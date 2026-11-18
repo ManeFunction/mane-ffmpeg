@@ -76,8 +76,8 @@ public sealed partial class SetupViewModel : ViewModelBase, IDisposable
             ("ffmpeg", "Reads, analyzes and exports your videos. Required."),
             ("libmpv", "Plays the preview. Editing and exporting work without it."),
         }
-        .Where(c => installer.PackageFor(c.Item1) is not null)
-        .Select(c => new SetupComponent(c.Item1, installer.PackageFor(c.Item1)!, c.Item2));
+        .Select(c => installer.PackageFor(c.Item1) is { } package ? new SetupComponent(c.Item1, package, c.Item2) : null)
+        .OfType<SetupComponent>();
 
     public static IEnumerable<SetupComponent> MissingComponents(IToolInstaller installer) =>
         AllComponents(installer).Where(c => !IsAvailable(c.Name));

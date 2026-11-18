@@ -43,12 +43,11 @@ public sealed partial class WindowsPlatform
         // Next to the installed copy, so moving it in place is a rename on the same disk.
         var incoming = Path.Combine(sibling, $".{name}.new");
         var backup = Path.Combine(sibling, $".{name}.old");
-        var q = (Func<string, string>)PowerShellQuote;
         // Windows paths can't hold double quotes, so quoting each one is enough for Start-Process's single string.
         var reopen = string.Join(' ', plan.Reopen.Select(path => $"\"{path}\""));
         var relaunch = !plan.Relaunch ? ""
             : reopen.Length > 0
-                ? $"Start-Process -FilePath (Join-Path $installed 'ManeFfmpeg.exe') -ArgumentList {q(reopen)}"
+                ? $"Start-Process -FilePath (Join-Path $installed 'ManeFfmpeg.exe') -ArgumentList {PowerShellQuote(reopen)}"
                 : "Start-Process -FilePath (Join-Path $installed 'ManeFfmpeg.exe')";
 
         var script = Path.Combine(directory, "apply-update.ps1");
@@ -56,13 +55,13 @@ public sealed partial class WindowsPlatform
         File.WriteAllText(script, $$"""
             # Written by Mane FFmpeg: installs {{plan.Version.ToString(3)}} once the app has quit.
             $ErrorActionPreference = 'Continue'
-            $log = {{q(plan.Log)}}
+            $log = {{PowerShellQuote(plan.Log)}}
             $null = New-Item -ItemType Directory -Force -Path (Split-Path -Parent $log)
             function Log([string]$message) { Add-Content -LiteralPath $log -Value $message -Encoding UTF8 }
-            $installed = {{q(installed)}}
-            $staged = {{q(plan.Staged)}}
-            $incoming = {{q(incoming)}}
-            $backup = {{q(backup)}}
+            $installed = {{PowerShellQuote(installed)}}
+            $staged = {{PowerShellQuote(plan.Staged)}}
+            $incoming = {{PowerShellQuote(incoming)}}
+            $backup = {{PowerShellQuote(backup)}}
             Log "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') Installing {{plan.Version.ToString(3)}} into $installed"
 
             foreach ($id in @({{string.Join(", ", plan.WaitFor)}})) {
@@ -110,7 +109,7 @@ public sealed partial class WindowsPlatform
             }
 
             if (Install-Update) { Log "Installed." } else { Log "The update failed; the old version stays." }
-            {{(plan.CleanUp is { } cleanUp ? $"Remove-Folder {q(cleanUp)}" : "")}}
+            {{(plan.CleanUp is { } cleanUp ? $"Remove-Folder {PowerShellQuote(cleanUp)}" : "")}}
             {{relaunch}}
 
             """.ReplaceLineEndings("\r\n"), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
