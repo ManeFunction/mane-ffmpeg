@@ -55,7 +55,10 @@ public sealed class Updater
     /// </summary>
     /// <param name="manual">The user asked: look even when automatic checks are off, and offer a release they skipped.</param>
     /// <param name="offerAfter">Work the window must wait for (the startup dialogs); the check itself runs meanwhile.</param>
-    /// <param name="owner">The window the update window opens over (a dialog the check started from); by default the last project window.</param>
+    /// <param name="owner">
+    /// The window the update window opens over (a dialog the check started from); the last project window when it's
+    /// not given, or when it closed while the check ran.
+    /// </param>
     public async Task CheckAndOfferAsync(bool manual = false, Task? offerAfter = null, Window? owner = null)
     {
         if (IsBusy)
@@ -112,7 +115,9 @@ public sealed class Updater
     /// <summary>Shows the update window for <paramref name="offer"/> and carries out what the user picks there.</summary>
     private async Task ShowOfferAsync(UpdateOffer offer, Window? owner)
     {
-        owner ??= WindowManager.Instance.Windows.LastOrDefault();
+        // A closed owner makes ShowDialog throw, and the offer would be lost.
+        if (owner is not { IsVisible: true })
+            owner = WindowManager.Instance.Windows.LastOrDefault();
         if (owner is null)
             return;
         var vm = new UpdateViewModel(offer, CurrentVersion, _http, _installed);
