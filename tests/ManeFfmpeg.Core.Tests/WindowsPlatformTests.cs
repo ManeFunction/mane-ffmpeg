@@ -202,6 +202,48 @@ public class WindowsPlatformTests
         }
     }
 
+    /// <summary>Cancelling a paused export kills the shim; its suspended child must not outlive it.</summary>
+    [WindowsFact]
+    public async Task Releasing_a_frozen_tree_ends_the_children_left_behind()
+    {
+        using var process = Process.Start(new ProcessStartInfo("cmd.exe", "/c ping -n 30 127.0.0.1 >nul") { CreateNoWindow = true })!;
+        try
+        {
+            IReadOnlyList<int> tree = [];
+            for (var i = 0; i < 50 && tree.Count < 2; i++)
+            {
+                await Task.Delay(100);
+                tree = WindowsPlatform.ProcessTree(process.Id);
+            }
+            Assert.True(tree.Count >= 2, "ping didn't start");
+            var frozen = Windows.Freeze(process.Id);
+            // Kill only the shim, the way a cancelled command may leave the real ffmpeg behind.
+            process.Kill(entireProcessTree: false);
+            process.WaitForExit();
+            frozen.Release();
+            foreach (var id in tree.Skip(1))
+                await Wait.Until(() => !IsRunning(id), $"pid {id} to end");
+        }
+        finally
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+    }
+
+    private static bool IsRunning(int pid)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            return !process.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
     private static bool IsSuspended(int pid)
     {
         using var process = Process.GetProcessById(pid);

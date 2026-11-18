@@ -192,7 +192,10 @@ public interface IFrozenProcess
     /// <summary>Lets the process run again.</summary>
     void Resume();
 
-    /// <summary>The process has ended: stops watching it, without touching it.</summary>
+    /// <summary>
+    /// The command has ended, possibly while frozen (cancelled while paused): stops watching it. Processes it started that
+    /// are still frozen are ended, since nothing would resume them.
+    /// </summary>
     void Release();
 }
 

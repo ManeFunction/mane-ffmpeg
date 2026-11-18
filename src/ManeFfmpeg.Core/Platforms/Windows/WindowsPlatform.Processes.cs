@@ -49,10 +49,10 @@ public sealed partial class WindowsPlatform
             AddToJob(id);
             Call(id, NtSuspendProcess, "suspend");
         }
-        return new SuspendedProcesses(tree);
+        return new SuspendedProcesses([.. tree.Select(id => (id, StartTime(id)))]);
     }
 
-    private sealed class SuspendedProcesses(IReadOnlyList<int> tree) : IFrozenProcess
+    private sealed class SuspendedProcesses(IReadOnlyList<(int Id, DateTime? Started)> tree) : IFrozenProcess
     {
         private bool _done;
 
@@ -61,12 +61,36 @@ public sealed partial class WindowsPlatform
             if (_done)
                 return;
             _done = true;
-            foreach (var id in tree)
+            foreach (var (id, _) in tree)
                 Call(id, NtResumeProcess, "resume");
         }
 
-        /// <summary>Nothing watches suspended processes here: the job object kills them with the app.</summary>
-        public void Release() => _done = true;
+        /// <summary>
+        /// The command ended while frozen (cancelled while paused). Killing a shim doesn't always take its child with it,
+        /// and a suspended real ffmpeg would hold the output until the job object kills it with the app, so end what's
+        /// left of the tree now. Only the same processes: Windows reuses ids.
+        /// </summary>
+        public void Release()
+        {
+            if (_done)
+                return;
+            _done = true;
+            foreach (var (id, started) in tree)
+            {
+                try
+                {
+                    using var process = Process.GetProcessById(id);
+                    if (started is null || process.StartTime != started)
+                        continue;
+                    process.Kill();
+                    process.WaitForExit(TimeSpan.FromSeconds(2));
+                }
+                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+                {
+                    // It has already exited.
+                }
+            }
+        }
     }
 
     private static void Call(int pid, Func<nint, int> call, string verb)
@@ -91,28 +115,30 @@ public sealed partial class WindowsPlatform
     internal static IReadOnlyList<int> ProcessTree(int root)
     {
         var parents = ParentIds();
-        DateTime? Started(int id)
-        {
-            try
-            {
-                using var process = Process.GetProcessById(id);
-                return process.StartTime;
-            }
-            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
-            {
-                return null;
-            }
-        }
-        var rootStarted = Started(root);
+        var rootStarted = StartTime(root);
         var tree = new List<int> { root };
         for (var i = 0; i < tree.Count; i++)
         {
             foreach (var (child, parent) in parents)
                 if (parent == tree[i] && child != root && !tree.Contains(child)
-                    && (rootStarted is null || Started(child) is not { } started || started >= rootStarted))
+                    && (rootStarted is null || StartTime(child) is not { } started || started >= rootStarted))
                     tree.Add(child);
         }
         return tree;
+    }
+
+    /// <summary>When <paramref name="id"/> started, or null when it has exited or can't be read.</summary>
+    private static DateTime? StartTime(int id)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(id);
+            return process.StartTime;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
     }
 
     /// <summary>Every running process with its parent, from a Toolhelp snapshot.</summary>
