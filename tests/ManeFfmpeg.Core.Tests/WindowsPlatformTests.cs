@@ -63,7 +63,7 @@ public class WindowsPlatformRuleTests
     }
 
     [Theory]
-    [InlineData(-1978335189, true)] // 0x8A15002B: found installed, no newer version
+    [InlineData(unchecked((int)0x8A15002B), true)] // found installed, no newer version
     [InlineData(unchecked((int)0x8A150061), true)]
     [InlineData(0, false)]
     [InlineData(1, false)]
