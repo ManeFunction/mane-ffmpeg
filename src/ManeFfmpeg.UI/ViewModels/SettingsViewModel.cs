@@ -82,6 +82,13 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public string ProjectFilesAction => ProjectFilesRegistered ? "Unregister" : "Register";
 
+    /// <summary>An update check or the update window is open (<see cref="Updater.IsBusy"/>), so Check Now can't be clicked.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UpdateCheckAction))]
+    public partial bool UpdateCheckBusy { get; set; }
+
+    public string UpdateCheckAction => UpdateCheckBusy ? "Checking…" : "Check Now";
+
     /// <summary>The startup offer, which its "Do not show anymore" checkbox turns off.</summary>
     [ObservableProperty]
     public partial bool AskToRegisterProjectFiles { get; set; }

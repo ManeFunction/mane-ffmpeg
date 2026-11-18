@@ -99,11 +99,12 @@
                         <ColumnDefinition Width="Auto" SharedSizeGroup="Action" />
                     </Grid.ColumnDefinitions>
                     <CheckBox Content="Check for updates at startup" IsChecked="{Binding CheckForUpdates}" />
-                    <Button Grid.Column="1" x:Name="CheckNowButton" Classes="action" Click="OnCheckNowClicked"
+                    <Button Grid.Column="1" Classes="action" Click="OnCheckNowClicked" IsEnabled="{Binding !UpdateCheckBusy}"
+                            AutomationProperties.Name="{Binding UpdateCheckAction}"
                             MinWidth="90" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center">
                         <Panel>
-                            <TextBlock x:Name="CheckNowLabel" Text="Check Now" />
-                            <TextBlock x:Name="CheckingLabel" Text="Checking…" Classes="ghost" />
+                            <TextBlock Text="Check Now" Classes.ghost="{Binding UpdateCheckBusy}" />
+                            <TextBlock Text="Checking…" Classes.ghost="{Binding !UpdateCheckBusy}" />
                         </Panel>
                     </Button>
                 </Grid>
