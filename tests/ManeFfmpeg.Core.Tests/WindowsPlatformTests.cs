@@ -176,15 +176,32 @@ public class WindowsPlatformTests
         File.WriteAllText(path, text);
     }
 
-    private async Task<string> RunUpdateAsync(string? staged = null, IReadOnlyList<int>? waitFor = null)
+    /// <summary>
+    /// Runs the update script the way the app starts it. <paramref name="workingDirectory"/> overrides the folder it
+    /// starts in (System32).
+    /// </summary>
+    private async Task<string> RunUpdateAsync(string? staged = null, IReadOnlyList<int>? waitFor = null, string? workingDirectory = null)
     {
         var plan = new UpdatePlan(Installed, staged ?? Staged, new Version(1, 2, 3), waitFor ?? [], Relaunch: false, Reopen: [], Log,
             CleanUp: Path.Combine(_dir, "work"));
         var script = Windows.WriteUpdateScript(Path.Combine(_dir, "script"), plan);
-        var powershell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
-        await Cli.Wrap(powershell).WithArguments(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script])
+        var start = WindowsPlatform.UpdateScriptStart(script);
+        await Cli.Wrap(start.FileName).WithArguments(start.ArgumentList).WithWorkingDirectory(workingDirectory ?? start.WorkingDirectory)
             .WithValidation(CommandResultValidation.None).ExecuteBufferedAsync();
         return File.ReadAllText(Log);
+    }
+
+    private string[] AppsEntries() => [.. Directory.GetFileSystemEntries(Path.Combine(_dir, "apps")).Select(Path.GetFileName).OfType<string>()];
+
+    private void WriteBothVersions()
+    {
+        WriteFile(Path.Combine(Installed, "ManeFfmpeg.exe"), "old");
+        WriteFile(Path.Combine(Installed, WindowsPlatform.PackageMarker), "");
+        WriteFile(Path.Combine(Installed, "removed.dll"), "old");
+        WriteFile(Path.Combine(Installed, "lib", "old.dll"), "old");
+        WriteFile(Path.Combine(Installed, "zz-locked.dll"), "old");
+        WriteFile(Path.Combine(Staged, "ManeFfmpeg.exe"), "new");
+        WriteFile(Path.Combine(Staged, WindowsPlatform.PackageMarker), "");
     }
 
     [WindowsFact]
@@ -201,6 +218,51 @@ public class WindowsPlatformTests
         Assert.False(File.Exists(Path.Combine(Installed, "removed.dll")));
         Assert.Equal(["Mane FFmpeg"], Directory.GetFileSystemEntries(Path.Combine(_dir, "apps")).Select(Path.GetFileName));
         Assert.False(Directory.Exists(Path.Combine(_dir, "work")));
+    }
+
+    /// <summary>
+    /// Started from Explorer, the app's current folder is its own folder, and a child process that inherits it keeps
+    /// Windows from renaming that folder: the update never went in (2026-11-18 tester report).
+    /// </summary>
+    [WindowsFact]
+    public void The_update_script_starts_outside_the_app_folder() =>
+        Assert.Equal(Environment.SystemDirectory, WindowsPlatform.UpdateScriptStart(@"C:\x\apply-update.ps1").WorkingDirectory);
+
+    /// <summary>The tester's case: the script runs with the app folder as its current one, so the folder can't be renamed.</summary>
+    [WindowsFact]
+    public async Task The_update_script_replaces_what_is_inside_a_folder_it_cannot_rename()
+    {
+        WriteBothVersions();
+
+        var log = await RunUpdateAsync(workingDirectory: Installed);
+
+        Assert.Contains("replacing what's inside it instead", log);
+        Assert.Contains("Installed.", log);
+        Assert.Equal("new", File.ReadAllText(Path.Combine(Installed, "ManeFfmpeg.exe")));
+        Assert.True(File.Exists(Path.Combine(Installed, WindowsPlatform.PackageMarker)));
+        Assert.False(File.Exists(Path.Combine(Installed, "removed.dll")));
+        Assert.False(Directory.Exists(Path.Combine(Installed, "lib")));
+        Assert.Equal(["Mane FFmpeg"], AppsEntries());
+        Assert.False(Directory.Exists(Path.Combine(_dir, "work")));
+    }
+
+    [WindowsFact]
+    public async Task The_update_script_puts_the_old_files_back_when_one_stays_locked()
+    {
+        WriteBothVersions();
+        string log;
+        // Get-ChildItem lists folders first, so lib and the other files have been moved aside before this one fails.
+        using (File.Open(Path.Combine(Installed, "zz-locked.dll"), FileMode.Open, FileAccess.Read, FileShare.None))
+            log = await RunUpdateAsync(workingDirectory: Installed);
+
+        Assert.Contains("The update failed", log);
+        Assert.Contains("zz-locked.dll", log);
+        Assert.Equal("old", File.ReadAllText(Path.Combine(Installed, "ManeFfmpeg.exe")));
+        Assert.Equal("old", File.ReadAllText(Path.Combine(Installed, "removed.dll")));
+        Assert.Equal("old", File.ReadAllText(Path.Combine(Installed, "lib", "old.dll")));
+        Assert.Equal("old", File.ReadAllText(Path.Combine(Installed, "zz-locked.dll")));
+        Assert.True(File.Exists(Path.Combine(Installed, WindowsPlatform.PackageMarker)));
+        Assert.Equal(["Mane FFmpeg"], AppsEntries());
     }
 
     [WindowsFact]

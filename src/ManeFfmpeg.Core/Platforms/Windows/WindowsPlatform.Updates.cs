@@ -6,8 +6,9 @@ using System.Text;
 namespace ManeFfmpeg.Core.Platforms.Windows;
 
 /// <summary>
-/// Updates: the release is a zip holding the "Mane FFmpeg" folder, and an update replaces the folder the app runs from.
-/// The swap runs in Windows PowerShell after the app has quit, since Windows won't replace files that are in use.
+/// Updates: the release is a zip holding the "Mane FFmpeg" folder, and an update replaces the folder the app runs from,
+/// wherever that is (Desktop, Downloads, …). The swap runs in Windows PowerShell after the app has quit, since Windows
+/// won't replace files that are in use. It renames the whole folder when it can, and otherwise moves what's inside it.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed partial class WindowsPlatform
@@ -47,8 +48,8 @@ public sealed partial class WindowsPlatform
         var reopen = string.Join(' ', plan.Reopen.Select(path => $"\"{path}\""));
         var relaunch = !plan.Relaunch ? ""
             : reopen.Length > 0
-                ? $"Start-Process -FilePath (Join-Path $installed 'ManeFfmpeg.exe') -ArgumentList {PowerShellQuote(reopen)}"
-                : "Start-Process -FilePath (Join-Path $installed 'ManeFfmpeg.exe')";
+                ? $"Start-Process -FilePath (Join-Path $installed 'ManeFfmpeg.exe') -WorkingDirectory $installed -ArgumentList {PowerShellQuote(reopen)}"
+                : "Start-Process -FilePath (Join-Path $installed 'ManeFfmpeg.exe') -WorkingDirectory $installed";
 
         var script = Path.Combine(directory, "apply-update.ps1");
         // Windows PowerShell reads a script without a byte order mark in the ANSI code page, which breaks non-ASCII paths.
@@ -72,44 +73,86 @@ public sealed partial class WindowsPlatform
               }
             }
 
-            function Remove-Folder([string]$path) {
+            function Remove-Entry([string]$path) {
               if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue }
             }
 
             # Antivirus scanners and the indexer hold files open for a moment after the app quits.
-            function Move-Folder([string]$from, [string]$to) {
-              for ($try = 0; $try -lt 40; $try++) {
+            function Move-Entry([string]$from, [string]$to, [int]$tries = 40) {
+              for ($try = 1; $try -le $tries; $try++) {
                 try { Move-Item -LiteralPath $from -Destination $to -ErrorAction Stop; return $true }
-                catch { Start-Sleep -Milliseconds 250 }
+                catch { $failure = $_; if ($try -lt $tries) { Start-Sleep -Milliseconds 250 } }
               }
+              Log "Couldn't move $from to ${to}: $failure"
               return $false
             }
 
-            function Install-Update {
-              Remove-Folder $incoming
-              Remove-Folder $backup
-              try { Copy-Item -LiteralPath $staged -Destination $incoming -Recurse -ErrorAction Stop }
+            # Takes out the new entries Swap-Contents placed, then moves the old ones back.
+            function Restore-Contents([string[]]$placed) {
+              foreach ($name in $placed) { Remove-Entry (Join-Path $installed $name) }
+              foreach ($item in @(Get-ChildItem -LiteralPath $backup -Force)) {
+                $null = Move-Entry $item.FullName (Join-Path $installed $item.Name)
+              }
+              if (@(Get-ChildItem -LiteralPath $backup -Force).Count -eq 0) { Remove-Entry $backup }
+              else { Log "Part of the old version is still in $backup." }
+            }
+
+            # A folder some process has as its current folder (a Command Prompt opened there, say) or that a sync client
+            # such as OneDrive holds can't be renamed, but what's inside it can be moved: the old entries go to the backup
+            # folder and the new ones take their place.
+            function Swap-Contents {
+              Remove-Entry $backup
+              try { $null = New-Item -ItemType Directory -Path $backup -ErrorAction Stop }
               catch {
-                Log "Couldn't copy the new version next to the old one: $_"
-                Remove-Folder $incoming
+                Log "Couldn't create ${backup}: $_"
                 return $false
               }
-              if (-not (Move-Folder $installed $backup)) {
-                Log "Couldn't move the old version aside."
-                Remove-Folder $incoming
-                return $false
+              foreach ($item in @(Get-ChildItem -LiteralPath $installed -Force)) {
+                if (-not (Move-Entry $item.FullName (Join-Path $backup $item.Name))) {
+                  Restore-Contents @()
+                  return $false
+                }
               }
-              if (-not (Move-Folder $incoming $installed)) {
-                Log "Couldn't put the new version in place; restoring the old one."
-                $null = Move-Folder $backup $installed
-                return $false
+              $placed = @()
+              foreach ($item in @(Get-ChildItem -LiteralPath $incoming -Force)) {
+                if (-not (Move-Entry $item.FullName (Join-Path $installed $item.Name))) {
+                  Restore-Contents $placed
+                  return $false
+                }
+                $placed += $item.Name
               }
-              Remove-Folder $backup
+              Remove-Entry $incoming
+              Remove-Entry $backup
               return $true
             }
 
+            function Install-Update {
+              Remove-Entry $incoming
+              Remove-Entry $backup
+              try { Copy-Item -LiteralPath $staged -Destination $incoming -Recurse -ErrorAction Stop }
+              catch {
+                Log "Couldn't copy the new version next to the old one: $_"
+                Remove-Entry $incoming
+                return $false
+              }
+              # Renaming swaps the whole folder at once. Only a few tries: what blocks a folder rename usually stays.
+              if (Move-Entry $installed $backup 8) {
+                if (Move-Entry $incoming $installed) {
+                  Remove-Entry $backup
+                  return $true
+                }
+                Log "Couldn't put the new version in place; restoring the old one."
+                if (Move-Entry $backup $installed) { Remove-Entry $incoming }
+                return $false
+              }
+              Log "Couldn't move the old folder aside; replacing what's inside it instead."
+              if (Swap-Contents) { return $true }
+              Remove-Entry $incoming
+              return $false
+            }
+
             if (Install-Update) { Log "Installed." } else { Log "The update failed; the old version stays." }
-            {{(plan.CleanUp is { } cleanUp ? $"Remove-Folder {PowerShellQuote(cleanUp)}" : "")}}
+            {{(plan.CleanUp is { } cleanUp ? $"Remove-Entry {PowerShellQuote(cleanUp)}" : "")}}
             {{relaunch}}
 
             """.ReplaceLineEndings("\r\n"), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
@@ -118,9 +161,24 @@ public sealed partial class WindowsPlatform
 
     public void StartUpdateScript(string script)
     {
-        var start = new ProcessStartInfo(WindowsPowerShell) { UseShellExecute = false, CreateNoWindow = true };
+        using var _ = Process.Start(UpdateScriptStart(script)) ?? throw new IOException("Couldn't start the update script.");
+    }
+
+    /// <summary>
+    /// How the update script starts. Not in this process's current folder: started from Explorer, that is the app's own
+    /// folder, and Windows won't rename a folder that a running process has as its current one, so the script would
+    /// block the very swap it makes.
+    /// </summary>
+    internal static ProcessStartInfo UpdateScriptStart(string script)
+    {
+        var start = new ProcessStartInfo(WindowsPowerShell)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = Environment.SystemDirectory,
+        };
         foreach (var argument in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", script })
             start.ArgumentList.Add(argument);
-        using var _ = Process.Start(start) ?? throw new IOException("Couldn't start the update script.");
+        return start;
     }
 }

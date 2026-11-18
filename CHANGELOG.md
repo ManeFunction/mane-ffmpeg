@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-11-18
+> [!IMPORTANT]
+> ⚠️ **If you are on Windows, please update to this version manually!**
+> Previous releases have broken built-in updater.
+
+### Fixed
+- Windows: a downloaded update now installs wherever the app was unpacked (the Desktop, Downloads, any folder).
+  Started from Explorer, the app passed its own folder to the update as the current folder, and Windows won't rename
+  a folder that is in use that way. So the old version stayed, and the same update was offered again after the
+  restart. The update now starts outside the app's folder. When something else still holds the folder (a Command
+  Prompt opened there, OneDrive), it replaces the files inside the folder instead, and puts the old ones back if a
+  file stays locked. update.log now says which file couldn't be moved, and why.
+
 ## [2.2.1] - 2026-11-18
 ### Added
 - Settings has a "Check Now" button next to "Check for updates at startup". It runs the same check as the menu's
