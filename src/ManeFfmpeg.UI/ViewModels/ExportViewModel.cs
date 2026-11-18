@@ -7,9 +7,8 @@ using ManeFfmpeg.UI.Services;
 using ManeFfmpeg.Core.Ffmpeg;
 using ManeFfmpeg.Core.Media;
 using ManeFfmpeg.Core.Model;
-using ManeFfmpeg.Core.Notifications;
 using ManeFfmpeg.Core.Persistence;
-using ManeFfmpeg.Core.Power;
+using ManeFfmpeg.Core.Platforms;
 
 namespace ManeFfmpeg.UI.ViewModels;
 
@@ -22,7 +21,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
     private readonly DispatcherTimer _planTimer;
     private CancellationTokenSource? _exportCts;
     private ExportRunner? _runner;
-    private SleepInhibitor? _keepAwake;
+    private IDisposable? _keepAwake;
     private string? _keepAwakeReason;
     private string? _lastOutputPath;
 
@@ -301,7 +300,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         var runner = _runner = new ExportRunner(tools);
         var workDir = Path.Combine(AppPaths.TempDirectory, "export-" + Guid.NewGuid().ToString("N")[..8]);
         _keepAwakeReason = $"Exporting {Path.GetFileName(output)}";
-        _keepAwake = SleepInhibitor.Acquire(_keepAwakeReason);
+        _keepAwake = Platform.Current.KeepAwake(_keepAwakeReason);
         try
         {
             var plan = await PlanAsync(output, workDir, ShowPreparing);
@@ -391,7 +390,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
     private async Task NotifyAsync(string title, string body)
     {
         if (_app.Settings.Current.Notifications)
-            await SystemNotifier.NotifyAsync(title, body);
+            await Platform.Current.NotifyAsync(title, body);
     }
 
     private static string FormatElapsed(TimeSpan t) =>
@@ -412,7 +411,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
     private void ResumeExport()
     {
         if (_keepAwakeReason is not null)
-            _keepAwake ??= SleepInhibitor.Acquire(_keepAwakeReason);
+            _keepAwake ??= Platform.Current.KeepAwake(_keepAwakeReason);
         IsExportPaused = false;
         _runner?.Resume();
         ShowProgressText();

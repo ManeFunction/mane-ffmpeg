@@ -3,7 +3,6 @@ using CommunityToolkit.Mvvm.Input;
 using ManeFfmpeg.UI.Services;
 using ManeFfmpeg.Core.Desktop;
 using ManeFfmpeg.Core.Mpv;
-using ManeFfmpeg.Core.Notifications;
 using ManeFfmpeg.Core.Persistence;
 using ManeFfmpeg.Core.Platforms;
 
@@ -158,7 +157,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private Task TestNotification() => SystemNotifier.NotifyAsync("Mane FFmpeg", "Notifications work. You'll see one when an export finishes.");
+    private Task TestNotification() => Platform.Current.NotifyAsync("Mane FFmpeg", "Notifications work. You'll see one when an export finishes.");
 
     private static string? NullIfEmpty(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
