@@ -91,8 +91,9 @@ public sealed partial class WindowsPlatform : IPlatform
     public IReadOnlyList<string> LibMpvLoaderNames => [BundledLibMpv, "mpv-2.dll", "mpv-1.dll"];
 
     public string LibMpvInstallHint =>
-        $"{BundledLibMpv} comes with the app, next to ManeFfmpeg.exe. If it's missing, download the mpv-dev build from " +
-        "https://github.com/shinchiro/mpv-winbuild-cmake/releases and put its DLL there, or set the libmpv path in Settings.";
+        $"{BundledLibMpv} comes with the app, next to ManeFfmpeg.exe. If it's missing, download an mpv-dev-lgpl build (the " +
+        "one the app bundles) from https://github.com/zhongfly/mpv-winbuild/releases and put its DLL there, or set the " +
+        "libmpv path in Settings.";
 
     public string LibMpvSearchDescription => $"automatic ({BundledLibMpv} next to the app, PATH)";
 
