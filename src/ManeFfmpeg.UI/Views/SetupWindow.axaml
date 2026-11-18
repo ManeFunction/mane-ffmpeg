@@ -48,7 +48,8 @@
                              FontFamily="Menlo, Consolas, DejaVu Sans Mono, monospace" />
 
         <TextBox x:Name="LogBox" Text="{Binding Log, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" Height="180"
-                 TextWrapping="NoWrap" FontFamily="Menlo, Consolas, DejaVu Sans Mono, monospace" FontSize="11"
+                 TextWrapping="Wrap" FontFamily="Menlo, Consolas, DejaVu Sans Mono, monospace" FontSize="11"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  IsVisible="{Binding Log, Converter={x:Static ObjectConverters.IsNotNull}}" />
 
         <SelectableTextBlock Classes="status" Classes.error="{Binding StatusIsError}" Classes.ok="{Binding IsInstalled}"

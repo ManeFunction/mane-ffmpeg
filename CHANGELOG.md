@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Fixed
+- In the "Install Missing Components" window, the installer's output wraps long lines instead of needing a
+  horizontal scroll to read them.
 
 ## [2.2.0] - 2026-11-18
 ### Added
