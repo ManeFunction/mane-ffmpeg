@@ -25,6 +25,12 @@ public sealed partial class WindowsPlatform : IPlatform
     public string FileManagerName => "Explorer";
     public StringComparison PathComparison => StringComparison.OrdinalIgnoreCase;
 
+    // Windows blocks drag and drop from a process with fewer rights (UIPI), so Explorer can't drop on an elevated app.
+    // IsPrivilegedProcess is true only for an elevated token, not for an admin account started normally.
+    public string? FileDropBlockedReason => Environment.IsPrivilegedProcess
+        ? "Running as administrator: Windows blocks dropping files from Explorer. Use “Add videos…” or start the app normally."
+        : null;
+
     // Folders
 
     public string ConfigDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppPaths.AppName);

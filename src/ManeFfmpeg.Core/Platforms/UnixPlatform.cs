@@ -32,6 +32,7 @@ public abstract partial class UnixPlatform : IPlatform
     public abstract bool OpensFilesThroughEvents { get; }
     public abstract string FileManagerName { get; }
     public abstract StringComparison PathComparison { get; }
+    public string? FileDropBlockedReason => null;
     public abstract string ConfigDirectory { get; }
     public abstract string CacheDirectory { get; }
     public abstract string LogDirectory { get; }

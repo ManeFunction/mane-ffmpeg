@@ -8,6 +8,7 @@ using ManeFfmpeg.Core.Editing;
 using ManeFfmpeg.Core.Media;
 using ManeFfmpeg.Core.Model;
 using ManeFfmpeg.Core.Persistence;
+using ManeFfmpeg.Core.Platforms;
 
 namespace ManeFfmpeg.UI.ViewModels;
 
@@ -125,6 +126,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable, IA
     public bool HasNoAudioFiles => AudioFiles.Count == 0;
 
     public string? ToolsError => _app.ToolsError;
+
+    /// <summary>Shown under the Files panel while files can't be dropped from the file manager (an elevated app on Windows).</summary>
+    public string? FileDropBlockedReason { get; } = Platform.Current.FileDropBlockedReason;
 
     public void Commit(ProjectState next) => History.Commit(next);
 

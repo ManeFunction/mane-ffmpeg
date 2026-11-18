@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Settings has a "Check Now" button next to "Check for updates at startup". It runs the same check as the menu's
   "Check for Updates…", and the update window opens over Settings.
+- Windows: when the app runs as administrator, the Files panel warns that files can't be dropped from Explorer
+  (Windows blocks that), and suggests "Add videos…" or starting the app normally.
 
 ### Fixed
 - In Settings, the Register/Unregister button keeps its width when its label changes, so the buttons beside it no

@@ -188,6 +188,7 @@ Files on disk:
   - `dotnet run` relaunches itself once with the variable set.
 - **Stream-copy cuts.** They can only start on keyframes, and boundaries may show a frame of artifacts with open-GOP sources. That's inherent to cutting without re-encoding.
 - **Sleeping display.** The app won't start while the display is asleep, because Avalonia's macOS backend needs an active display.
+- **Windows, run as administrator.** Windows doesn't let Explorer drop files on an app that runs as administrator, so dragging videos or audio onto the window does nothing. *Add videos…* and *Add audio…* still work, and the Files panel shows a warning. Start the app normally to drop files; it doesn't need admin rights.
 - **Development automation.** Debug builds can be driven by a script (`MANE_FFMPEG_SCRIPT=file`) for end-to-end checks. See `src/ManeFfmpeg.UI/Services/DebugAutomation.cs`.
 
 ## Repository info

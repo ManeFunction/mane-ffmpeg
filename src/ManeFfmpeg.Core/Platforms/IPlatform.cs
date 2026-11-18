@@ -51,6 +51,12 @@ public interface IPlatform
     /// <summary>How file paths compare on the usual file systems here.</summary>
     StringComparison PathComparison { get; }
 
+    /// <summary>
+    /// Why files dragged from the file manager can't be dropped on the app's windows, or null when they can. On Windows an
+    /// app run as administrator doesn't get drops from Explorer, which runs as the normal user.
+    /// </summary>
+    string? FileDropBlockedReason { get; }
+
     // Folders
 
     string ConfigDirectory { get; }

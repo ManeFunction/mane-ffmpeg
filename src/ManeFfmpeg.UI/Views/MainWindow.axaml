@@ -105,6 +105,9 @@
                             <TextBlock DockPanel.Dock="Bottom" Text="{Binding ToolsError}" Foreground="{StaticResource ErrorBrush}"
                                        TextWrapping="Wrap" FontSize="12" Margin="2,6,0,0"
                                        IsVisible="{Binding ToolsError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                            <TextBlock DockPanel.Dock="Bottom" Text="{Binding FileDropBlockedReason}" Foreground="{StaticResource AccentWarnBrush}"
+                                       TextWrapping="Wrap" FontSize="12" Margin="2,6,0,0"
+                                       IsVisible="{Binding FileDropBlockedReason, Converter={x:Static ObjectConverters.IsNotNull}}" />
                             <TabControl x:Name="FilesTabs" Classes="files" SelectedIndex="{Binding FilesTabIndex}" Padding="0">
                                 <TabItem Header="Video">
                                     <Panel>

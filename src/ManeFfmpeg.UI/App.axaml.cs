@@ -64,6 +64,8 @@ public partial class App : Application
         {
             await AppServices.Instance.LocateToolsAsync();
             AppLog.Write(AppServices.Instance.Tools is { } tools ? $"ffmpeg: {tools.VersionText} ({tools.Ffmpeg})" : $"ffmpeg: {AppServices.Instance.ToolsError}");
+            if (Platform.Current.FileDropBlockedReason is { } dropBlocked)
+                AppLog.Write(dropBlocked);
             // Before opening files, so they can be read with what gets installed.
             if (SetupViewModel.ShouldAskAtStartup)
                 await new SetupWindow().ShowDialog(first);
