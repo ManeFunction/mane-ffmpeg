@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using CliWrap;
 
 namespace ManeFfmpeg.Core.Platforms.Windows;
@@ -9,7 +10,7 @@ namespace ManeFfmpeg.Core.Platforms.Windows;
 /// </summary>
 /// <param name="findWinget">Finds winget; tests replace it and the next one.</param>
 /// <param name="openStore">Opens the Store page.</param>
-public sealed class WingetInstaller(Func<string?>? findWinget = null, Action<string>? openStore = null) : IToolInstaller
+public sealed partial class WingetInstaller(Func<string?>? findWinget = null, Action<string>? openStore = null) : IToolInstaller
 {
     public const string AppInstallerPage = "ms-windows-store://pdp/?ProductId=9NBLGGH4NBL5";
 
@@ -30,7 +31,8 @@ public sealed class WingetInstaller(Func<string?>? findWinget = null, Action<str
 
     /// <summary>
     /// The bin folders of <see cref="FfmpegPackage"/> under a winget Packages folder, newest version first: winget unpacks
-    /// it to Packages\Gyan.FFmpeg_&lt;source&gt;\ffmpeg-&lt;version&gt;-full_build\bin.
+    /// it to Packages\Gyan.FFmpeg_&lt;source&gt;\ffmpeg-&lt;version&gt;-full_build\bin. Versions compare as numbers, so 10.0
+    /// comes before 9.0; folders without a version come last.
     /// </summary>
     internal static IEnumerable<string> FfmpegBinDirectories(string packagesRoot)
     {
@@ -42,7 +44,8 @@ public sealed class WingetInstaller(Func<string?>? findWinget = null, Action<str
                 .SelectMany(package => Directory.EnumerateDirectories(package))
                 .Select(version => Path.Combine(version, "bin"))
                 .Where(Directory.Exists)
-                .OrderByDescending(bin => bin, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(bin => FolderVersion(Path.GetFileName(Path.GetDirectoryName(bin)) ?? ""))
+                .ThenByDescending(bin => bin, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -50,6 +53,16 @@ public sealed class WingetInstaller(Func<string?>? findWinget = null, Action<str
             return [];
         }
     }
+
+    /// <summary>The version in a folder name like ffmpeg-7.1.1-full_build, or null.</summary>
+    private static Version? FolderVersion(string folder) =>
+        FolderVersionPattern().Match(folder) is { Success: true } match
+        && Version.TryParse(match.Groups[1].Value.Contains('.') ? match.Groups[1].Value : match.Groups[1].Value + ".0", out var version)
+            ? version
+            : null;
+
+    [GeneratedRegex(@"^ffmpeg-(\d+(?:\.\d+){0,3})(?![\d.])", RegexOptions.IgnoreCase)]
+    private static partial Regex FolderVersionPattern();
 
     private readonly Func<string?> _findWinget = findWinget ?? (() => Executables.Find("winget"));
     private readonly Action<string> _openStore = openStore ?? (uri => Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true })?.Dispose());

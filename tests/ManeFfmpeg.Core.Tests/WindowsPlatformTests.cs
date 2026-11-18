@@ -80,10 +80,17 @@ public class WindowsPlatformRuleTests
             var package = Path.Combine(root, "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe");
             Directory.CreateDirectory(Path.Combine(package, "ffmpeg-7.1-full_build", "bin"));
             Directory.CreateDirectory(Path.Combine(package, "ffmpeg-8.0-full_build", "bin"));
+            Directory.CreateDirectory(Path.Combine(package, "ffmpeg-10.0-full_build", "bin"));
+            Directory.CreateDirectory(Path.Combine(package, "unversioned", "bin"));
             Directory.CreateDirectory(Path.Combine(package, "no-bin-here"));
             Directory.CreateDirectory(Path.Combine(root, "Other.Package_x", "y", "bin"));
             Assert.Equal(
-                [Path.Combine(package, "ffmpeg-8.0-full_build", "bin"), Path.Combine(package, "ffmpeg-7.1-full_build", "bin")],
+                [
+                    Path.Combine(package, "ffmpeg-10.0-full_build", "bin"),
+                    Path.Combine(package, "ffmpeg-8.0-full_build", "bin"),
+                    Path.Combine(package, "ffmpeg-7.1-full_build", "bin"),
+                    Path.Combine(package, "unversioned", "bin"),
+                ],
                 WingetInstaller.FfmpegBinDirectories(root));
             Assert.Empty(WingetInstaller.FfmpegBinDirectories(Path.Combine(root, "missing")));
         }
