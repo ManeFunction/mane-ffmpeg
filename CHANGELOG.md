@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [2.2.1] - 2026-11-18
 ### Added
 - Settings has a "Check Now" button next to "Check for updates at startup". It runs the same check as the menu's
   "Check for Updates…", and the update window opens over Settings.
