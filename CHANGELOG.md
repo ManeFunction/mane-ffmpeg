@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - In the "Install Missing Components" window, the installer's output wraps long lines instead of needing a
   horizontal scroll to read them.
+- Windows: installing ffmpeg no longer fails with "exit code -1978335189" when winget already has it. winget
+  reports that as "no newer version"; the app now treats it as installed. The app also finds a winget ffmpeg that was
+  added to PATH after the app started, or that was unpacked without its shortcut in WinGet\Links (which happens without
+  admin rights or Developer Mode), so it no longer has to be restarted as administrator.
 
 ## [2.2.0] - 2026-11-18
 ### Added

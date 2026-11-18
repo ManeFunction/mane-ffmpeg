@@ -35,16 +35,19 @@ public sealed partial class WindowsPlatform : IPlatform
 
     /// <summary>
     /// PATH, then where the package managers put their commands. A winget install made while the app runs changes PATH
-    /// only for processes started later, so its Links folder is searched explicitly.
+    /// only for processes started later, so the user's and the system's PATH are also read from the registry, and
+    /// winget's Links folders are searched explicitly. Without Developer Mode or admin rights winget can't make the
+    /// symlink in Links for a portable package (Gyan.FFmpeg is one) and adds the package's folder to PATH instead, so
+    /// that folder is searched too.
     /// </summary>
     public IEnumerable<string> ToolSearchDirectories()
     {
         var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
         var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var path = Environment.GetEnvironmentVariable("PATH") ?? "";
-        var dirs = path.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(dir => dir.Trim('"'))
+        var dirs = SplitPath(Environment.GetEnvironmentVariable("PATH"))
+            .Concat(SplitPath(StoredPath(EnvironmentVariableTarget.User)))
+            .Concat(SplitPath(StoredPath(EnvironmentVariableTarget.Machine)))
             .Concat([
                 Path.Combine(LocalAppData, "Microsoft", "WinGet", "Links"),
                 Path.Combine(programFiles, "WinGet", "Links"),
@@ -54,10 +57,52 @@ public sealed partial class WindowsPlatform : IPlatform
                 Path.Combine(programFiles, "ffmpeg", "bin"),
                 Path.Combine(Path.GetPathRoot(programFiles) ?? @"C:\", "ffmpeg", "bin"),
                 AppContext.BaseDirectory,
-            ]);
+            ])
+            .Concat(WingetPackageBinDirectories(Path.Combine(LocalAppData, "Microsoft", "WinGet", "Packages"), "Gyan.FFmpeg"))
+            .Concat(WingetPackageBinDirectories(Path.Combine(programFiles, "WinGet", "Packages"), "Gyan.FFmpeg"));
         foreach (var dir in dirs)
             if (dir.Length > 0 && seen.Add(dir))
                 yield return dir;
+    }
+
+    internal static IEnumerable<string> SplitPath(string? path) =>
+        (path ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(dir => Environment.ExpandEnvironmentVariables(dir.Trim('"')));
+
+    /// <summary>PATH as stored in the registry for the user or the system, which may be newer than this process's.</summary>
+    private static string? StoredPath(EnvironmentVariableTarget target)
+    {
+        try
+        {
+            return Environment.GetEnvironmentVariable("Path", target);
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException or IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The bin folders of a portable winget package under <paramref name="packagesRoot"/>, newest version first:
+    /// winget unpacks Gyan.FFmpeg to Packages\Gyan.FFmpeg_&lt;source&gt;\ffmpeg-&lt;version&gt;-full_build\bin.
+    /// </summary>
+    internal static IEnumerable<string> WingetPackageBinDirectories(string packagesRoot, string packageId)
+    {
+        try
+        {
+            if (!Directory.Exists(packagesRoot))
+                return [];
+            return Directory.EnumerateDirectories(packagesRoot, packageId + "_*")
+                .SelectMany(package => Directory.EnumerateDirectories(package))
+                .Select(version => Path.Combine(version, "bin"))
+                .Where(Directory.Exists)
+                .OrderByDescending(bin => bin, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
     }
 
     public string ExecutableFileName(string tool) => tool.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? tool : tool + ".exe";

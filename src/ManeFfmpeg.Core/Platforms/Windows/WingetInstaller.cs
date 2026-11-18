@@ -18,6 +18,13 @@ public sealed class WingetInstaller(Func<string?>? findWinget = null, Action<str
     /// <summary>How long a stopped install gets to clean up after Ctrl-C before it's killed.</summary>
     private static readonly TimeSpan StopGrace = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// winget's codes for a package that's already installed: <c>UPDATE_NOT_APPLICABLE</c> (0x8A15002B, what
+    /// <c>winget install</c> returns when it finds the package and no newer version) and <c>PACKAGE_ALREADY_INSTALLED</c>
+    /// (0x8A150061). The install then counts as done and the app looks for the tool.
+    /// </summary>
+    internal static bool MeansAlreadyInstalled(int code) => code is unchecked((int)0x8A15002B) or unchecked((int)0x8A150061);
+
     private readonly Func<string?> _findWinget = findWinget ?? (() => Executables.Find("winget"));
     private readonly Action<string> _openStore = openStore ?? (uri => Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true })?.Dispose());
 
@@ -79,7 +86,9 @@ public sealed class WingetInstaller(Func<string?>? findWinget = null, Action<str
                 .WithStandardErrorPipe(pipe)
                 .WithValidation(CommandResultValidation.None)
                 .ExecuteAsync(forceful.Token, ct);
-            if (result.ExitCode != 0)
+            if (MeansAlreadyInstalled(result.ExitCode))
+                output($"{package} is already installed.");
+            else if (result.ExitCode != 0)
                 return result.ExitCode;
         }
         return 0;

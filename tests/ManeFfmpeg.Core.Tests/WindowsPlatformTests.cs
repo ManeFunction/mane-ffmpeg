@@ -62,6 +62,37 @@ public class WindowsPlatformRuleTests
         Assert.Equal("winget install -e --id Gyan.FFmpeg", winget.InstallCommand(["Gyan.FFmpeg"]));
     }
 
+    [Theory]
+    [InlineData(-1978335189, true)] // 0x8A15002B: found installed, no newer version
+    [InlineData(unchecked((int)0x8A150061), true)]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    [InlineData(unchecked((int)0x8A150014), false)]
+    public void Winget_reporting_the_package_as_installed_counts_as_installed(int code, bool installed) =>
+        Assert.Equal(installed, WingetInstaller.MeansAlreadyInstalled(code));
+
+    [Fact]
+    public void Portable_winget_packages_are_searched_newest_first()
+    {
+        var root = Directory.CreateTempSubdirectory("mane-ffmpeg-winget").FullName;
+        try
+        {
+            var package = Path.Combine(root, "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe");
+            Directory.CreateDirectory(Path.Combine(package, "ffmpeg-7.1-full_build", "bin"));
+            Directory.CreateDirectory(Path.Combine(package, "ffmpeg-8.0-full_build", "bin"));
+            Directory.CreateDirectory(Path.Combine(package, "no-bin-here"));
+            Directory.CreateDirectory(Path.Combine(root, "Other.Package_x", "y", "bin"));
+            Assert.Equal(
+                [Path.Combine(package, "ffmpeg-8.0-full_build", "bin"), Path.Combine(package, "ffmpeg-7.1-full_build", "bin")],
+                WindowsPlatform.WingetPackageBinDirectories(root, "Gyan.FFmpeg"));
+            Assert.Empty(WindowsPlatform.WingetPackageBinDirectories(Path.Combine(root, "missing"), "Gyan.FFmpeg"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task Winget_is_waited_for_until_it_shows_up()
     {
