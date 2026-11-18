@@ -13,8 +13,8 @@ using static ManeFfmpeg.UI.Controls.TimelineLayout;
 namespace ManeFfmpeg.UI.Controls;
 
 /// <summary>
-/// The editing timeline: a ruler, the video row (V1) and the audio row (A1). Click to seek and select,
-/// drag clips to reorder, drag clip edges to trim, drag on A1 to slip a clip's audio.
+/// The editing timeline: a ruler, the video row (V1) and the audio row (A1). Click or drag the ruler to seek,
+/// click a clip to select it, drag clips to reorder, drag clip edges to trim, drag on A1 to slip a clip's audio.
 /// </summary>
 public sealed class TimelineControl : Control
 {
@@ -472,7 +472,7 @@ public sealed class TimelineControl : Control
         base.OnPointerReleased(e);
         if (Timeline is not { } vm || !vm.Gestures.IsActive)
             return;
-        vm.Gestures.Release(T(vm, e.GetPosition(this).X));
+        vm.Gestures.Release();
         e.Pointer.Capture(null);
         InvalidateVisual();
     }

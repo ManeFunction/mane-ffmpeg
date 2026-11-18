@@ -160,7 +160,7 @@ The integration tests check A/V sync of real exports. They use synthetic video w
 | ⇧⌘C (Ctrl+Shift+C on Linux and Windows) | Compact mode: hide the video preview (also the *Compact* button) |
 
 Mouse:
-- Click the ruler or a clip to seek; drag on the ruler to scrub. Hold Shift while scrubbing to snap the playhead to clip
+- Click the ruler to seek; drag on it to scrub. Only the ruler moves the playhead: clicks on V1 and A1 select. Hold Shift while scrubbing to snap the playhead to clip
   edges and to where a clip's audio starts, runs out or loops (shifted or short audio inside a clip).
 - Click a clip to select it; Shift extends the selection, ⌘/Ctrl toggles a clip in or out of it.
 - Drag a clip to reorder it, drag its edges to trim, and drag on the audio row to slip its audio (hold Shift for fine steps).

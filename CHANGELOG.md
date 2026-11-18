@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Windows: when the app runs as administrator, the Files panel warns that files can't be dropped from Explorer
   (Windows blocks that), and suggests "Add videos…" or starting the app normally.
 
+### Changed
+- Clicking a clip on the timeline (V1 or A1) only selects it and leaves the playhead where it is; clicking an empty
+  part of the track rows clears the selection without seeking. The playhead now moves only from the ruler above V1.
+
 ### Fixed
 - In Settings, the Register/Unregister button keeps its width when its label changes, so the buttons beside it no
   longer jump.

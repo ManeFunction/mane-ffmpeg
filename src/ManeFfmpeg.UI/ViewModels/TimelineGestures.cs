@@ -6,10 +6,10 @@ namespace ManeFfmpeg.UI.ViewModels;
 /// <summary>What a point on the timeline is over.</summary>
 public enum TimelineZone
 {
-    /// <summary>The ruler (and the gap under it): clicks only seek.</summary>
+    /// <summary>The ruler (and the gap under it): the only place a click seeks and a drag scrubs.</summary>
     Ruler,
 
-    /// <summary>Track rows, but no clip there (or between rows): clicks seek and clear the selection.</summary>
+    /// <summary>Track rows, but no clip there (or between rows): clicks clear the selection and leave the playhead.</summary>
     Empty,
 
     /// <summary>A clip's left edge in V1.</summary>
@@ -56,8 +56,9 @@ public interface ITimelineGestureHost
 }
 
 /// <summary>
-/// The timeline's pointer gestures in timeline terms: a press on a zone, moves to a time, a release. Clicks
-/// select and seek; drags scrub, reorder clips, trim edges or slip audio, each drag one undo step.
+/// The timeline's pointer gestures in timeline terms: a press on a zone, moves to a time, a release. Only the
+/// ruler moves the playhead: a click there seeks, a drag scrubs. On the track rows a click selects (or clears the
+/// selection) and a drag reorders clips, trims edges or slips audio, each drag one undo step.
 /// Scrubbing with Shift held snaps the playhead to clip edges and audio edges.
 /// </summary>
 public sealed class TimelineGestures(ITimelineGestureHost host)
@@ -68,7 +69,7 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
     /// <summary>How close (pixels) a Shift-scrub must come to a clip or audio edge to snap to it.</summary>
     public const double SnapRadius = 8;
 
-    private enum Drag { None, Scrub, PendingClip, Reorder, TrimIn, TrimOut, PendingSlip, Slip }
+    private enum Drag { None, Idle, Scrub, PendingClip, Reorder, TrimIn, TrimOut, PendingSlip, Slip }
 
     private Drag _drag;
     private TimeSpan _pressTime;
@@ -94,12 +95,17 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
         _command = command;
         _shift = shift;
         var index = hit.ClipId is { } id ? host.Timeline.IndexOf(id) : -1;
-        if (index < 0)
+        if (hit.Zone == TimelineZone.Ruler)
         {
             _drag = Drag.Scrub;
-            if (hit.Zone == TimelineZone.Empty)
-                host.ClearSelection();
             host.Seek(shift ? Snap(hit.Time) : hit.Time, scrubbing: true);
+            return;
+        }
+        if (index < 0)
+        {
+            // Holds the press until release, so the track rows don't start a scrub mid-drag.
+            _drag = Drag.Idle;
+            host.ClearSelection();
             return;
         }
         _clip = host.Timeline.Clips[index];
@@ -163,8 +169,7 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
             host.Seek(shift ? Snap(_lastTime) : _lastTime, scrubbing: true);
     }
 
-    /// <param name="time">Timeline time under the pointer at release.</param>
-    public void Release(TimeSpan time)
+    public void Release()
     {
         switch (_drag)
         {
@@ -174,8 +179,6 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
             case Drag.PendingClip:
             case Drag.PendingSlip:
                 host.Select(_clip!.Id, toggle: _command, range: _shift);
-                if (!_command && !_shift)
-                    host.Seek(time, scrubbing: false);
                 break;
             case Drag.Reorder:
                 host.MoveSelection(InsertIndex);

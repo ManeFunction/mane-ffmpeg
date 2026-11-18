@@ -50,16 +50,20 @@ public class TimelineGestureTests
     private static Host ThreeClips(CutGrid? grid = null) => new(new Timeline([C("a", 0, 2), C("b", 10, 12), C("c", 20, 22)])) { Grid = grid };
 
     [Fact]
-    public void A_click_that_barely_moves_selects_and_seeks()
+    public void A_click_on_a_clip_that_barely_moves_selects_it_and_leaves_the_playhead()
     {
         var host = ThreeClips();
         var gestures = new TimelineGestures(host);
         gestures.Press(new TimelineHit(TimelineZone.Clip, S(2.5), "b"), command: false, shift: false);
         gestures.Move(S(2.53), shift: false);
         Assert.False(gestures.IsReordering);
-        gestures.Release(S(2.53));
+        gestures.Release();
         Assert.Equal(["b"], host.Selection);
-        Assert.Equal((S(2.53), false), host.Seeks[^1]);
+
+        gestures.Press(new TimelineHit(TimelineZone.Audio, S(20.5), "c"), command: false, shift: false);
+        gestures.Release();
+        Assert.Equal(["c"], host.Selection);
+        Assert.Empty(host.Seeks);
         Assert.False(host.History.CanUndo);
     }
 
@@ -73,7 +77,7 @@ public class TimelineGestureTests
         gestures.Move(S(1.10), shift: false);
         gestures.Move(S(1.12), shift: false);
         Assert.Equal(TimeSpan.FromMilliseconds(120), host.AudioDrag);
-        gestures.Release(S(1.12));
+        gestures.Release();
 
         Assert.Equal(TimeSpan.FromMilliseconds(120), host.Timeline.Clips[0].AudioOffset);
         Assert.Equal(TimeSpan.Zero, host.AudioDrag);
@@ -90,7 +94,7 @@ public class TimelineGestureTests
         gestures.Press(new TimelineHit(TimelineZone.Audio, S(1.0), "a"), command: false, shift: false);
         gestures.Move(S(1.2), shift: false);
         gestures.Move(S(1.5), shift: false);
-        gestures.Release(S(1.5));
+        gestures.Release();
 
         Assert.Equal(TimeSpan.FromMilliseconds(500), host.Timeline.Clips[0].ReplacedAudio!.Offset);
         Assert.Equal(TimeSpan.Zero, host.Timeline.Clips[0].AudioOffset);
@@ -106,7 +110,7 @@ public class TimelineGestureTests
         gestures.Press(new TimelineHit(TimelineZone.Audio, S(1.0), "a"), command: false, shift: false);
         gestures.Move(S(1.05), shift: true);
         gestures.Move(S(1.12), shift: true);
-        gestures.Release(S(1.12));
+        gestures.Release();
         Assert.Equal(TimeSpan.FromMilliseconds(12), host.Timeline.Clips[0].AudioOffset);
     }
 
@@ -118,7 +122,7 @@ public class TimelineGestureTests
         gestures.Press(new TimelineHit(TimelineZone.TrimOut, S(2.0), "a"), command: false, shift: false);
         gestures.Move(S(2.3), shift: false);
         gestures.Move(S(2.513), shift: false);
-        gestures.Release(S(2.513));
+        gestures.Release();
         Assert.Equal(S(2.5), host.Timeline.Clips[0].Out);
         host.History.Undo();
         Assert.Equal(S(2), host.Timeline.Clips[0].Out);
@@ -133,26 +137,39 @@ public class TimelineGestureTests
         gestures.Move(S(5.1), shift: false);
         Assert.True(gestures.IsReordering);
         Assert.Equal(3, gestures.InsertIndex);
-        gestures.Release(S(5.1));
+        gestures.Release();
         Assert.Equal("bca", string.Concat(host.Timeline.Clips.Select(c => c.Id)));
     }
 
     [Fact]
-    public void Pressing_an_empty_track_clears_the_selection_and_scrubs_but_the_ruler_keeps_it()
+    public void The_ruler_scrubs_and_keeps_the_selection()
     {
         var host = ThreeClips();
         host.Selection.Add("a");
         var gestures = new TimelineGestures(host);
         gestures.Press(new TimelineHit(TimelineZone.Ruler, S(3)), command: false, shift: false);
-        gestures.Release(S(3));
-        Assert.Equal(["a"], host.Selection);
-
-        gestures.Press(new TimelineHit(TimelineZone.Empty, S(3)), command: false, shift: false);
         gestures.Move(S(3.5), shift: false);
-        gestures.Release(S(3.5));
-        Assert.Empty(host.Selection);
-        Assert.Equal([(S(3), true), (S(3), true), (S(3.5), true)], host.Seeks);
+        gestures.Release();
+        Assert.Equal(["a"], host.Selection);
+        Assert.Equal([(S(3), true), (S(3.5), true)], host.Seeks);
         Assert.True(host.ScrubEnded);
+    }
+
+    [Fact]
+    public void Pressing_or_dragging_on_an_empty_track_clears_the_selection_without_seeking()
+    {
+        var host = ThreeClips();
+        host.Selection.Add("a");
+        var gestures = new TimelineGestures(host);
+        gestures.Press(new TimelineHit(TimelineZone.Empty, S(3)), command: false, shift: true);
+        Assert.True(gestures.IsActive);
+        gestures.Move(S(3.5), shift: false);
+        gestures.ShiftChanged(true);
+        gestures.Release();
+        Assert.False(gestures.IsActive);
+        Assert.Empty(host.Selection);
+        Assert.Empty(host.Seeks);
+        Assert.False(host.ScrubEnded);
     }
 
     [Fact]
@@ -165,7 +182,7 @@ public class TimelineGestureTests
         gestures.Move(S(3.9), shift: true);
         gestures.Move(S(3.96), shift: true);
         gestures.Move(S(3.96), shift: false);
-        gestures.Release(S(3.96));
+        gestures.Release();
         Assert.Equal([(S(2), true), (S(2.5), true), (S(3.9), true), (S(4), true), (S(3.96), true)], host.Seeks);
         Assert.True(host.ScrubEnded);
     }
@@ -175,11 +192,11 @@ public class TimelineGestureTests
     {
         var host = ThreeClips();
         var gestures = new TimelineGestures(host);
-        gestures.Press(new TimelineHit(TimelineZone.Empty, S(5)), command: false, shift: false);
+        gestures.Press(new TimelineHit(TimelineZone.Ruler, S(5)), command: false, shift: false);
         gestures.Move(S(5.95), shift: false);
         gestures.ShiftChanged(true);
         gestures.ShiftChanged(false);
-        gestures.Release(S(5.95));
+        gestures.Release();
         gestures.ShiftChanged(true);
         Assert.Equal([(S(5), true), (S(5.95), true), (S(6), true), (S(5.95), true)], host.Seeks);
     }
@@ -196,7 +213,7 @@ public class TimelineGestureTests
         gestures.Press(new TimelineHit(TimelineZone.Ruler, S(0.45)), command: false, shift: true);
         gestures.Move(S(3.05), shift: true);
         gestures.Move(S(3.05), shift: false);
-        gestures.Release(S(3.05));
+        gestures.Release();
         Assert.Equal([(S(0.5), true), (S(3), true), (S(3.05), true)], host.Seeks);
     }
 
@@ -210,7 +227,7 @@ public class TimelineGestureTests
         gestures.Press(new TimelineHit(TimelineZone.Ruler, S(4.8)), command: false, shift: true);
         gestures.Move(S(5.45), shift: true);
         gestures.Move(S(5.3), shift: true);
-        gestures.Release(S(5.3));
+        gestures.Release();
         Assert.Equal([(S(4.75), true), (S(5.5), true), (S(5.3), true)], host.Seeks);
     }
 
