@@ -8,7 +8,7 @@ namespace ManeFfmpeg.Core.Persistence;
 /// <summary>The user's export presets, shared by all windows and saved to presets.json.</summary>
 public sealed class PresetStore
 {
-    private const int CurrentVersion = 4;
+    private const int CurrentVersion = 5;
 
     private readonly string _path;
     private List<Preset> _presets;
@@ -27,6 +27,7 @@ public sealed class PresetStore
     /// "for storage" gets the new arguments, and "harsh" is added next to it. Version 3 added "share".
     /// Version 4 renamed the built-ins (a name the user edited is kept), moved "share" to second
     /// place and added "copy to mp4", taking over the user's own "plane copy but mp4" if they made one.
+    /// Version 5 added audio presets: the built-in ones are added after the user's presets.
     /// </summary>
     private static bool Migrate(List<Preset> presets, int version)
     {
@@ -45,6 +46,8 @@ public sealed class PresetStore
         }
         if (version < 4)
             MigrateTo4(presets);
+        if (version < 5)
+            presets.AddRange(Preset.BuiltIns.Where(b => b.Kind == PresetKind.Audio && presets.All(p => p.Id != b.Id)));
         return true;
     }
 
@@ -131,16 +134,24 @@ public sealed class PresetStore
         Persist();
     }
 
-    /// <summary>Moves a preset to another place in the list (and in the export bar's menu).</summary>
+    /// <summary>
+    /// Moves a preset to another place among the presets of its kind (and in the export bar's menu):
+    /// <paramref name="index"/> counts only those, as the presets window lists them.
+    /// </summary>
     public void Move(string id, int index)
     {
         var from = _presets.FindIndex(p => p.Id == id);
-        index = Math.Clamp(index, 0, _presets.Count - 1);
-        if (from < 0 || from == index)
+        if (from < 0)
             return;
         var preset = _presets[from];
+        var sameKind = _presets.Where(p => p.Kind == preset.Kind).ToList();
+        var target = sameKind[Math.Clamp(index, 0, sameKind.Count - 1)];
+        // Taking the target's place puts the preset before it when moving up and after it when moving down.
+        var to = _presets.FindIndex(p => p.Id == target.Id);
+        if (to == from)
+            return;
         _presets.RemoveAt(from);
-        _presets.Insert(index, preset);
+        _presets.Insert(to, preset);
         Persist();
     }
 

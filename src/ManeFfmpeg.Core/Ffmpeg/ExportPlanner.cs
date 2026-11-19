@@ -22,6 +22,12 @@ public enum ExportMode
 
     /// <summary>One trimmed or offset clip whose audio is copied: audio is cut losslessly first, then muxed.</summary>
     SingleClipAudioCopy,
+
+    /// <summary>Audio alone (an audio preset): one clip's own audio, cut without re-encoding.</summary>
+    AudioCopy,
+
+    /// <summary>Audio alone (an audio preset): every clip's audio trimmed and joined in a filter graph, then encoded.</summary>
+    AudioEncode,
 }
 
 public sealed record ExportJob
@@ -117,13 +123,20 @@ public static class ExportPlanner
         var args = analysis.Arguments!;
         var fallback = analysis.Fallback;
 
-        var items = clips.Select(c => Resolve(job, c, args)).ToList();
+        var items = clips.Select(c => Resolve(job.State, job.Media, c, args)).ToList();
         foreach (var item in items)
         foreach (var file in new[] { item.Source, job.State.AudioSourceOf(item.Clip) }.OfType<SourceMedia>().Distinct())
         {
             if (SameFile(file.Path, job.OutputPath))
                 throw new ExportPlanException(
                     $"The output file is one of the {(file == item.Source ? "source videos" : "audio files")}. Choose another name.");
+        }
+
+        if (job.Preset.Kind == PresetKind.Audio)
+        {
+            // The crop is the picture's; saved audio has none.
+            var audio = AudioOnly(new Context(job, args, fallback, items, OutputFrame.Of([.. items.Select(i => i.Video)]), null));
+            return audio with { Notes = [.. analysis.Warnings, .. audio.Notes], OutputPath = job.OutputPath, WorkDirectory = job.WorkDirectory };
         }
 
         var crop = job.State.Crop;
@@ -176,19 +189,19 @@ public static class ExportPlanner
             : Args.VideoFilter;
     }
 
-    private static Item Resolve(ExportJob job, Clip clip, PresetArguments args)
+    private static Item Resolve(ProjectState state, IReadOnlyDictionary<string, MediaInfo> mediaById, Clip clip, PresetArguments args)
     {
-        var source = job.State.Source(clip.SourceId)
+        var source = state.Source(clip.SourceId)
             ?? throw new ExportPlanException("A clip refers to a source that is no longer in the project.");
-        if (!job.Media.TryGetValue(source.Id, out var media))
+        if (!mediaById.TryGetValue(source.Id, out var media))
             throw new ExportPlanException($"\"{source.DisplayName}\" is missing or hasn't been analyzed yet.");
         var video = media.Video ?? throw new ExportPlanException($"\"{source.DisplayName}\" has no video stream.");
         if (clip.ReplacedAudio is not { } replaced)
             return new Item(clip, source, media, video,
                 !args.NoAudio && media.Audio(source.AudioStreamIndex) is { } own ? new HeardAudio(source, media, own) : null);
-        var file = job.State.AudioFile(replaced.FileId)
+        var file = state.AudioFile(replaced.FileId)
             ?? throw new ExportPlanException("A clip plays an audio file that is no longer in the project.");
-        if (!job.Media.TryGetValue(file.Id, out var fileMedia))
+        if (!mediaById.TryGetValue(file.Id, out var fileMedia))
             throw new ExportPlanException($"\"{file.DisplayName}\" is missing or hasn't been analyzed yet.");
         var stream = fileMedia.Audio(file.AudioStreamIndex);
         if (stream is null && !args.NoAudio)
@@ -489,6 +502,124 @@ public static class ExportPlanner
         return new ExportPlan(ExportMode.SingleClipAudioCopy,
             [new ExportStep("Cutting audio", extract, readLength, false), new ExportStep("Exporting", mux, clip.Duration, true)],
             [], clip.Duration, notes);
+    }
+
+    // ---- Audio only ------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The file extension (without the dot) that holds audio in <paramref name="codec"/> as it is, for an ffprobe codec
+    /// name or an ffmpeg encoder name; null (ffmpeg's default encoder) gets .m4a. Matroska audio (.mka) carries the rest.
+    /// </summary>
+    public static string AudioExtension(string? codec) => codec switch
+    {
+        null or "aac" or "libfdk_aac" or "aac_at" or "alac" or "alac_at" => "m4a",
+        "mp3" or "libmp3lame" or "libshine" => "mp3",
+        "opus" or "libopus" => "opus",
+        "vorbis" or "libvorbis" => "ogg",
+        "flac" => "flac",
+        "ac3" or "eac3" or "dts" => codec,
+        "pcm_u8" or "pcm_s16le" or "pcm_s24le" or "pcm_s32le" or "pcm_f32le" or "pcm_f64le" or "pcm_alaw" or "pcm_mulaw" => "wav",
+        "pcm_s16be" or "pcm_s24be" or "pcm_s32be" => "aiff",
+        _ => "mka",
+    };
+
+    /// <summary>
+    /// The extension an audio preset's file gets: its own, or else the one for the codec it writes (the copied audio's,
+    /// or the encoder's). Null while the timeline can't be planned yet, for example before its media is analyzed.
+    /// </summary>
+    public static string? AudioExtensionFor(ProjectState state, IReadOnlyDictionary<string, MediaInfo> media, Preset preset)
+    {
+        if (preset.Extension?.Trim().TrimStart('.') is { Length: > 0 } own)
+            return own;
+        if (PresetAnalysis.Of(preset).Arguments is not { } args || state.Timeline.Clips.Count == 0)
+            return null;
+        try
+        {
+            var items = state.Timeline.Clips.Select(c => Resolve(state, media, c, args)).ToList();
+            if (CopiedAudio(items, args) is { } copied)
+                return AudioExtension(copied.Item.Audio!.Codec);
+            return AudioExtension(args.AudioCopy ? PresetArguments.Parse(preset.AudioFallbackArguments).AudioCodec : args.AudioCodec);
+        }
+        catch (Exception ex) when (ex is ExportPlanException or FormatException)
+        {
+            return null;
+        }
+    }
+
+    private static ExportPlan AudioOnly(Context ctx)
+    {
+        if (!ctx.AnyAudio)
+            throw new ExportPlanException("The timeline has no audio to save.");
+        return CopiedAudio(ctx.Items, ctx.Args) is { } copied ? AudioCopy(ctx, copied.Item, copied.Placement) : AudioEncode(ctx);
+    }
+
+    /// <summary>
+    /// The clip whose audio can be saved without re-encoding: the only one on the timeline, playing its own audio, with
+    /// all of it read from the file (no silence before or after). Null when the audio has to be encoded.
+    /// </summary>
+    private static (Item Item, AudioPlacement Placement)? CopiedAudio(List<Item> items, PresetArguments args)
+    {
+        if (!args.AudioCopy || items is not [{ PlaysOwnAudio: true, Heard: { } heard } item])
+            return null;
+        return heard.Layout(item.Clip) is AudioLayout.Placed { Placement: { IsSilent: false } placement }
+            && placement.Lead <= Tolerance && placement.Tail <= Tolerance
+            ? (item, placement)
+            : null;
+    }
+
+    /// <summary>
+    /// One clip's audio stream-copied straight into the output. Like <see cref="SingleClipAudioCopy"/>'s cut, it seeks a
+    /// little early and cuts on the output side, so it starts at the first whole packet of the clip.
+    /// </summary>
+    private static ExportPlan AudioCopy(Context ctx, Item item, AudioPlacement placement)
+    {
+        var heard = item.Heard!;
+        var (_, readFrom, readLength, _) = placement;
+        var fromStart = readFrom <= Tolerance;
+        var toEnd = readFrom + readLength >= heard.Info.Duration - Tolerance;
+        var preSeek = readFrom > AudioPreSeek ? readFrom - AudioPreSeek : TimeSpan.Zero;
+
+        var a = new List<string>(Prefix);
+        if (preSeek > TimeSpan.Zero)
+            a.AddRange(["-ss", TimeFormat.Seconds(preSeek)]);
+        a.AddRange(["-i", heard.File.Path, "-map", $"0:{heard.Stream.Index}"]);
+        a.AddRange(ctx.Args.OutputTokens);
+        if (!fromStart)
+            a.AddRange(["-ss", TimeFormat.Seconds(readFrom - preSeek)]);
+        if (!toEnd)
+            a.AddRange(["-t", TimeFormat.Seconds(readLength)]);
+        a.Add(ctx.Out);
+
+        var note = fromStart && toEnd
+            ? "The clip's audio is copied whole, without re-encoding."
+            : "The clip's audio is copied without re-encoding, cut at the audio packets nearest to its edges (a few milliseconds).";
+        return new ExportPlan(ExportMode.AudioCopy, [new ExportStep("Saving audio", a, readLength, true)], [], readLength, [note]);
+    }
+
+    /// <summary>Every clip's audio (silence where a clip has none) joined in a filter graph, then encoded.</summary>
+    private static ExportPlan AudioEncode(Context ctx)
+    {
+        var notes = new List<string>();
+        var inputs = new List<string>();
+        var graph = new StringBuilder();
+        var format = AudioFormat(ctx.Items)!.Value;
+        var n = ctx.Items.Count;
+        var input = 0;
+        for (var i = 0; i < n; i++)
+        {
+            var item = ctx.Items[i];
+            graph.Append(AudioChain(item, item.Clip.In, item.Clip.Duration, format, ref input, inputs)).Append($"[a{i}];");
+        }
+        AppendConcat(graph, n, video: false, audio: true, null, ctx.Args.AudioFilter);
+
+        var a = new List<string>(Prefix);
+        a.AddRange(inputs);
+        a.AddRange(["-filter_complex", graph.ToString(), "-map", "[aout]"]);
+        a.AddRange(AudioTokens(ctx, true, notes,
+            AudioReencodeReason(ctx, otherwise: n > 1 ? "the timeline has several clips" : "the audio doesn't cover the whole clip")));
+        a.Add(ctx.Out);
+        var duration = ctx.Items.Aggregate(TimeSpan.Zero, (s, it) => s + it.Clip.Duration);
+        return new ExportPlan(ExportMode.AudioEncode, [new ExportStep("Saving audio", a, duration, true)], [], duration, notes);
     }
 
     // ---- Shared pieces ---------------------------------------------------------------------------------

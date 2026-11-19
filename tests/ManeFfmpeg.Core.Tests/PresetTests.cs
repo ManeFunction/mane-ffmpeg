@@ -113,12 +113,71 @@ public class PresetAnalysisTests
 
 public class PresetStoreTests
 {
+    /// <summary>The video presets' names in order (the audio presets have their own tab and order).</summary>
+    private static IEnumerable<string> VideoNames(PresetStore store) => store.Presets.Where(p => p.Kind == PresetKind.Video).Select(p => p.Name);
+
+    private static IEnumerable<string> AudioNames(PresetStore store) => store.Presets.Where(p => p.Kind == PresetKind.Audio).Select(p => p.Name);
+
+    [Fact]
+    public void New_store_has_the_audio_built_ins_with_extract_audio_first()
+    {
+        var store = new PresetStore(Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json"));
+        Assert.Equal(["extract audio (as is)", "m4a (AAC 256k)", "mp3 (V0)"], AudioNames(store));
+        Assert.All(Preset.BuiltIns, p => Assert.True(PresetAnalysis.Of(p).IsValid, p.Name));
+    }
+
+    [Fact]
+    public void Version_4_file_gains_the_audio_built_ins_after_the_users_presets()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, """
+            { "version": 4, "presets": [
+              { "id": "builtin-plane-copy", "name": "copy (w/o encode)", "arguments": "-c:v copy -c:a copy" },
+              { "id": "mine", "name": "mine", "arguments": "-c:v libx264" } ] }
+            """);
+        try
+        {
+            var store = new PresetStore(path);
+            Assert.Equal(["copy (w/o encode)", "mine", "extract audio (as is)", "m4a (AAC 256k)", "mp3 (V0)"], store.Presets.Select(p => p.Name));
+            var text = File.ReadAllText(path);
+            Assert.Contains("\"version\": 5", text);
+            Assert.Contains("\"kind\": \"Audio\"", text);
+            // The kind survives a reload, and a second load adds nothing.
+            var reloaded = new PresetStore(path);
+            Assert.Equal(store.Presets, reloaded.Presets);
+            Assert.Equal(PresetKind.Audio, reloaded.Find(Preset.ExtractAudio.Id)?.Kind);
+            Assert.Equal(PresetKind.Video, reloaded.Find("mine")?.Kind);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Moving_counts_only_presets_of_the_same_kind()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");
+        try
+        {
+            var store = new PresetStore(path);
+            store.Move(Preset.AudioMp3.Id, 0);
+            Assert.Equal(["mp3 (V0)", "extract audio (as is)", "m4a (AAC 256k)"], AudioNames(store));
+            store.Move(Preset.AudioMp3.Id, 99);
+            Assert.Equal(["extract audio (as is)", "m4a (AAC 256k)", "mp3 (V0)"], AudioNames(store));
+            Assert.Equal(VideoNames(new PresetStore(Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json"))), VideoNames(store));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
     [Fact]
     public void New_store_has_built_ins_with_for_storage_first()
     {
         var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");
         var store = new PresetStore(path);
-        Assert.Equal(["for storage (balanced)", "for share (compatibility)", "harsh compression", "copy (w/o encode)", "copy to mp4 (w/o encode)"], store.Presets.Select(p => p.Name));
+        Assert.Equal(["for storage (balanced)", "for share (compatibility)", "harsh compression", "copy (w/o encode)", "copy to mp4 (w/o encode)"], VideoNames(store));
         Assert.Contains("yuv420p10le", store.Presets[0].Arguments);
         Assert.Equal("-c:v libx265 -crf 28 -preset slow -c:a copy", store.Presets[2].Arguments);
     }
@@ -131,10 +190,10 @@ public class PresetStoreTests
         {
             var store = new PresetStore(path);
             store.Move(Preset.PlaneCopy.Id, 0);
-            Assert.Equal(["copy (w/o encode)", "for storage (balanced)", "for share (compatibility)", "harsh compression", "copy to mp4 (w/o encode)"], store.Presets.Select(p => p.Name));
+            Assert.Equal(["copy (w/o encode)", "for storage (balanced)", "for share (compatibility)", "harsh compression", "copy to mp4 (w/o encode)"], VideoNames(store));
             // Past the end means last.
             store.Move(Preset.ForStorage.Id, 99);
-            Assert.Equal(["copy (w/o encode)", "for share (compatibility)", "harsh compression", "copy to mp4 (w/o encode)", "for storage (balanced)"], new PresetStore(path).Presets.Select(p => p.Name));
+            Assert.Equal(["copy (w/o encode)", "for share (compatibility)", "harsh compression", "copy to mp4 (w/o encode)", "for storage (balanced)"], VideoNames(new PresetStore(path)));
         }
         finally
         {
@@ -157,9 +216,9 @@ public class PresetStoreTests
         try
         {
             var store = new PresetStore(path);
-            Assert.Equal(["for storage (balanced)", "for share (compatibility)", "harsh compression", "mine", "copy to mp4 (w/o encode)"], store.Presets.Select(p => p.Name));
+            Assert.Equal(["for storage (balanced)", "for share (compatibility)", "harsh compression", "mine", "copy to mp4 (w/o encode)"], VideoNames(store));
             Assert.Equal(edited ? storageArgs : Preset.ForStorage.Arguments, store.Presets[0].Arguments);
-            Assert.Contains("\"version\": 4", File.ReadAllText(path));
+            Assert.Contains("\"version\": 5", File.ReadAllText(path));
 
             // A second load doesn't migrate again (an edited preset stays as the user left it).
             Assert.Equal(store.Presets.Select(p => p.Arguments), new PresetStore(path).Presets.Select(p => p.Arguments));
@@ -183,9 +242,9 @@ public class PresetStoreTests
         try
         {
             var store = new PresetStore(path);
-            Assert.Equal(["for storage (balanced)", "for share (compatibility)", "harsh compression", "mine", "copy to mp4 (w/o encode)"], store.Presets.Select(p => p.Name));
+            Assert.Equal(["for storage (balanced)", "for share (compatibility)", "harsh compression", "mine", "copy to mp4 (w/o encode)"], VideoNames(store));
             Assert.Equal("-c:v libx265 -crf 20 -c:a copy", store.Presets[0].Arguments);
-            Assert.Contains("\"version\": 4", File.ReadAllText(path));
+            Assert.Contains("\"version\": 5", File.ReadAllText(path));
         }
         finally
         {
@@ -210,12 +269,12 @@ public class PresetStoreTests
             var store = new PresetStore(path);
             Assert.Equal(
                 ["my storage", "for share (compatibility)", "harsh compression", "copy (w/o encode)", "copy to mp4 (w/o encode)"],
-                store.Presets.Select(p => p.Name));
-            Assert.Contains("\"version\": 4", File.ReadAllText(path));
-            Assert.Equal(Preset.CopyToMp4.Id, store.Presets[^1].Id);
+                VideoNames(store));
+            Assert.Contains("\"version\": 5", File.ReadAllText(path));
+            Assert.Equal(Preset.CopyToMp4.Id, store.Presets.Last(p => p.Kind == PresetKind.Video).Id);
             // A project saved with the old preset still finds it, though its id changed.
             var saved = new Preset { Id = "mine", Name = "plane copy but mp4", Arguments = "-c:v copy -c:a copy", Extension = "mp4" };
-            store.Save(store.Presets[^1] with { Extension = "mp4" });
+            store.Save(store.Presets.Last(p => p.Kind == PresetKind.Video) with { Extension = "mp4" });
             Assert.Equal(Preset.CopyToMp4.Id, store.FindFor("mine", saved)?.Id);
             // Other options aren't taken for it.
             Assert.Null(store.FindFor("mine", saved with { Arguments = "-c:v copy -c:a copy -map 0" }));
@@ -238,7 +297,7 @@ public class PresetStoreTests
             """);
         try
         {
-            Assert.Equal(["copy (w/o encode)", "copy to mp4 (w/o encode)", "mine"], new PresetStore(path).Presets.Select(p => p.Name));
+            Assert.Equal(["copy (w/o encode)", "copy to mp4 (w/o encode)", "mine"], VideoNames(new PresetStore(path)));
         }
         finally
         {
@@ -306,7 +365,8 @@ public class PresetStoreTests
         File.WriteAllText(path, """{ "version": 4, "presets": [ { "id": "mine", "name": "mine", "arguments": "-c:v libx264" } ] }""");
         try
         {
-            var preset = Assert.Single(new PresetStore(path).Presets);
+            var preset = Assert.Single(new PresetStore(path).Presets, p => p.Id == "mine");
+            Assert.Equal(PresetKind.Video, preset.Kind);
             Assert.Equal(Preset.DefaultAudioFallback, preset.AudioFallbackArguments);
             Assert.Equal("", preset.Extension);
         }

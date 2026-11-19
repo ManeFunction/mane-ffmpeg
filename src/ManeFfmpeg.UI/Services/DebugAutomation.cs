@@ -138,6 +138,10 @@ internal static class DebugAutomation
                     case "redo":
                         vm.RedoCommand.Execute(null);
                         break;
+                    case "export-mode":
+                        // export-mode <video|audio>: what the export button does
+                        vm.Export.IsAudioMode = arg == "audio";
+                        break;
                     case "preset":
                         vm.Export.SelectedPreset = vm.Export.Presets.First(p => p.Name == arg);
                         break;
@@ -350,8 +354,17 @@ internal static class DebugAutomation
                         break;
                     }
                     case "presets-snapshot":
-                        await SnapshotWindowAsync(new PresetsWindow(), arg);
+                    {
+                        // presets-snapshot [audio] <png>: the presets window, on its Audio tab with "audio"
+                        var presets = new PresetsWindow();
+                        if (arg.StartsWith("audio ", StringComparison.Ordinal))
+                        {
+                            ((PresetsViewModel)presets.DataContext!).KindIndex = 1;
+                            arg = arg["audio ".Length..];
+                        }
+                        await SnapshotWindowAsync(presets, arg);
                         break;
+                    }
                     case "settings-snapshot":
                         await SnapshotWindowAsync(new SettingsWindow(), arg);
                         break;

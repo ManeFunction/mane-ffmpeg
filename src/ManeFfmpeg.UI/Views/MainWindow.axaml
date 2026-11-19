@@ -44,8 +44,29 @@
                                 Command="{Binding Export.UseAutomaticOutputCommand}" IsEnabled="{Binding Export.IsIdle}"
                                 ToolTip.Tip="Name the file after the project / first video" />
                     </Grid>
-                    <Button Grid.Column="3" Classes="accent" Content="Export" Margin="12,0,0,0" Padding="22,6"
-                            Command="{Binding Export.ExportCommand}" IsVisible="{Binding Export.IsIdle}" />
+                    <!-- [ Export video |▼]: the main part exports, the arrow switches it between exporting the video and
+                         extracting the audio (green). Both labels are laid out, so the button keeps its width in either state. -->
+                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="1" Margin="12,0,0,0" IsVisible="{Binding Export.IsIdle}">
+                        <Button x:Name="ExportButton" Classes="accent export-main" Classes.audio="{Binding Export.IsAudioMode}"
+                                Padding="22,6" Command="{Binding Export.ExportCommand}">
+                            <Panel>
+                                <TextBlock Classes="video-label" Text="Export video" HorizontalAlignment="Center" />
+                                <TextBlock Classes="audio-label" Text="Extract audio" HorizontalAlignment="Center" />
+                            </Panel>
+                        </Button>
+                        <Button x:Name="ExportModeButton" Classes="accent export-mode" Classes.audio="{Binding Export.IsAudioMode}"
+                                Padding="7,6" VerticalAlignment="Stretch" ToolTip.Tip="Export the video or extract only its audio">
+                            <PathIcon Data="{StaticResource IconChevronDown}" Width="10" Height="10" />
+                            <Button.Flyout>
+                                <MenuFlyout Placement="TopEdgeAlignedRight">
+                                    <MenuItem Header="Export video" ToggleType="Radio" GroupName="ExportMode"
+                                              IsChecked="{Binding !Export.IsAudioMode, Mode=OneWay}" Command="{Binding Export.UseVideoModeCommand}" />
+                                    <MenuItem Header="Extract audio" ToggleType="Radio" GroupName="ExportMode"
+                                              IsChecked="{Binding Export.IsAudioMode, Mode=OneWay}" Command="{Binding Export.UseAudioModeCommand}" />
+                                </MenuFlyout>
+                            </Button.Flyout>
+                        </Button>
+                    </StackPanel>
                     <!-- Same width either way, so the path field doesn't jump when pausing -->
                     <Panel Grid.Column="4" Margin="12,0,0,0" IsVisible="{Binding Export.IsExporting}">
                         <Button Content="Pause" Padding="16,6" MinWidth="88" HorizontalContentAlignment="Center"

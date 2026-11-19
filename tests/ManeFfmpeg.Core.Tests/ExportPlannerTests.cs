@@ -106,6 +106,99 @@ public class ExportPlannerTests
         Assert.Contains("Keyframes", Refusal(Job(Preset.PlaneCopy, media, C("a", 1, 3)) with { Keyframes = new Dictionary<string, KeyframeIndex>() }));
     }
 
+    [Theory]
+    [InlineData("whole", ExportMode.AudioCopy)]
+    // Audio 200 ms early: still all read from the file, so it's copied.
+    [InlineData("trimmed", ExportMode.AudioCopy)]
+    // Audio 500 ms late from the file start: half a second of silence to add.
+    [InlineData("late", ExportMode.AudioEncode)]
+    [InlineData("two", ExportMode.AudioEncode)]
+    [InlineData("replaced", ExportMode.AudioEncode)]
+    public void Audio_presets_copy_one_clips_own_audio_and_encode_the_rest(string edit, ExportMode expected)
+    {
+        var media = new Dictionary<string, MediaInfo> { ["a"] = Media(10) };
+        Clip[] clips = edit switch
+        {
+            "whole" => [C("a", 0, 10)],
+            "trimmed" => [C("a", 1, 4, 200)],
+            "late" => [C("a", 0, 4, 500)],
+            "replaced" => [C("a", 1, 4) with { ReplacedAudio = new AudioReplacement { FileId = "a", Anchor = S(1) } }],
+            _ => [C("a", 1, 3), C("a", 5, 6)],
+        };
+        var job = Job(Preset.ExtractAudio, media, clips);
+        if (edit == "replaced")
+            job = job with { State = job.State with { AudioFiles = [new SourceMedia { Id = "a", Path = "/m/a.src" }] } };
+        var plan = ExportPlanner.Plan(job);
+        Assert.Equal(expected, plan.Mode);
+        var args = plan.Steps[^1].Arguments;
+        Assert.DoesNotContain("[vout]", args);
+        Assert.DoesNotContain("-movflags", args);
+        Assert.Contains(expected == ExportMode.AudioCopy ? "copy" : "flac", args);
+    }
+
+    [Fact]
+    public void Audio_copy_snapshot()
+    {
+        var media = new Dictionary<string, MediaInfo> { ["a"] = Media(10) };
+        var plan = ExportPlanner.Plan(Job(Preset.ExtractAudio, media, C("a", 5, 8)) with { OutputPath = "/out/edit.m4a" });
+        Assert.Equal("""
+            ffmpeg -nostdin -hide_banner -loglevel error -nostats -stats_period 0.5 -progress pipe:1 -y -ss 2.000000 -i /m/a.src -map 0:1 -c:a copy -ss 3.000000 -t 3.000000 /out/edit.m4a
+            """.ReplaceLineEndings("\n"), plan.ShCommands());
+
+        var whole = ExportPlanner.Plan(Job(Preset.ExtractAudio, media, C("a", 0, 10)) with { OutputPath = "/out/edit.m4a" });
+        Assert.Equal("""
+            ffmpeg -nostdin -hide_banner -loglevel error -nostats -stats_period 0.5 -progress pipe:1 -y -i /m/a.src -map 0:1 -c:a copy /out/edit.m4a
+            """.ReplaceLineEndings("\n"), whole.ShCommands());
+    }
+
+    [Fact]
+    public void Audio_encode_snapshot()
+    {
+        var media = new Dictionary<string, MediaInfo> { ["a"] = Media(10) };
+        var plan = ExportPlanner.Plan(Job(Preset.ExtractAudio, media, C("a", 1, 3), C("a", 5, 6, 120)) with { OutputPath = "/out/edit.flac" });
+        Assert.Equal("""
+            ffmpeg -nostdin -hide_banner -loglevel error -nostats -stats_period 0.5 -progress pipe:1 -y -ss 1.000000 -t 2.000000 -i /m/a.src -ss 4.880000 -t 1.000000 -i /m/a.src -filter_complex '[0:1]aformat=sample_rates=48000:channel_layouts=stereo,apad=whole_dur=2.000000,atrim=duration=2.000000,asetpts=N/SR/TB[a0];[1:1]aformat=sample_rates=48000:channel_layouts=stereo,apad=whole_dur=1.000000,atrim=duration=1.000000,asetpts=N/SR/TB[a1];[a0][a1]concat=n=2:v=0:a=1[aout]' -map '[aout]' -c:a flac /out/edit.flac
+            """.ReplaceLineEndings("\n"), plan.ShCommands());
+        Assert.Contains(plan.Notes, n => n.Contains("-c:a flac"));
+    }
+
+    [Theory]
+    [InlineData("aac", 1, "", "m4a")]
+    [InlineData("mp3", 1, "", "mp3")]
+    [InlineData("pcm_s24le", 1, "", "wav")]
+    [InlineData("pcm_s16be", 1, "", "aiff")]
+    [InlineData("truehd", 1, "", "mka")]
+    // Several clips are encoded with the fallback (FLAC).
+    [InlineData("aac", 2, "", "flac")]
+    // A preset's own extension wins.
+    [InlineData("aac", 1, "mka", "mka")]
+    public void Audio_extension_follows_the_codec_written(string codec, int clips, string extension, string expected)
+    {
+        var info = Media(10);
+        info = info with { AudioStreams = [info.AudioStreams[0] with { Codec = codec }] };
+        var media = new Dictionary<string, MediaInfo> { ["a"] = info };
+        var job = Job(Preset.ExtractAudio, media, [.. Enumerable.Range(0, clips).Select(i => C("a", i * 3, i * 3 + 2))]);
+        Assert.Equal(expected, ExportPlanner.AudioExtensionFor(job.State, media, Preset.ExtractAudio with { Extension = extension }));
+        Assert.Equal("mp3", ExportPlanner.AudioExtensionFor(job.State, media, Preset.AudioMp3 with { Extension = "" }));
+        // Not analyzed yet: unknown.
+        Assert.Null(ExportPlanner.AudioExtensionFor(job.State, new Dictionary<string, MediaInfo>(), Preset.ExtractAudio));
+    }
+
+    [Fact]
+    public void Audio_presets_refuse_a_timeline_without_audio_and_ignore_the_crop()
+    {
+        var silent = Media(10) with { AudioStreams = [] };
+        var refusal = Assert.Throws<ExportPlanException>(() =>
+            ExportPlanner.Plan(Job(Preset.ExtractAudio, new Dictionary<string, MediaInfo> { ["a"] = silent }, C("a", 1, 3))));
+        Assert.Contains("no audio", refusal.Message);
+
+        var job = Job(Preset.ExtractAudio, new Dictionary<string, MediaInfo> { ["a"] = Media(10) }, C("a", 1, 3));
+        var cropped = ExportPlanner.Plan(job with { State = job.State.WithCrop(new CropRect(0.1, 0.1, 0.5, 0.5)) });
+        Assert.Equal(ExportMode.AudioCopy, cropped.Mode);
+        Assert.False(PresetAnalysis.Of(Preset.ExtractAudio with { Arguments = "-an" }).IsValid);
+        Assert.True(PresetAnalysis.Of(Preset.ExtractAudio with { Arguments = "-vn -c:a copy" }).IsValid);
+    }
+
     [Fact]
     public void Encode_snapshot()
     {

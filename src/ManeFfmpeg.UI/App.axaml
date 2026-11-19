@@ -48,10 +48,15 @@
             <StreamGeometry x:Key="IconSpeaker">M4,9 H8 L13,5 V19 L8,15 H4 Z M15.5,8.5 C17,10 17,14 15.5,15.5 L16.9,16.9 C19,14.8 19,9.2 16.9,7.1 Z</StreamGeometry>
             <StreamGeometry x:Key="IconArrowUp">M12,4 L19,11 L17.6,12.4 L13,7.8 V20 H11 V7.8 L6.4,12.4 L5,11 Z</StreamGeometry>
             <StreamGeometry x:Key="IconArrowDown">M12,20 L5,13 L6.4,11.6 L11,16.2 V4 H13 V16.2 L17.6,11.6 L19,13 Z</StreamGeometry>
+            <StreamGeometry x:Key="IconChevronDown">M5.4,8.4 L12,15 L18.6,8.4 L17.2,7 L12,12.2 L6.8,7 Z</StreamGeometry>
             <StreamGeometry x:Key="IconClose">M7,5.25 L12,10.25 L17,5.25 L18.75,7 L13.75,12 L18.75,17 L17,18.75 L12,13.75 L7,18.75 L5.25,17 L10.25,12 L5.25,7 Z</StreamGeometry>
             <SolidColorBrush x:Key="AccentWarnBrush" Color="#F5A623" />
             <SolidColorBrush x:Key="ErrorBrush" Color="#FF6B6B" />
             <SolidColorBrush x:Key="OkBrush" Color="#5FD38D" />
+            <!-- The export button while it saves audio: green instead of the accent blue. -->
+            <SolidColorBrush x:Key="SaveAudioBrush" Color="#2E9A57" />
+            <SolidColorBrush x:Key="SaveAudioPointerOverBrush" Color="#36AD63" />
+            <SolidColorBrush x:Key="SaveAudioPressedBrush" Color="#27824A" />
         </ResourceDictionary>
     </Application.Resources>
 
@@ -156,6 +161,31 @@
             <Setter Property="FontSize" Value="13" />
             <Setter Property="MinHeight" Value="30" />
             <Setter Property="Padding" Value="4,0,12,0" />
+        </Style>
+        <!-- The split export button: [ Export |▼]. The halves share one rounded outline. -->
+        <Style Selector="Button.export-main">
+            <Setter Property="CornerRadius" Value="4,0,0,4" />
+        </Style>
+        <Style Selector="Button.export-mode">
+            <Setter Property="CornerRadius" Value="0,4,4,0" />
+        </Style>
+        <Style Selector="Button.export-main.audio TextBlock.video-label, Button.export-main:not(.audio) TextBlock.audio-label">
+            <Setter Property="Opacity" Value="0" />
+        </Style>
+        <Style Selector="Button.accent.audio /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource SaveAudioBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource SaveAudioBrush}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.accent.audio:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource SaveAudioPointerOverBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource SaveAudioPointerOverBrush}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.accent.audio:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource SaveAudioPressedBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource SaveAudioPressedBrush}" />
+            <Setter Property="Foreground" Value="White" />
         </Style>
         <Style Selector="GridSplitter">
             <Setter Property="Background" Value="{DynamicResource WindowBackgroundBrush}" />

@@ -103,6 +103,18 @@ public sealed partial class FfmpegFixture : IDisposable
         return (flashes, beeps, end);
     }
 
+    /// <summary>Times where a beep starts in an audio-only file, and its duration.</summary>
+    public async Task<(List<double> Beeps, double Duration)> MeasureAudioAsync(string path)
+    {
+        var result = await Cli.Wrap(Tools!.Ffmpeg)
+            .WithArguments(["-nostdin", "-hide_banner", "-i", path,
+                "-af", "aresample=async=1:first_pts=0,silencedetect=n=-30dB:d=0.03", "-f", "null", "-"])
+            .WithValidation(CommandResultValidation.None)
+            .ExecuteBufferedAsync();
+        var info = await ProbeAsync(path);
+        return (Pulses(result.StandardError, SilenceStart(), SilenceEnd()), info.Duration.TotalSeconds);
+    }
+
     private static List<double> Pulses(string log, Regex starts, Regex ends)
     {
         var startTimes = starts.Matches(log).Select(m => double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)).ToList();

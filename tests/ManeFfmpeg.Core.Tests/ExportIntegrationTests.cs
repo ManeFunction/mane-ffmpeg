@@ -101,6 +101,42 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
     }
 
     [FfmpegFact]
+    public async Task Extract_audio_copies_one_clip_into_its_codecs_file_type()
+    {
+        // Beeps every 2 s from 0: a clip from 3.0 to 7.5 hears them at 1.0 and 3.0.
+        var (plan, _, output) = await ExportAsync(Preset.ExtractAudio, "m4a", [("a", media.Sync30)], C("a", 3.0, 7.5));
+        Assert.Equal(ExportMode.AudioCopy, plan.Mode);
+        var info = await media.ProbeAsync(output);
+        Assert.Null(info.Video);
+        Assert.Equal("aac", Assert.Single(info.AudioStreams).Codec);
+        var (beeps, duration) = await media.MeasureAudioAsync(output);
+        Assert.InRange(duration, 4.45, 4.55);
+        AssertTimes([1.0, 3.0], beeps, BeepTolerance, "beeps");
+    }
+
+    [FfmpegFact]
+    public async Task Extract_audio_copies_alac_into_m4a()
+    {
+        var (plan, _, output) = await ExportAsync(Preset.ExtractAudio, "m4a", [("a", media.SyncAlac)], C("a", 1.0, 5.5));
+        Assert.Equal(ExportMode.AudioCopy, plan.Mode);
+        Assert.Equal("alac", Assert.Single((await media.ProbeAsync(output)).AudioStreams).Codec);
+        var (beeps, _) = await media.MeasureAudioAsync(output);
+        AssertTimes([1.0, 3.0], beeps, BeepTolerance, "beeps");
+    }
+
+    [FfmpegFact]
+    public async Task Extract_audio_joins_several_clips_losslessly_with_their_offsets()
+    {
+        // a: 3.5–7.0 (beeps at 4, 6), then 1.0–3.5 with audio 120 ms late (beep at 2).
+        var (plan, _, output) = await ExportAsync(Preset.ExtractAudio, "flac", [("a", media.Sync30)], C("a", 3.5, 7.0), C("a", 1.0, 3.5, +120));
+        Assert.Equal(ExportMode.AudioEncode, plan.Mode);
+        Assert.Equal("flac", Assert.Single((await media.ProbeAsync(output)).AudioStreams).Codec);
+        var (beeps, duration) = await media.MeasureAudioAsync(output);
+        Assert.InRange(duration, 5.95, 6.05);
+        AssertTimes([0.5, 2.5, 4.62], beeps, BeepTolerance, "beeps");
+    }
+
+    [FfmpegFact]
     public async Task Built_in_for_storage_preset_encodes_hevc_with_quicktime_tag()
     {
         var (plan, _, output) = await ExportAsync(Preset.ForStorage, "mp4", [("a", media.Sync30)], C("a", 3.5, 6.0), C("a", 1.0, 2.5));

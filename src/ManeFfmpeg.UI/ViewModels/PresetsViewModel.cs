@@ -7,7 +7,7 @@ using ManeFfmpeg.Core.Model;
 
 namespace ManeFfmpeg.UI.ViewModels;
 
-/// <summary>The preset editor: a list on the left, the selected preset's fields on the right.</summary>
+/// <summary>The preset editor: Video and Audio tabs, each a list on the left and the selected preset's fields on the right.</summary>
 public sealed partial class PresetsViewModel : ViewModelBase
 {
     private readonly AppServices _app = AppServices.Instance;
@@ -19,7 +19,42 @@ public sealed partial class PresetsViewModel : ViewModelBase
         Reload(null);
     }
 
+    /// <summary>The presets of the open tab.</summary>
     public ObservableCollection<Preset> Presets { get; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(KindIndex), nameof(IsAudio), nameof(ExtensionSuggestions), nameof(ExtensionPlaceholder),
+        nameof(ArgumentsPlaceholder), nameof(ArgumentsHelp))]
+    public partial PresetKind Kind { get; private set; }
+
+    public bool IsAudio => Kind == PresetKind.Audio;
+
+    /// <summary>The open tab: 0 for video presets, 1 for audio presets. Switching with unsaved edits asks first.</summary>
+    public int KindIndex
+    {
+        get => IsAudio ? 1 : 0;
+        set
+        {
+            var kind = value == 1 ? PresetKind.Audio : PresetKind.Video;
+            if (kind == Kind)
+                return;
+            if (!IsModified || AskAboutEdits is null)
+                Kind = kind;
+            else
+                _ = SwitchKindAsync(kind);
+        }
+    }
+
+    private async Task SwitchKindAsync(PresetKind kind)
+    {
+        if (await ResolveEditsAsync())
+            Kind = kind;
+        else
+            // The tabs moved already; put them back on the preset being edited.
+            OnPropertyChanged(nameof(KindIndex));
+    }
+
+    partial void OnKindChanged(PresetKind value) => Reload(null);
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelection), nameof(ListSelection))]
@@ -101,13 +136,23 @@ public sealed partial class PresetsViewModel : ViewModelBase
 
     public bool HasSelection => Selected is not null;
 
-    public IReadOnlyList<string> ExtensionSuggestions { get; } = ["", "mp4", "mkv", "mov", "webm", "m4v", "ts"];
+    public IReadOnlyList<string> ExtensionSuggestions => IsAudio
+        ? ["", "m4a", "mp3", "flac", "wav", "opus", "ogg", "mka"]
+        : ["", "mp4", "mkv", "mov", "webm", "m4v", "ts"];
+
+    public string ExtensionPlaceholder => IsAudio ? "empty = picked from the audio codec" : "empty = same as the first video";
+
+    public string ArgumentsPlaceholder => IsAudio ? "-c:a aac -b:a 256k" : "-c:v libx265 -crf 28 -preset slow -c:a copy";
+
+    public string ArgumentsHelp => IsAudio
+        ? "Everything ffmpeg accepts between the inputs and the output file. Only the audio is saved: inputs, -map, -ss/-t and the output name are filled in by the editor; -af is applied after the clips are joined."
+        : "Everything ffmpeg accepts between the inputs and the output file. Inputs, -map, -ss/-t and the output name are filled in by the editor; -vf/-af are applied after the clips are joined.";
 
     private void Reload(string? selectId)
     {
         _reloading = true;
         Presets.Clear();
-        foreach (var preset in _app.Presets.Presets)
+        foreach (var preset in _app.Presets.Presets.Where(p => p.Kind == Kind))
             Presets.Add(preset);
         _reloading = false;
         Selected = Presets.FirstOrDefault(p => p.Id == selectId) ?? Presets.FirstOrDefault();
@@ -144,7 +189,7 @@ public sealed partial class PresetsViewModel : ViewModelBase
 
     private void Analyze()
     {
-        var analysis = PresetAnalysis.Of(Arguments, AudioFallback);
+        var analysis = PresetAnalysis.Of(Arguments, AudioFallback, Kind);
         if (analysis.Arguments is { } args)
         {
             var filters = (args.VideoFilter, args.AudioFilter) switch
@@ -152,7 +197,9 @@ public sealed partial class PresetsViewModel : ViewModelBase
                 (null, null) => "",
                 _ => $"\nFilters applied after joining clips: {string.Join(", ", new[] { args.VideoFilter, args.AudioFilter }.OfType<string>())}",
             };
-            var extension = string.IsNullOrWhiteSpace(Extension) ? "Output: same container as the first video." : $"Output: .{Extension.Trim().TrimStart('.')} file.";
+            var extension = !string.IsNullOrWhiteSpace(Extension) ? $"Output: .{Extension.Trim().TrimStart('.')} file."
+                : IsAudio ? "Output: the file type of the audio codec (.m4a for AAC and ALAC, .mp3, .flac, .opus, .wav…; .mka for others)."
+                : "Output: same container as the first video.";
             Analysis = $"{analysis.VideoSummary}\n{analysis.AudioSummary(AudioFallback)}\n{extension}{filters}";
         }
         else
@@ -186,13 +233,15 @@ public sealed partial class PresetsViewModel : ViewModelBase
     {
         if (!await ResolveEditsAsync())
             return;
-        var preset = new Preset
-        {
-            Id = Ids.New(),
-            Name = "New preset",
-            Arguments = "-c:v libx264 -crf 20 -preset medium -c:a aac -b:a 192k",
-            Extension = "mp4",
-        };
+        var preset = IsAudio
+            ? new Preset { Id = Ids.New(), Name = "New audio preset", Kind = PresetKind.Audio, Arguments = "-c:a aac -b:a 256k", Extension = "m4a" }
+            : new Preset
+            {
+                Id = Ids.New(),
+                Name = "New preset",
+                Arguments = "-c:v libx264 -crf 20 -preset medium -c:a aac -b:a 192k",
+                Extension = "mp4",
+            };
         _app.Presets.Save(preset);
         Reload(preset.Id);
     }

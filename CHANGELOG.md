@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Added
+- Extract audio: the export button has a dropdown arrow, [ Export video |▼], that switches it to "Extract audio"
+  (green). In that mode the preset menu lists audio presets, and the button saves only the timeline's audio.
+- Audio presets, on a new Audio tab in the presets window. Built-in: "extract audio (as is)", "m4a (AAC 256k)" and
+  "mp3 (V0)". "extract audio (as is)" copies a single clip's own audio without re-encoding, into the file type its
+  codec belongs in (.m4a for AAC and ALAC, .mp3, .flac, .opus, .wav…; .mka for anything else). Several clips,
+  replaced audio, or offsets that need silence are encoded losslessly to FLAC.
+
+### Changed
+- The presets window has Video and Audio tabs. Existing presets are video presets; the built-in audio presets are
+  added after them.
 
 ## [2.2.2] - 2026-11-18
 > [!IMPORTANT]

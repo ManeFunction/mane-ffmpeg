@@ -32,11 +32,29 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
     /// <summary>An existing output file the user agreed to replace (in the save dialog or when asked).</summary>
     private string? _confirmedOutputPath;
 
+    /// <summary>
+    /// Each mode's preset and explicit output path; <see cref="SelectedPreset"/> and <see cref="OutputPath"/> show the
+    /// current mode's. The project saves the video ones; the audio ones last while the window is open.
+    /// </summary>
+    private Preset? _videoPreset, _audioPreset;
+    private string? _videoOutputPath, _audioOutputPath;
+
+    /// <summary>Set while the menu is refilled or the mode changes, when the list's changes aren't the user's choice.</summary>
+    private bool _switching;
+
     private ProjectState State => _owner.State;
     private SourceCatalog Catalog => _owner.Catalog;
     private IMainWindowView? View => _owner.View;
 
+    /// <summary>The current mode's presets: video presets for Export video, audio presets for Extract audio.</summary>
     public ObservableCollection<Preset> Presets { get; } = [];
+
+    /// <summary>The export button saves the timeline's audio alone (and turns green) instead of exporting the video.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Kind), nameof(OutputExtensionHint))]
+    public partial bool IsAudioMode { get; set; }
+
+    public PresetKind Kind => IsAudioMode ? PresetKind.Audio : PresetKind.Video;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(OutputExtensionHint))]
@@ -49,7 +67,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsIdle))]
-    [NotifyCanExecuteChangedFor(nameof(ExportCommand), nameof(CancelExportCommand), nameof(PauseExportCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ExportCommand), nameof(CancelExportCommand), nameof(PauseExportCommand), nameof(UseVideoModeCommand), nameof(UseAudioModeCommand))]
     public partial bool IsExporting { get; private set; }
 
     [ObservableProperty]
@@ -86,7 +104,8 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
 
     public string OutputDisplay => OutputPath ?? (DefaultOutputPath() is { } p ? $"{p}  (automatic)" : "Choose where to save…");
 
-    public string OutputExtensionHint => SelectedPreset is { Extension.Length: > 0 } p ? $".{p.Extension}" : "same as source";
+    public string OutputExtensionHint => SelectedPreset is { Extension.Length: > 0 } p ? $".{p.Extension}"
+        : IsAudioMode ? "by audio codec" : "same as source";
 
     public ExportViewModel(MainWindowViewModel owner)
     {
@@ -111,21 +130,70 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
 
     private void OnPresetsChanged(object? sender, EventArgs e) => ReloadPresets();
 
+    /// <summary>Refills the menu with the current mode's presets, keeping each mode's choice where it still exists.</summary>
     private void ReloadPresets()
     {
-        var selectedId = SelectedPreset?.Id;
-        Presets.Clear();
-        foreach (var preset in _app.Presets.Presets)
-            Presets.Add(preset);
-        SelectedPreset = Presets.FirstOrDefault(p => p.Id == selectedId) ?? DefaultPreset();
+        _videoPreset = Current(_videoPreset, PresetKind.Video);
+        _audioPreset = Current(_audioPreset, PresetKind.Audio);
+        _switching = true;
+        try
+        {
+            Presets.Clear();
+            foreach (var preset in _app.Presets.Presets.Where(p => p.Kind == Kind))
+                Presets.Add(preset);
+        }
+        finally
+        {
+            _switching = false;
+        }
+        SelectedPreset = IsAudioMode ? _audioPreset : _videoPreset;
     }
 
-    /// <summary>"for storage" is the default for new projects.</summary>
-    private Preset? DefaultPreset() => Presets.FirstOrDefault(p => p.Id == Preset.ForStorage.Id) ?? Presets.FirstOrDefault();
+    /// <summary>The store's version of <paramref name="chosen"/>, or the default preset of that kind.</summary>
+    private Preset? Current(Preset? chosen, PresetKind kind) =>
+        _app.Presets.Presets.FirstOrDefault(p => p.Id == chosen?.Id && p.Kind == kind) ?? DefaultPreset(kind);
+
+    /// <summary>"for storage" is the default for new projects, and "extract audio (as is)" for saving audio.</summary>
+    private Preset? DefaultPreset(PresetKind kind)
+    {
+        var id = kind == PresetKind.Audio ? Preset.ExtractAudio.Id : Preset.ForStorage.Id;
+        return _app.Presets.Presets.FirstOrDefault(p => p.Id == id) ?? _app.Presets.Presets.FirstOrDefault(p => p.Kind == kind);
+    }
+
+    partial void OnIsAudioModeChanged(bool value)
+    {
+        _switching = true;
+        try
+        {
+            OutputPath = value ? _audioOutputPath : _videoOutputPath;
+        }
+        finally
+        {
+            _switching = false;
+        }
+        ReloadPresets();
+        ExportStatus = null;
+        CanReveal = false;
+        ExportLog = null;
+        InvalidatePlanPreview();
+    }
+
+    [RelayCommand(CanExecute = nameof(IsIdle))]
+    private void UseVideoMode() => IsAudioMode = false;
+
+    [RelayCommand(CanExecute = nameof(IsIdle))]
+    private void UseAudioMode() => IsAudioMode = true;
 
     partial void OnSelectedPresetChanged(Preset? value)
     {
-        if (value is not null && PresetAnalysis.Of(value).Arguments is { } args)
+        // Refilling the menu clears its selection for a moment; that isn't the user's choice.
+        if (_switching)
+            return;
+        if (IsAudioMode)
+            _audioPreset = value;
+        else
+            _videoPreset = value;
+        if (!IsAudioMode && value is not null && PresetAnalysis.Of(value).Arguments is { } args)
             _owner.SnapToKeyframes = args.VideoCopy;
         OnPropertyChanged(nameof(OutputDisplay));
         _owner.RefreshDirty();
@@ -134,6 +202,13 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
 
     partial void OnOutputPathChanged(string? value)
     {
+        if (!_switching)
+        {
+            if (IsAudioMode)
+                _audioOutputPath = value;
+            else
+                _videoOutputPath = value;
+        }
         _owner.RefreshDirty();
         InvalidatePlanPreview();
     }
@@ -145,7 +220,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
     }
 
     internal ExportSettings CurrentExportSettings() =>
-        new() { PresetId = SelectedPreset?.Id, PresetSnapshot = SelectedPreset, OutputPath = OutputPath };
+        new() { PresetId = _videoPreset?.Id, PresetSnapshot = _videoPreset, OutputPath = _videoOutputPath };
 
     /// <summary>
     /// The project's preset, or one that runs exactly like it. One this machine doesn't have comes from the project file and its arguments go
@@ -153,9 +228,9 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
     /// </summary>
     internal async Task<Preset?> ResolvePresetAsync(ExportSettings settings)
     {
-        if (_app.Presets.FindFor(settings.PresetId, settings.PresetSnapshot) is { } known)
+        if (_app.Presets.FindFor(settings.PresetId, settings.PresetSnapshot) is { Kind: PresetKind.Video } known)
             return known;
-        if (settings.PresetSnapshot is not { } snapshot || snapshot.Id != settings.PresetId || View is null)
+        if (settings.PresetSnapshot is not { Kind: PresetKind.Video } snapshot || snapshot.Id != settings.PresetId || View is null)
             return null;
         var answer = await View.AskAsync($"Add the preset “{snapshot.Name}”?",
             $"This project was exported with a preset you don't have:\n\n{snapshot.Arguments}\n\n" +
@@ -169,8 +244,16 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
 
     internal void ApplyExportSettings(ExportSettings settings, Preset? preset)
     {
-        SelectedPreset = preset ?? DefaultPreset();
-        OutputPath = settings.OutputPath is { } path && Path.IsPathFullyQualified(path) ? path : null;
+        var output = settings.OutputPath is { } path && Path.IsPathFullyQualified(path) ? path : null;
+        if (IsAudioMode)
+        {
+            _videoPreset = preset is { Kind: PresetKind.Video } ? preset : DefaultPreset(PresetKind.Video);
+            _videoOutputPath = output;
+            _owner.RefreshDirty();
+            return;
+        }
+        SelectedPreset = preset is { Kind: PresetKind.Video } ? preset : DefaultPreset(PresetKind.Video);
+        OutputPath = output;
     }
 
     private string? DefaultOutputPath()
@@ -178,10 +261,13 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         if (State.Sources.FirstOrDefault() is not { } first)
             return null;
         var dir = Path.GetDirectoryName(first.Path)!;
-        var baseName = _owner.FilePath is not null ? _owner.ProjectName : Path.GetFileNameWithoutExtension(first.Path) + "-edit";
-        var ext = SelectedPreset is { Extension.Length: > 0 } p ? "." + p.Extension : Path.GetExtension(first.Path);
+        var baseName = _owner.FilePath is not null ? _owner.ProjectName
+            : Path.GetFileNameWithoutExtension(first.Path) + (IsAudioMode ? "-audio" : "-edit");
+        var ext = SelectedPreset is { Extension.Length: > 0 } p ? "." + p.Extension
+            : IsAudioMode ? "." + (SelectedPreset is { } audio ? ExportPlanner.AudioExtensionFor(State, Catalog.Media, audio) ?? "m4a" : "m4a")
+            : Path.GetExtension(first.Path);
         var candidate = Path.Combine(dir, baseName + ext);
-        for (var n = 2; File.Exists(candidate) || State.Sources.Any(s => s.Path == candidate); n++)
+        for (var n = 2; File.Exists(candidate) || State.Sources.Any(s => s.Path == candidate) || State.AudioFiles.Any(s => s.Path == candidate); n++)
             candidate = Path.Combine(dir, $"{baseName}-{n}{ext}");
         return candidate;
     }
@@ -276,6 +362,8 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
             ShowExportResult("Add videos to the timeline first.", failed: true);
             return;
         }
+        var audio = IsAudioMode;
+        var what = audio ? "Extracting audio" : "Export";
         // An output path restored from a project was never confirmed in the save dialog.
         if (output != _confirmedOutputPath && File.Exists(output) && View is not null)
         {
@@ -299,7 +387,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         // Created before planning, so a pause while finding keyframes holds the export too.
         var runner = _runner = new ExportRunner(tools);
         var workDir = Path.Combine(AppPaths.TempDirectory, "export-" + Guid.NewGuid().ToString("N")[..8]);
-        _keepAwakeReason = $"Exporting {Path.GetFileName(output)}";
+        _keepAwakeReason = $"{(audio ? "Extracting audio to" : "Exporting")} {Path.GetFileName(output)}";
         _keepAwake = Platform.Current.KeepAwake(_keepAwakeReason);
         try
         {
@@ -315,15 +403,15 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
                 case ExportOutcome.Succeeded:
                     ShowExportResult($"✓ {result.Message} in {FormatElapsed(result.Elapsed)}", failed: false);
                     CanReveal = true;
-                    await NotifyAsync("Export finished", $"{Path.GetFileName(output)} is ready ({FormatElapsed(result.Elapsed)}).");
+                    await NotifyAsync(audio ? "Audio extracted" : "Export finished", $"{Path.GetFileName(output)} is ready ({FormatElapsed(result.Elapsed)}).");
                     break;
                 case ExportOutcome.Cancelled:
-                    ShowExportResult("Export cancelled.", failed: false);
+                    ShowExportResult($"{what} cancelled.", failed: false);
                     break;
                 default:
-                    ShowExportResult($"Export failed: {result.Message}", failed: true);
+                    ShowExportResult($"{what} failed: {result.Message}", failed: true);
                     ExportLog = result.Log;
-                    await NotifyAsync("Export failed", $"{Path.GetFileName(output)}: {result.Message}");
+                    await NotifyAsync($"{what} failed", $"{Path.GetFileName(output)}: {result.Message}");
                     break;
             }
         }
@@ -333,7 +421,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            ShowExportResult($"Export failed: {ex.Message}", failed: true);
+            ShowExportResult($"{what} failed: {ex.Message}", failed: true);
             ExportLog = ex.ToString();
         }
         finally

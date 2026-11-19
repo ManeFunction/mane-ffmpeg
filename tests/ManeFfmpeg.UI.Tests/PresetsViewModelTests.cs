@@ -154,6 +154,43 @@ public class PresetsViewModelTests
     }
 
     [Fact]
+    public async Task Audio_tab_lists_and_adds_audio_presets_only()
+    {
+        var vm = new PresetsViewModel();
+        Assert.All(vm.Presets, p => Assert.Equal(PresetKind.Video, p.Kind));
+        vm.KindIndex = 1;
+        Assert.True(vm.IsAudio);
+        Assert.Equal(Preset.ExtractAudio.Id, vm.Presets[0].Id);
+        Assert.Equal(Preset.ExtractAudio.Id, vm.Selected?.Id);
+        Assert.All(vm.Presets, p => Assert.Equal(PresetKind.Audio, p.Kind));
+        Assert.Contains("m4a", vm.ExtensionSuggestions);
+        Assert.Contains("audio codec", vm.Analysis);
+
+        await vm.AddCommand.ExecuteAsync(null);
+        var added = vm.Selected!;
+        Assert.Equal(PresetKind.Audio, added.Kind);
+        Assert.Equal(added.Id, vm.Presets[^1].Id);
+        vm.DeleteCommand.Execute(null);
+        Assert.DoesNotContain(vm.Presets, p => p.Id == added.Id);
+        vm.KindIndex = 0;
+        Assert.All(vm.Presets, p => Assert.Equal(PresetKind.Video, p.Kind));
+    }
+
+    [Fact]
+    public async Task Switching_tabs_with_edits_asks_first()
+    {
+        var (vm, asked) = Edited(answer: 2);
+        var edited = vm.Selected;
+        vm.KindIndex = 1;
+        await Until(() => asked.Count == 1);
+        await Task.Delay(50);
+        Assert.Equal(0, vm.KindIndex);
+        Assert.Same(edited, vm.Selected);
+        Assert.True(vm.IsModified);
+        vm.RevertCommand.Execute(null);
+    }
+
+    [Fact]
     public async Task Adding_a_preset_asks_first()
     {
         var (vm, asked) = Edited(answer: 2);

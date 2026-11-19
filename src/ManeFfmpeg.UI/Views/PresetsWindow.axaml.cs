@@ -39,6 +39,9 @@ public partial class PresetsWindow : Window
         {
             if (e.PropertyName == nameof(PresetsViewModel.ListSelection) && !ReferenceEquals(PresetList.SelectedItem, vm.ListSelection))
                 PresetList.SelectedItem = vm.ListSelection;
+            // Likewise for the tabs, when the user chose to keep editing instead of switching.
+            if (e.PropertyName == nameof(PresetsViewModel.KindIndex) && KindTabs.SelectedIndex != vm.KindIndex)
+                KindTabs.SelectedIndex = vm.KindIndex;
         };
         // The list handles presses itself (to select), so listen to handled events too.
         PresetList.AddHandler(PointerPressedEvent, OnListPointerPressed, RoutingStrategies.Bubble, handledEventsToo: true);

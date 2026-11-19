@@ -21,12 +21,16 @@ public sealed record PresetAnalysis
 
     public bool IsValid => Errors.Count == 0;
 
-    public bool VideoCopy => Arguments?.VideoCopy == true;
+    public PresetKind Kind { get; private init; }
 
-    public static PresetAnalysis Of(Preset preset) => Of(preset.Arguments, preset.AudioFallbackArguments);
+    /// <summary>A video preset that copies the picture (an audio preset has no picture to copy).</summary>
+    public bool VideoCopy => Kind == PresetKind.Video && Arguments?.VideoCopy == true;
 
-    public static PresetAnalysis Of(string arguments, string audioFallback)
+    public static PresetAnalysis Of(Preset preset) => Of(preset.Arguments, preset.AudioFallbackArguments, preset.Kind);
+
+    public static PresetAnalysis Of(string arguments, string audioFallback, PresetKind kind = PresetKind.Video)
     {
+        var warnings = new List<string>();
         var errors = new List<string>();
         PresetArguments? args = null;
         IReadOnlyList<string> fallback = [];
@@ -46,23 +50,38 @@ public sealed record PresetAnalysis
         {
             errors.Add($"Audio fallback: {ex.Message}");
         }
-        if (args is { NoVideo: true })
-            errors.Add("The preset disables video (-vn).");
-        if (args is { VideoCopy: true, VideoFilter: not null })
-            errors.Add("Video filters can't be used while copying video (-c:v copy).");
+        if (kind == PresetKind.Video)
+        {
+            if (args is { NoVideo: true })
+                errors.Add("The preset disables video (-vn).");
+            if (args is { VideoCopy: true, VideoFilter: not null })
+                errors.Add("Video filters can't be used while copying video (-c:v copy).");
+        }
+        else
+        {
+            if (args is { NoAudio: true })
+                errors.Add("The preset disables audio (-an).");
+            if (args is { VideoFilter: not null })
+                warnings.Add("Saved audio has no picture: the video filter (-vf) is ignored.");
+        }
         if (args is { AudioCopy: true, AudioFilter: not null })
             errors.Add("Audio filters can't be used while copying audio (-c:a copy).");
-        return new PresetAnalysis { Arguments = args, Fallback = fallback, Errors = errors, Warnings = args?.Warnings ?? [] };
+        return new PresetAnalysis { Kind = kind, Arguments = args, Fallback = fallback, Errors = errors, Warnings = [.. args?.Warnings ?? [], .. warnings] };
     }
 
     /// <summary>How the export treats video, in the planner's terms.</summary>
     public string? VideoSummary => Arguments is not { } args ? null
+        : Kind == PresetKind.Audio ? "Video: none, only the audio is saved."
         : args.VideoCopy ? "Video: copied without re-encoding. Cuts snap to keyframes; all clips must share one format."
         : $"Video: encoded with {args.VideoCodec ?? "ffmpeg's default for the container"}.";
 
     /// <summary>How the export treats audio, in the planner's terms (see <see cref="ExportPlanner"/>).</summary>
     public string? AudioSummary(string fallbackText) => Arguments is not { } args ? null
         : args.NoAudio ? "Audio: dropped (-an)."
+        : Kind == PresetKind.Audio
+            ? args.AudioCopy
+                ? $"Audio: copied as it is when the timeline is one clip playing its own audio; several clips, replaced audio or offsets that need silence are encoded with “{fallbackText}”."
+                : $"Audio: encoded with {args.AudioCodec ?? "ffmpeg's default for the file type"}."
         : !args.AudioCopy ? $"Audio: encoded with {args.AudioCodec ?? "ffmpeg's default for the container"}."
         : args.VideoCopy
             ? $"Audio: copied when all clips' audio shares one format and no clip has an audio offset; otherwise encoded with “{fallbackText}”."
