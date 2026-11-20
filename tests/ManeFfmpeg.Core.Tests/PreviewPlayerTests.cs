@@ -139,6 +139,39 @@ public class PreviewPlayerTests(FfmpegFixture media) : IClassFixture<FfmpegFixtu
     }
 
     [MpvFact]
+    public async Task Volume_steps_follow_the_timeline_for_a_source_that_starts_late()
+    {
+        // The same beeps, in a file whose timestamps start at 10 s: the volume expression's t must still be timeline time.
+        var path = Path.Combine(media.Directory, "late-start.mkv");
+        await Cli.Wrap(FfmpegFixture.Tools!.Ffmpeg)
+            .WithArguments([.. FfmpegTools.Quiet, "-y", "-i", media.Sync30, "-c", "copy", "-output_ts_offset", "10", path])
+            .ExecuteAsync();
+        var info = await media.ProbeAsync(path);
+        Assert.True(info.StartTime >= TimeSpan.FromSeconds(9.9), $"start time {info.StartTime}");
+        // 0.5–2.5 s muted (its beep at 2 s would sound at 1.5), then 2.5–4.5 s as it is (its beep at 4 s sounds at 3.5).
+        var muted = Clip.Create("s", TimeSpan.FromSeconds(0.5), TimeSpan.FromSeconds(2.5)) with { Volume = 0 };
+        var clip = Clip.Create("s", TimeSpan.FromSeconds(2.5), TimeSpan.FromSeconds(4.5));
+        var state = new ProjectState([new SourceMedia { Id = "s", Path = path }], new Timeline([muted, clip]));
+        var preview = PreviewTimeline.For(state, new Dictionary<string, MediaInfo> { ["s"] = info }, "/nonexistent/silence.mka")!;
+        var wav = Path.Combine(media.Directory, $"late-{Guid.NewGuid():N}.wav");
+
+        using var player = PreviewPlayer.Create(hardwareDecoding: false, headless: true);
+        player.Mpv.SetString("ao", "pcm");
+        player.Mpv.SetString("ao-pcm-file", wav);
+        player.LoadTimeline(preview, TimeSpan.Zero);
+        await Wait.Until(() => player.Mpv.GetString("lavfi-complex")?.Contains("gte(t,2)") == true, "the volume graph");
+        await Wait.Until(() => player.Mpv.GetString("seeking") == "no" && Near(player.Mpv.GetDouble("time-pos"), 0), "the start");
+        player.Paused = false;
+        await Wait.Until(() => player.Mpv.GetDouble("time-pos") > 3.9, "playing to the end");
+        player.Unload();
+        await Wait.Until(() => File.Exists(wav) && new FileInfo(wav).Length > 0, "the recorded audio");
+        await Task.Delay(300);
+        // Only the second clip's beep: on the file's own timestamps the step would be past from the start, and both beep.
+        var (beeps, _) = await media.MeasureAudioAsync(wav);
+        Assert.True(beeps.Count == 1, $"beeps at {string.Join(", ", beeps)}");
+    }
+
+    [MpvFact]
     public async Task Reloading_a_mixed_timeline_keeps_the_position_even_far_from_a_keyframe()
     {
         // One keyframe every 10 s: mpv's own restart after a graph change would land on the one at 10 s.
