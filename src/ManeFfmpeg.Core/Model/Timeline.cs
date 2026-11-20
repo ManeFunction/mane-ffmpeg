@@ -133,64 +133,6 @@ public sealed record Timeline
     public override int GetHashCode() => Clips.Count;
 }
 
-/// <summary>
-/// A piece of an audio file on the A2 track, mixed over the timeline's own sound: the file's <c>[In, Out)</c> plays from
-/// timeline time <see cref="Start"/>. A2 clips don't move with V1 edits; they stay at their timeline time.
-/// </summary>
-public sealed record TrackClip
-{
-    public required string Id { get; init; }
-
-    /// <summary>An id in <see cref="ProjectState.AudioFiles"/>.</summary>
-    public required string FileId { get; init; }
-
-    /// <summary>Timeline time where the clip starts.</summary>
-    public required TimeSpan Start { get; init; }
-
-    public required TimeSpan In { get; init; }
-    public required TimeSpan Out { get; init; }
-
-    /// <summary>Gain (1 = unchanged), between 0 and <see cref="Gain.Max"/>.</summary>
-    public double Volume { get; init; } = 1;
-
-    public TimeSpan Duration => Out - In;
-
-    public TimeSpan End => Start + Duration;
-
-    public static TrackClip Create(string fileId, TimeSpan start, TimeSpan @in, TimeSpan @out) =>
-        new() { Id = Ids.New(), FileId = fileId, Start = start, In = @in, Out = @out };
-}
-
-/// <summary>Volume as a gain factor, shown as a percentage.</summary>
-public static class Gain
-{
-    /// <summary>The loudest a clip can be made: 200 %, about +6 dB.</summary>
-    public const double Max = 2;
-
-    /// <summary>The loudest anything is played: a clip at <see cref="Max"/> on a track at <see cref="Max"/>.</summary>
-    public const double MaxCombined = Max * Max;
-
-    public static double Clamp(double gain) => double.IsNaN(gain) ? 1 : Math.Clamp(gain, 0, Max);
-
-    /// <summary>Whether a gain leaves the sound as it is (within rounding of a slider).</summary>
-    public static bool IsUnity(double gain) => Math.Abs(gain - 1) < 1e-4;
-
-    /// <summary>"80 %", "100 %", "0 %".</summary>
-    public static string Percent(double gain) => $"{Math.Round(gain * 100):0} %";
-
-    /// <summary>"−1.9 dB", "+6.0 dB", "−∞ dB".</summary>
-    public static string Decibels(double gain) => gain <= 0
-        ? "−∞ dB"
-        : (20 * Math.Log10(gain)).ToString("+0.0 dB;−0.0 dB;0.0 dB", System.Globalization.CultureInfo.InvariantCulture);
-}
-
-/// <summary>The two audio tracks of the mix: A1 (what the V1 clips play) and A2 (the clips mixed over them).</summary>
-public enum MixTrack
-{
-    A1,
-    A2,
-}
-
 /// <summary>The undoable part of a project.</summary>
 /// <param name="Sources">The videos clips are cut from.</param>
 /// <param name="AudioFiles">Imported audio files that can replace clips' sound.</param>
