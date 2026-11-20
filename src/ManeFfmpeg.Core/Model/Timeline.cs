@@ -237,16 +237,20 @@ public sealed record ProjectState(ImmutableList<SourceMedia> Sources, Timeline T
     {
         if (Gain.IsUnity(A1Volume) && Gain.IsUnity(A2Volume))
             return this;
-        var a1 = A1Volume;
-        var a2 = A2Volume;
         return this with
         {
-            Timeline = Timeline with { Clips = [.. Timeline.Clips.Select(c => c with { Volume = c.Volume * a1 })] },
-            AudioTrack = [.. AudioTrack.Select(c => c with { Volume = c.Volume * a2 })],
+            Timeline = Timeline with { Clips = [.. Timeline.Clips.Select(c => c with { Volume = HeardVolume(c) })] },
+            AudioTrack = [.. AudioTrack.Select(c => c with { Volume = HeardVolume(c) })],
             A1Volume = 1,
             A2Volume = 1,
         };
     }
+
+    /// <summary>How loud a V1 clip's sound is heard: its own volume times A1's.</summary>
+    public double HeardVolume(Clip clip) => clip.Volume * A1Volume;
+
+    /// <summary>How loud an A2 clip is heard: its own volume times A2's.</summary>
+    public double HeardVolume(TrackClip clip) => clip.Volume * A2Volume;
 
     public SourceMedia? Source(string id) => Sources.Find(s => s.Id == id);
 

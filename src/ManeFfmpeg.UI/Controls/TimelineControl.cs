@@ -287,7 +287,7 @@ public sealed class TimelineControl : Control
                 DrawSilence(context, vm, start, audioRect, layout, replaced is null ? HatchPen : InkHatchPen);
                 if (layout is AudioLayout.Looped looped)
                     DrawSeams(context, vm, start, audioRect, looped, width);
-                DrawWaveform(context, vm, start, audioRect, layout, vm.Waveform(sound.File), width, replaced is null ? WavePen : InkPen, clip.Volume * vm.State.A1Volume);
+                DrawWaveform(context, vm, start, audioRect, layout, vm.Waveform(sound.File), width, replaced is null ? WavePen : InkPen, vm.State.HeardVolume(clip));
             }
             if (clip.ActiveAudioOffset != TimeSpan.Zero)
             {
@@ -352,7 +352,7 @@ public sealed class TimelineControl : Control
             {
                 // The clip as a stretch of its file played once from its in point.
                 var layout = new AudioLayout.Placed(new AudioPlacement(TimeSpan.Zero, clip.In, clip.Duration, clip.Duration), clip.In);
-                DrawWaveform(context, vm, clip.Start, rect, layout, vm.Waveform(heard.File), width, InkPen, clip.Volume * vm.State.A2Volume);
+                DrawWaveform(context, vm, clip.Start, rect, layout, vm.Waveform(heard.File), width, InkPen, vm.State.HeardVolume(clip));
             }
             var label = Text($"♫ {file?.DisplayName ?? "missing audio file"}", missing ? LabelBrush : InkBrush, 10, FontWeight.SemiBold);
             var chip = new Rect(textX, rect.Top + (rect.Height - label.Height - 2) / 2, label.Width + 10, label.Height + 2);
