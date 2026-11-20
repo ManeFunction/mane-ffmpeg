@@ -31,31 +31,23 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
 
     public Timeline Timeline => owner.State.Timeline;
 
-    private readonly HashSet<string> _selection = [];
-
     /// <summary>
-    /// The selected clips' ids: V1 clips, or A2 clips (never both); changed through <see cref="Select"/> and friends.
+    /// What is selected: V1 clips, A2 clips or a whole audio track (never a mix); changed through <see cref="Select"/>
+    /// and friends.
     /// </summary>
-    public IReadOnlySet<string> Selection => _selection;
+    public TimelineSelection Selected { get; private set; } = TimelineSelection.None;
 
-    /// <summary>
-    /// A whole audio track, selected by clicking its label (Selection then sets the track's volume); null while clips or
-    /// nothing are selected. Selecting clips unselects it.
-    /// </summary>
-    public MixTrack? SelectedTrack { get; private set; }
+    /// <summary>The selected clips' ids: V1 clips, or A2 clips; empty with a whole track selected.</summary>
+    public IReadOnlySet<string> Selection => Selected.Ids;
+
+    /// <summary>A whole audio track, selected by clicking its label (Selection then sets the track's volume), or null.</summary>
+    public MixTrack? SelectedTrack => Selected.Track;
 
     /// <summary>Selects the whole track instead of any clips.</summary>
-    public void SelectTrack(MixTrack track)
-    {
-        if (SelectedTrack == track && _selection.Count == 0)
-            return;
-        _selection.Clear();
-        SelectedTrack = track;
-        SelectionChanged();
-    }
+    public void SelectTrack(MixTrack track) => SetSelection(TimelineSelection.OfTrack(track));
 
     /// <summary>The selection is of A2 clips.</summary>
-    public bool SelectionIsTrack => _selection.Count > 0 && State.AudioTrack.Any(c => _selection.Contains(c.Id));
+    public bool SelectionIsTrack => Selected.Kind == SelectionKind.TrackClips;
 
     public ImmutableList<TrackClip> Track => State.AudioTrack;
 
@@ -151,84 +143,23 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
         return time < TimeSpan.Zero ? TimeSpan.Zero : time > end ? end : time;
     }
 
-    public void Select(string clipId, bool toggle, bool range)
-    {
-        // V1 and A2 clips are never selected together: what the inspector and the edits act on stays clear.
-        SelectedTrack = null;
-        var track = State.TrackClip(clipId) is not null;
-        if (_selection.Count > 0 && SelectionIsTrack != track)
-            _selection.Clear();
-        if (track)
-        {
-            if (!toggle)
-                _selection.Clear();
-            if (!(toggle && _selection.Remove(clipId)))
-                _selection.Add(clipId);
-            SelectionChanged();
-            return;
-        }
-        if (range && Selection.Count > 0)
-        {
-            var clips = Timeline.Clips;
-            var anchor = clips.FindIndex(c => Selection.Contains(c.Id));
-            var target = Timeline.IndexOf(clipId);
-            if (anchor >= 0 && target >= 0)
-            {
-                _selection.Clear();
-                for (var i = Math.Min(anchor, target); i <= Math.Max(anchor, target); i++)
-                    _selection.Add(clips[i].Id);
-            }
-        }
-        else if (toggle)
-        {
-            if (!_selection.Remove(clipId))
-                _selection.Add(clipId);
-        }
-        else if (!Selection.Contains(clipId) || Selection.Count > 1)
-        {
-            _selection.Clear();
-            _selection.Add(clipId);
-        }
-        SelectionChanged();
-    }
+    public void Select(string clipId, bool toggle, bool range) => SetSelection(Selected.Click(State, clipId, toggle, range));
 
-    public void SelectAll()
-    {
-        SelectedTrack = null;
-        _selection.Clear();
-        foreach (var clip in Timeline.Clips)
-            _selection.Add(clip.Id);
-        SelectionChanged();
-    }
+    public void SelectAll() => SetSelection(TimelineSelection.AllClips(State));
 
     /// <summary>Selects just this clip.</summary>
-    public void SelectOnly(string clipId)
-    {
-        SelectedTrack = null;
-        _selection.Clear();
-        _selection.Add(clipId);
-        SelectionChanged();
-    }
+    public void SelectOnly(string clipId) => SetSelection(TimelineSelection.OfClips(State, [clipId]));
 
-    public void ClearSelection()
-    {
-        if (Selection.Count == 0 && SelectedTrack is null)
-            return;
-        _selection.Clear();
-        SelectedTrack = null;
-        SelectionChanged();
-    }
+    public void ClearSelection() => SetSelection(TimelineSelection.None);
 
     /// <summary>Drops ids that no longer exist (after undo or delete).</summary>
-    public void PruneSelection()
-    {
-        var ids = Timeline.Clips.Select(c => c.Id).Concat(State.AudioTrack.Select(c => c.Id)).ToHashSet();
-        if (_selection.RemoveWhere(id => !ids.Contains(id)) > 0)
-            SelectionChanged();
-    }
+    public void PruneSelection() => SetSelection(Selected.Pruned(State));
 
-    private void SelectionChanged()
+    private void SetSelection(TimelineSelection next)
     {
+        if (next.Equals(Selected))
+            return;
+        Selected = next;
         Invalidate();
         owner.OnSelectionChanged();
     }

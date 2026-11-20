@@ -23,10 +23,14 @@ public sealed partial class MainWindowViewModel
 
     // ---- Inspector --------------------------------------------------------------------------------
 
-    private Clip? PrimaryClip => State.Timeline.Clips.FirstOrDefault(c => Timeline.Selection.Contains(c.Id));
+    private Clip? PrimaryClip => Timeline.Selected.Kind == SelectionKind.TimelineClips
+        ? State.Timeline.Clips.FirstOrDefault(c => Timeline.Selected.Contains(c.Id))
+        : null;
 
     /// <summary>The first selected A2 clip, when A2 clips are selected.</summary>
-    private TrackClip? PrimaryTrackClip => State.AudioTrack.FirstOrDefault(c => Timeline.Selection.Contains(c.Id));
+    private TrackClip? PrimaryTrackClip => Timeline.Selected.Kind == SelectionKind.TrackClips
+        ? State.AudioTrack.FirstOrDefault(c => Timeline.Selected.Contains(c.Id))
+        : null;
 
     private IReadOnlySet<string> TargetClips()
     {
@@ -44,14 +48,14 @@ public sealed partial class MainWindowViewModel
     public bool HasTrackSelection => PrimaryTrackClip is not null;
 
     /// <summary>A whole audio track is selected by its label: Selection shows only its volume.</summary>
-    public bool IsWholeTrackSelected => Timeline.SelectedTrack is not null;
+    public bool IsWholeTrackSelected => Timeline.Selected.Kind == SelectionKind.WholeTrack;
 
     public bool IsA1Selected => Timeline.SelectedTrack == MixTrack.A1;
 
     public bool IsA2Selected => Timeline.SelectedTrack == MixTrack.A2;
 
     /// <summary>Clips on either track, or a whole track, are selected (their volume can be edited).</summary>
-    public bool HasAnySelection => HasSelection || HasTrackSelection || IsWholeTrackSelected;
+    public bool HasAnySelection => !Timeline.Selected.IsEmpty;
 
     [RelayCommand]
     private void SelectA1Track() => Timeline.SelectTrack(MixTrack.A1);
@@ -331,28 +335,20 @@ public sealed partial class MainWindowViewModel
     private string TrackMessage(string fileId) =>
         $"{State.AudioFile(fileId)?.DisplayName} is mixed in on A2. Drag it to move it, drag its edges to trim it; Selection sets its volume.";
 
+    /// <summary>Everything the Selection panel shows that depends on what is selected.</summary>
+    private static readonly string[] SelectionProperties =
+    [
+        nameof(IsWholeTrackSelected), nameof(IsA1Selected), nameof(IsA2Selected), nameof(VolumeTip), nameof(HasTrackSelection),
+        nameof(HasAnySelection), nameof(ApplyVolumeText), nameof(HasReplacedAudio), nameof(ReplacedAudioName),
+        nameof(ReplacedAudioBrush), nameof(LoopAudio), nameof(ApplyOffsetText), nameof(HasSelection), nameof(SelectionTitle),
+        nameof(SelectionDetails), nameof(ClipIn), nameof(ClipOut), nameof(AudioOffsetText), nameof(AudioOffsetHint),
+    ];
+
     internal void OnSelectionChanged()
     {
-        OnPropertyChanged(nameof(IsWholeTrackSelected));
-        OnPropertyChanged(nameof(IsA1Selected));
-        OnPropertyChanged(nameof(IsA2Selected));
-        OnPropertyChanged(nameof(VolumeTip));
-        OnPropertyChanged(nameof(HasTrackSelection));
-        OnPropertyChanged(nameof(HasAnySelection));
-        OnPropertyChanged(nameof(ApplyVolumeText));
+        foreach (var name in SelectionProperties)
+            OnPropertyChanged(name);
         OnVolumeChanged();
-        OnPropertyChanged(nameof(HasReplacedAudio));
-        OnPropertyChanged(nameof(ReplacedAudioName));
-        OnPropertyChanged(nameof(ReplacedAudioBrush));
-        OnPropertyChanged(nameof(LoopAudio));
-        OnPropertyChanged(nameof(ApplyOffsetText));
-        OnPropertyChanged(nameof(HasSelection));
-        OnPropertyChanged(nameof(SelectionTitle));
-        OnPropertyChanged(nameof(SelectionDetails));
-        OnPropertyChanged(nameof(ClipIn));
-        OnPropertyChanged(nameof(ClipOut));
-        OnPropertyChanged(nameof(AudioOffsetText));
-        OnPropertyChanged(nameof(AudioOffsetHint));
     }
 
     /// <summary>Where cuts may land in a source: on frames, and in points on keyframes while snapping to them.</summary>
