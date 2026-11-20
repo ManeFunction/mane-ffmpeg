@@ -5,14 +5,16 @@ using ManeFfmpeg.Core.Model;
 namespace ManeFfmpeg.Core.Mpv;
 
 /// <summary>
-/// Describes the edited timeline to mpv as an EDL with two parallel streams: the video cuts, and the
-/// audio cuts slipped by each clip's offset, with silence wherever the slipped audio runs past its file.
-/// Tracks are titled so the player can pick video from the first stream and audio from the second.
+/// Describes the edited timeline to mpv as an EDL with parallel streams: the video cuts, the audio cuts slipped by
+/// each clip's offset (with silence wherever the slipped audio runs past its file), and, when A2 has clips, the A2
+/// track padded with silence to the timeline's length. Tracks are titled so the player can pick video from the first
+/// stream and audio from the others; <see cref="TimelineMix"/> mixes A1 and A2 and applies the clips' volumes.
 /// </summary>
 public static class TimelineEdl
 {
     public const string VideoTitle = "mane-video";
     public const string AudioTitle = "mane-audio";
+    public const string TrackTitle = "mane-a2";
 
     private static readonly TimeSpan Epsilon = TimeSpan.FromMilliseconds(1);
 
@@ -52,9 +54,31 @@ public static class TimelineEdl
         if (count == 0)
             return null;
         var edl = new StringBuilder("edl://!new_stream;!track_meta,title=").Append(VideoTitle).Append(';').Append(video);
-        if (anyAudio)
+        var track = Track(state, media, silencePath);
+        // A2 is mixed into A1, so A1 is there (silent) even when no clip has sound of its own.
+        if (anyAudio || track is not null)
             edl.Append("!new_stream;!track_meta,title=").Append(AudioTitle).Append(';').Append(audio);
+        if (track is not null)
+            edl.Append("!new_stream;!track_meta,title=").Append(TrackTitle).Append(';').Append(track);
         return edl.ToString().TrimEnd(';');
+    }
+
+    /// <summary>The A2 track over the whole timeline, or null when it has no clips.</summary>
+    private static StringBuilder? Track(ProjectState state, IReadOnlyDictionary<string, MediaInfo> media, string silencePath)
+    {
+        if (state.AudioTrack.Count == 0)
+            return null;
+        var sb = new StringBuilder();
+        HeardAudio? Heard(TrackClip clip) => state.HeardAudio(clip, media.GetValueOrDefault);
+        foreach (var span in TrackLayout.Spans(state.AudioTrack, TimeSpan.Zero, state.Timeline.Duration, c => Heard(c)?.End))
+        {
+            // A file that isn't analyzed yet plays silence until the catalog reports it and the preview reloads.
+            if (span.Clip is { } clip && Heard(clip) is { } heard)
+                Segment(sb, heard.File.Path, span.ReadFrom + heard.Info.StartTime, span.Length);
+            else
+                Silence(sb, silencePath, span.Length);
+        }
+        return sb;
     }
 
     private static void Segment(StringBuilder sb, string path, TimeSpan start, TimeSpan length) =>

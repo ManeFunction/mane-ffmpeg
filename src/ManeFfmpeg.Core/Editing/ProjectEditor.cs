@@ -40,20 +40,43 @@ public static class ProjectEditor
             ? state
             : state with { Timeline = TimelineEditor.Append(state.Timeline, Clip.Create(sourceId, @in, @out)) };
 
-    /// <summary>How many clips use the file: clips of a video, or clips whose sound an audio file replaces.</summary>
+    /// <summary>How many clips use the file: clips of a video, or clips whose sound an audio file replaces and its A2 clips.</summary>
     public static int ClipsUsing(ProjectState state, FileKind kind, string id) =>
-        state.Timeline.Clips.Count(c => kind == FileKind.Audio ? c.ReplacedAudio?.FileId == id : c.SourceId == id);
+        kind == FileKind.Audio
+            ? state.Timeline.Clips.Count(c => c.ReplacedAudio?.FileId == id) + state.AudioTrack.Count(c => c.FileId == id)
+            : state.Timeline.Clips.Count(c => c.SourceId == id);
 
     /// <summary>
-    /// Removes a file with what depends on it: a video's clips go too, and clips playing an audio file go back to their
-    /// own sound.
+    /// Removes a file with what depends on it: a video's clips go too, clips playing an audio file go back to their
+    /// own sound, and its A2 clips go.
     /// </summary>
     public static ProjectState RemoveFile(ProjectState state, FileKind kind, string id)
     {
         var timeline = kind == FileKind.Audio
             ? TimelineEditor.RemoveAudioFile(state.Timeline, id)
             : TimelineEditor.RemoveSource(state.Timeline, id);
-        return state.WithFiles(kind, state.Files(kind).RemoveAll(f => f.Id == id)) with { Timeline = timeline };
+        var track = kind == FileKind.Audio ? TrackEditor.RemoveFile(state.AudioTrack, id) : state.AudioTrack;
+        return state.WithFiles(kind, state.Files(kind).RemoveAll(f => f.Id == id)) with { Timeline = timeline, AudioTrack = track };
+    }
+
+    /// <summary>Gives every use of audio file <paramref name="fileId"/> the same volume: clips it replaces the sound of on A1, and its A2 clips.</summary>
+    public static ProjectState SetAudioFileVolume(ProjectState state, string fileId, double gain) => state with
+    {
+        Timeline = TimelineEditor.SetVolumeForAudioFile(state.Timeline, fileId, gain),
+        AudioTrack = TrackEditor.SetVolumeForFile(state.AudioTrack, fileId, gain),
+    };
+
+    /// <summary>
+    /// Puts audio file <paramref name="fileId"/> on A2 at timeline time <paramref name="start"/>: as much of it as fits
+    /// before the next A2 clip, up to <paramref name="length"/> (where its audio ends). Returns the new clip's id, or null
+    /// (and the same state) when the file isn't listed or that time is taken.
+    /// </summary>
+    public static (ProjectState State, string? Id) AddTrackClip(ProjectState state, string fileId, TimeSpan start, TimeSpan length)
+    {
+        if (state.AudioFile(fileId) is null)
+            return (state, null);
+        var (track, id) = TrackEditor.Add(state.AudioTrack, fileId, start, length);
+        return id is null ? (state, null) : (state with { AudioTrack = track }, id);
     }
 
     /// <summary>
@@ -67,7 +90,7 @@ public static class ProjectEditor
 
     /// <summary>
     /// Drops what refers to files that aren't listed (a damaged or hand-edited project): clips of unknown videos go,
-    /// and clips whose replacement audio file is unknown play their own sound.
+    /// clips whose replacement audio file is unknown play their own sound, and A2 clips of unknown files go.
     /// </summary>
     public static ProjectState DropOrphans(ProjectState state)
     {
@@ -77,7 +100,8 @@ public static class ProjectEditor
             .Where(c => videos.Contains(c.SourceId))
             .Select(c => c.ReplacedAudio is { } r && !audio.Contains(r.FileId) ? c with { ReplacedAudio = null } : c)
             .ToImmutableList();
-        return state with { Timeline = state.Timeline with { Clips = clips } };
+        var track = TrackEditor.Normalize(state.AudioTrack.Where(c => audio.Contains(c.FileId)));
+        return state with { Timeline = state.Timeline with { Clips = clips }, AudioTrack = track };
     }
 
     /// <summary>

@@ -9,7 +9,7 @@ Built with C#, .NET 10 and Avalonia 12.
 ## Features
 
 - **Timeline**
-  - A video row (V1) and a linked audio row (A1) with waveforms.
+  - A video row (V1), a linked audio row (A1) and a second audio track (A2) for background music, with waveforms.
   - Split at the playhead (S), delete, drag clips to reorder, and drag clip edges to trim. Cuts land on whole frames.
   - Undo and redo, zoom, and scroll.
 - **Files**
@@ -24,6 +24,15 @@ Built with C#, .NET 10 and Avalonia 12.
     across both halves.
   - *Loop audio* (in *Selection*) repeats the file, so the clip has no silence even when the sound is shifted.
     *Use original audio* restores the clip's own sound.
+- **A2 and volume**
+  - Drag an audio file from the *Audio* tab, or from Finder, onto the A2 row to mix it in over the timeline's own
+    sound (background music, a voice-over). Drag A2 clips to move them and their edges to trim them (hold Shift to
+    snap where the playhead snaps), split them with S and delete them like V1 clips. A2 clips keep their place on the timeline when V1 is
+    edited; what runs past the timeline's end is dimmed and isn't exported.
+  - *Selection* has a volume slider (0–200 %) for the selected V1 or A2 clips, with a button that applies it more
+    widely: to the other clips of the same video that play its own sound, or, for an audio file, everywhere that
+    file plays (clips it replaces on A1, and its A2 clips).
+  - The preview mixes A1 and A2 and applies the volumes live, as the export will.
 - **Audio offset**
   - Drag a clip on the audio row, use Alt+←/→, or type milliseconds in the inspector.
   - The offset *slips* the clip's audio. Clip edges stay put, and the sound comes from slightly earlier or later in the same file, so cuts never open gaps.
@@ -134,6 +143,10 @@ Some details:
 - Replaced audio is always re-encoded, using the preset's audio fallback when the preset copies audio. Audio-only files
   are decoded from their start and trimmed by sample, because MP3 seeks land on estimated times. Looped audio repeats
   exactly one file length with `aloop`.
+- A clip whose volume is changed gets a `volume` filter, and its audio is re-encoded. A2 is built over the whole
+  timeline (each clip cut to the sample, silence in between) and added to the clips' audio with
+  `amix=normalize=0`, a plain sum, so neither track is turned down. With stream copy, A2 under each clip starts
+  where that clip's copied video starts (its keyframe).
 
 The integration tests check A/V sync of real exports. They use synthetic video with a flash and a beep every 2 s, then measure where the flashes and beeps land after cutting, reordering and offsetting.
 
@@ -164,7 +177,8 @@ Mouse:
   edges and to where a clip's audio starts, runs out or loops (shifted or short audio inside a clip).
 - Click a clip to select it; Shift extends the selection, ⌘/Ctrl toggles a clip in or out of it.
 - Drag a clip to reorder it, drag its edges to trim, and drag on the audio row to slip its audio (hold Shift for fine steps).
-- Drag an audio file from *Files → Audio* (or Finder, Explorer) onto a clip to replace its sound.
+- Drag an audio file from *Files → Audio* (or Finder, Explorer) onto a clip to replace its sound, or onto A2 to mix it in.
+- Drag an A2 clip to move it, and its edges to trim it.
 
 ## Project layout
 

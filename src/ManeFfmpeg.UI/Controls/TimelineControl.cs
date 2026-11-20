@@ -13,8 +13,9 @@ using static ManeFfmpeg.UI.Controls.TimelineLayout;
 namespace ManeFfmpeg.UI.Controls;
 
 /// <summary>
-/// The editing timeline: a ruler, the video row (V1) and the audio row (A1). Click or drag the ruler to seek,
-/// click a clip to select it, drag clips to reorder, drag clip edges to trim, drag on A1 to slip a clip's audio.
+/// The editing timeline: a ruler, the video row (V1), its audio row (A1) and the A2 track mixed over it. Click or drag
+/// the ruler to seek, click a clip to select it, drag clips to reorder, drag clip edges to trim, drag on A1 to slip a
+/// clip's audio, drag A2 clips to move them and their edges to trim them.
 /// </summary>
 public sealed class TimelineControl : Control
 {
@@ -141,6 +142,7 @@ public sealed class TimelineControl : Control
         DrawRuler(context, vm, size);
         context.FillRectangle(TrackBackground, new Rect(Header, VideoTop, size.Width, VideoHeight));
         context.FillRectangle(TrackBackground, new Rect(Header, AudioTop, size.Width, AudioHeight));
+        context.FillRectangle(TrackBackground, new Rect(Header, TrackTop, size.Width, TrackHeight));
 
         using (context.PushClip(new Rect(Header, 0, Math.Max(0, size.Width - Header), size.Height)))
         {
@@ -155,6 +157,20 @@ public sealed class TimelineControl : Control
                     DrawClip(context, vm, clip, start, x0, x1, size.Width);
                 start += clip.Duration;
             }
+
+            foreach (var trackClip in vm.State.AudioTrack)
+            {
+                var x0 = X(vm, trackClip.Start);
+                var x1 = X(vm, trackClip.End);
+                if (x1 >= Header && x0 <= size.Width)
+                    DrawTrackClip(context, vm, trackClip, x0, x1, size.Width);
+            }
+            if (vm.AudioDrop is { TrackStart: { } dropStart } trackDrop)
+                DrawTrackDrop(context, vm, trackDrop, dropStart, size.Width);
+            // A2 past the timeline's end isn't heard: dim it.
+            var end = X(vm, vm.Timeline.Duration);
+            if (end < size.Width)
+                context.FillRectangle(SilenceBrush, new Rect(Math.Max(end, Header), TrackTop, size.Width - Math.Max(end, Header), TrackHeight));
 
             if (vm.Gestures is { IsReordering: true, InsertIndex: >= 0 } gestures)
             {
@@ -181,6 +197,7 @@ public sealed class TimelineControl : Control
         context.FillRectangle(HeaderBrush, new Rect(0, 0, Header, size.Height));
         DrawText(context, "V1", new Point(14, VideoTop + VideoHeight / 2 - 8), TextBrush, 12);
         DrawText(context, "A1", new Point(14, AudioTop + AudioHeight / 2 - 8), TextBrush, 12);
+        DrawText(context, "A2", new Point(14, TrackTop + TrackHeight / 2 - 8), TextBrush, 12);
     }
 
     private void DrawRuler(DrawingContext context, TimelineViewModel vm, Size size)
@@ -258,20 +275,27 @@ public sealed class TimelineControl : Control
         using (context.PushClip(audioRect))
         {
             var textX = Math.Max(audioRect.Left, Header) + 5;
-            if (clip.ActiveAudioOffset != TimeSpan.Zero)
-            {
-                var badge = DrawBadge(context, $"♪ {TimeFormat.Offset(clip.ActiveAudioOffset)}", new Point(textX, audioRect.Top + (audioRect.Height - 16) / 2));
-                textX += badge + 6;
-            }
-            if (vm.Heard(clip) is { } sound)
+            // The waveform first, so the badges and labels stay readable over it.
+            var sound = vm.Heard(clip);
+            if (sound is not null)
             {
                 var layout = sound.Layout(clip);
                 DrawSilence(context, vm, start, audioRect, layout, replaced is null ? HatchPen : InkHatchPen);
                 if (layout is AudioLayout.Looped looped)
                     DrawSeams(context, vm, start, audioRect, looped, width);
-                DrawWaveform(context, vm, start, audioRect, layout, vm.Waveform(sound.File), width, replaced is null ? WavePen : InkPen);
+                DrawWaveform(context, vm, start, audioRect, layout, vm.Waveform(sound.File), width, replaced is null ? WavePen : InkPen, clip.Volume);
             }
-            else if (heard is not null && vm.Info(heard.Id) is not null)
+            if (clip.ActiveAudioOffset != TimeSpan.Zero)
+            {
+                var badge = DrawBadge(context, $"♪ {TimeFormat.Offset(clip.ActiveAudioOffset)}", new Point(textX, audioRect.Top + (audioRect.Height - 16) / 2));
+                textX += badge + 6;
+            }
+            if (!Gain.IsUnity(clip.Volume))
+            {
+                var badge = DrawBadge(context, VolumeBadge(clip.Volume), new Point(textX, audioRect.Top + (audioRect.Height - 16) / 2));
+                textX += badge + 6;
+            }
+            if (sound is null && heard is not null && vm.Info(heard.Id) is not null)
             {
                 DrawText(context, "no audio", new Point(textX + 1, audioRect.Top + (audioRect.Height - 14) / 2), TextBrush, 11);
             }
@@ -305,6 +329,52 @@ public sealed class TimelineControl : Control
             context.DrawRectangle(null, SelectedPen, videoRect.Deflate(1), 4, 4);
             context.DrawRectangle(null, SelectedPen, audioRect.Deflate(1), 4, 4);
         }
+    }
+
+    private static string VolumeBadge(double gain) => $"vol {Gain.Percent(gain)}";
+
+    /// <summary>An A2 clip: its file's color with dark ink, the waveform scaled by its volume, its name and volume.</summary>
+    private void DrawTrackClip(DrawingContext context, TimelineViewModel vm, TrackClip clip, double x0, double x1, double width)
+    {
+        var rect = new Rect(x0 + 1, TrackTop + 1, Math.Max(1, x1 - x0 - 2), TrackHeight - 2);
+        var file = vm.State.AudioFile(clip.FileId);
+        var missing = file is null || vm.AudioFileHasProblem(clip.FileId);
+        var fill = new SolidColorBrush(SourceItemViewModel.AudioColor(vm.AudioColorIndex(clip.FileId)), 0.92);
+        context.DrawRectangle(missing ? MissingBrush : fill, ClipPen, rect, 4, 4);
+        using (context.PushClip(rect))
+        {
+            var textX = Math.Max(rect.Left, Header) + 5;
+            if (vm.Heard(clip) is { } heard)
+            {
+                // The clip as a stretch of its file played once from its in point.
+                var layout = new AudioLayout.Placed(new AudioPlacement(TimeSpan.Zero, clip.In, clip.Duration, clip.Duration), clip.In);
+                DrawWaveform(context, vm, clip.Start, rect, layout, vm.Waveform(heard.File), width, InkPen, clip.Volume);
+            }
+            var label = Text($"♫ {file?.DisplayName ?? "missing audio file"}", missing ? LabelBrush : InkBrush, 10, FontWeight.SemiBold);
+            var chip = new Rect(textX, rect.Top + (rect.Height - label.Height - 2) / 2, label.Width + 10, label.Height + 2);
+            if (!missing)
+                context.DrawRectangle(fill, InkHatchPen, chip, 6, 6);
+            context.DrawText(label, new Point(chip.X + 5, chip.Y + 1));
+            textX = chip.Right + 6;
+            if (!Gain.IsUnity(clip.Volume))
+                textX += DrawBadge(context, VolumeBadge(clip.Volume), new Point(textX, rect.Top + (rect.Height - 16) / 2)) + 6;
+            if (!missing && file is not null && vm.WaveformLoading(file))
+                DrawLoading(context, textX + 1, rect.Center.Y, InkBrush);
+        }
+        if (vm.Selection.Contains(clip.Id))
+            context.DrawRectangle(null, SelectedPen, rect.Deflate(1), 4, 4);
+    }
+
+    /// <summary>Where an audio file dragged onto A2 would land.</summary>
+    private void DrawTrackDrop(DrawingContext context, TimelineViewModel vm, AudioDropTarget drop, TimeSpan start, double width)
+    {
+        var x0 = X(vm, start);
+        // A file whose length isn't known yet shows as a short block.
+        var x1 = drop.TrackLength > TimeSpan.Zero ? X(vm, start + drop.TrackLength) : x0 + 120;
+        var rect = new Rect(x0 + 1, TrackTop + 1, Math.Max(4, Math.Min(x1, width + 4) - x0 - 2), TrackHeight - 2);
+        context.DrawRectangle(new SolidColorBrush(drop.Color, 0.7), DropPen, rect, 4, 4);
+        using (context.PushClip(rect))
+            DrawText(context, $"♫ {drop.Name}", new Point(Math.Max(rect.Left, Header) + 6, rect.Top + (rect.Height - 14) / 2), InkBrush, 11, FontWeight.SemiBold);
     }
 
     /// <summary>Hatches the parts of the clip where the slipped audio runs past the file (silence on export).</summary>
@@ -341,8 +411,9 @@ public sealed class TimelineControl : Control
         }
     }
 
+    /// <param name="gain">The clip's volume: the waveform is drawn as loud as it will sound (up to the row's height).</param>
     private void DrawWaveform(DrawingContext context, TimelineViewModel vm, TimeSpan start, Rect rect, AudioLayout layout,
-        Core.Media.Waveform? waveform, double width, IPen pen)
+        Core.Media.Waveform? waveform, double width, IPen pen, double gain = 1)
     {
         if (waveform is null)
             return;
@@ -359,7 +430,7 @@ public sealed class TimelineControl : Control
                 var fileTime = layout.FileTime(T(vm, x) - start);
                 if (fileTime + perPixel < TimeSpan.Zero || fileTime > waveform.Duration)
                     continue;
-                var h = waveform.Max(fileTime, fileTime + perPixel) / 255.0 * half;
+                var h = Math.Min(half, waveform.Max(fileTime, fileTime + perPixel) / 255.0 * half * gain);
                 if (h < 0.5)
                     h = 0.5;
                 g.BeginFigure(new Point(x + 0.5, mid - h), false);
@@ -415,7 +486,7 @@ public sealed class TimelineControl : Control
 
     // ---- Input ------------------------------------------------------------------------------------
 
-    private static TimelineHit HitTest(TimelineViewModel vm, Point p) => TimelineLayout.HitTest(vm.Timeline, vm.Zoom, vm.Scroll, p.X, p.Y);
+    private static TimelineHit HitTest(TimelineViewModel vm, Point p) => TimelineLayout.HitTest(vm.State, vm.Zoom, vm.Scroll, p.X, p.Y);
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
@@ -441,9 +512,9 @@ public sealed class TimelineControl : Control
         {
             Cursor = p.X < Header ? Cursor.Default : HitTest(vm, p).Zone switch
             {
-                TimelineZone.TrimIn or TimelineZone.TrimOut => ResizeCursor,
+                TimelineZone.TrimIn or TimelineZone.TrimOut or TimelineZone.TrackTrimIn or TimelineZone.TrackTrimOut => ResizeCursor,
                 TimelineZone.Audio => SlipCursor,
-                TimelineZone.Clip => HandCursor,
+                TimelineZone.Clip or TimelineZone.TrackClip => HandCursor,
                 _ => Cursor.Default,
             };
             return;

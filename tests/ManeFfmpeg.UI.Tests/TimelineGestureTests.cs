@@ -1,6 +1,7 @@
 using ManeFfmpeg.UI.Controls;
 using ManeFfmpeg.UI.ViewModels;
 using ManeFfmpeg.Core.Editing;
+using System.Collections.Immutable;
 using ManeFfmpeg.Core.Model;
 
 namespace ManeFfmpeg.UI.Tests;
@@ -30,9 +31,17 @@ public class TimelineGestureTests
         public void ClearSelection() => Selection.Clear();
         public void Seek(TimeSpan time, bool scrubbing) => Seeks.Add((time, scrubbing));
         public void EndScrub() => ScrubEnded = true;
-        public void BeginGesture() => History.BeginGesture();
+        public void BeginGesture()
+        {
+            History.BeginGesture();
+            TrackHistory.BeginGesture();
+        }
         public void PreviewTimeline(Timeline timeline) => History.ReplaceCurrent(timeline);
-        public void EndGesture() => History.EndGesture();
+        public void EndGesture()
+        {
+            History.EndGesture();
+            TrackHistory.EndGesture();
+        }
         public void MoveSelection(int insertIndex) => History.Commit(TimelineEditor.Move(Timeline, Selection, insertIndex));
         public CutGrid? GridOf(string sourceId) => Grid;
         public void PreviewAudioDrag(TimeSpan delta) => AudioDrag = delta;
@@ -40,6 +49,11 @@ public class TimelineGestureTests
         /// <summary>Where each clip's audio ends, by clip id; clips not listed have no audio.</summary>
         public Dictionary<string, TimeSpan> AudioEnds { get; } = [];
         public TimeSpan? AudioEnd(Clip clip) => AudioEnds.TryGetValue(clip.Id, out var end) ? end : null;
+
+        public UndoStack<ImmutableList<TrackClip>> TrackHistory { get; init; } = new([]);
+        public ImmutableList<TrackClip> Track => TrackHistory.Current;
+        public void PreviewTrack(ImmutableList<TrackClip> track) => TrackHistory.ReplaceCurrent(track);
+        public TimeSpan? FileEnd(TrackClip clip) => S(60);
     }
 
     private static Clip C(string id, double inS, double outS) =>
@@ -235,7 +249,8 @@ public class TimelineGestureTests
     public void Hit_testing_finds_edges_bodies_and_audio()
     {
         var timeline = new Timeline([C("a", 0, 2), C("b", 10, 12)]);
-        TimelineZone Zone(double x, double y) => TimelineLayout.HitTest(timeline, 100, 0, x, y).Zone;
+        var state = new ProjectState([], timeline) { AudioTrack = [T("m", 3, 0, 5)] };
+        TimelineZone Zone(double x, double y) => TimelineLayout.HitTest(state, 100, 0, x, y).Zone;
         var x0 = TimelineLayout.X(100, 0, S(2));
         Assert.Equal(TimelineZone.Ruler, Zone(x0, TimelineLayout.RulerCenter));
         Assert.Equal(TimelineZone.TrimOut, Zone(x0 - 2, TimelineLayout.VideoCenter));
@@ -243,7 +258,14 @@ public class TimelineGestureTests
         Assert.Equal(TimelineZone.Clip, Zone(x0 + 50, TimelineLayout.VideoCenter));
         Assert.Equal(TimelineZone.Audio, Zone(x0 + 50, TimelineLayout.AudioCenter));
         Assert.Equal(TimelineZone.Empty, Zone(TimelineLayout.X(100, 0, S(5)), TimelineLayout.VideoCenter));
-        Assert.Equal("b", TimelineLayout.HitTest(timeline, 100, 0, x0 + 50, TimelineLayout.AudioCenter).ClipId);
+        Assert.Equal("b", TimelineLayout.HitTest(state, 100, 0, x0 + 50, TimelineLayout.AudioCenter).ClipId);
+
+        var m0 = TimelineLayout.X(100, 0, S(3));
+        Assert.Equal(TimelineZone.TrackTrimIn, Zone(m0 + 2, TimelineLayout.TrackCenter));
+        Assert.Equal(TimelineZone.TrackClip, Zone(m0 + 100, TimelineLayout.TrackCenter));
+        Assert.Equal(TimelineZone.TrackTrimOut, Zone(TimelineLayout.X(100, 0, S(8)) - 2, TimelineLayout.TrackCenter));
+        Assert.Equal("m", TimelineLayout.HitTest(state, 100, 0, m0 + 100, TimelineLayout.TrackCenter).ClipId);
+        Assert.Equal(TimelineZone.Empty, Zone(TimelineLayout.X(100, 0, S(1)), TimelineLayout.TrackCenter));
     }
 
     [Fact]
@@ -263,5 +285,86 @@ public class TimelineGestureTests
         Assert.Equal(18, Follow(18, 27.8));
         // Back before the view (a loop or a jump): pages back.
         Assert.Equal(0, Follow(15, 0.5));
+    }
+
+    private static TrackClip T(string id, double start, double inS, double outS) =>
+        new() { Id = id, FileId = "f", Start = S(start), In = S(inS), Out = S(outS) };
+
+    private static Host WithTrack() => new(new Timeline([C("a", 0, 4), C("b", 10, 14)]))
+    {
+        TrackHistory = new([T("m", 1, 0, 2), T("n", 5, 10, 12)]),
+    };
+
+    [Fact]
+    public void An_A2_clip_drags_along_the_timeline_but_not_into_its_neighbour_and_snaps_only_with_Shift()
+    {
+        var host = WithTrack();
+        var gestures = new TimelineGestures(host);
+        gestures.Press(new TimelineHit(TimelineZone.TrackClip, S(1.5), "m"), command: false, shift: false);
+        gestures.Move(S(1.53), shift: false);
+        Assert.Equal(S(1), host.Track[0].Start);
+        // Its end lands at 3.97 s, 3 px from V1's cut at 4 s: no snap without Shift…
+        gestures.Move(S(2.47), shift: false);
+        Assert.Equal(S(1.97), host.Track[0].Start);
+        // …and with it the end meets the cut.
+        gestures.Move(S(2.47), shift: true);
+        Assert.Equal((S(2), S(4)), (host.Track[0].Start, host.Track[0].End));
+        gestures.ShiftChanged(false);
+        Assert.Equal(S(1.97), host.Track[0].Start);
+        // With Shift the start snaps too: 0.04 s from the timeline's start.
+        gestures.Move(S(0.54), shift: true);
+        Assert.Equal(S(0), host.Track[0].Start);
+        // Not into "n" (5–7 s): it stops where it meets it.
+        gestures.Move(S(9), shift: false);
+        Assert.Equal(S(5), host.Track[0].End);
+        gestures.Release();
+        Assert.Equal(["m"], host.Selection);
+        Assert.True(host.TrackHistory.CanUndo);
+        host.TrackHistory.Undo();
+        Assert.Equal(S(1), host.Track[0].Start);
+    }
+
+    [Fact]
+    public void With_Shift_an_A2_clip_edge_snaps_where_the_playhead_would()
+    {
+        var host = WithTrack();
+        var gestures = new TimelineGestures(host);
+        // "n" ends at 7 s; V1's cut at 4 s… is out of reach, but the end of the timeline (8 s) is 6 px from 7.94 s.
+        gestures.Press(new TimelineHit(TimelineZone.TrackTrimOut, S(7), "n"), command: false, shift: false);
+        gestures.Move(S(7.94), shift: false);
+        Assert.Equal(S(7.94), host.Track[1].End);
+        gestures.Move(S(7.94), shift: true);
+        Assert.Equal(S(8), host.Track[1].End);
+        // Letting go of Shift with the pointer still lets the edge go back to it.
+        gestures.ShiftChanged(false);
+        Assert.Equal(S(7.94), host.Track[1].End);
+        gestures.Release();
+
+        // The left edge snaps to V1's cut at 4 s.
+        gestures.Press(new TimelineHit(TimelineZone.TrackTrimIn, S(5), "n"), command: false, shift: false);
+        gestures.Move(S(4.05), shift: true);
+        Assert.Equal((S(4), S(9)), (host.Track[1].Start, host.Track[1].In));
+        gestures.Release();
+    }
+
+    [Fact]
+    public void A2_clip_edges_trim_within_the_file_and_the_gap()
+    {
+        var host = WithTrack();
+        var gestures = new TimelineGestures(host);
+        gestures.Press(new TimelineHit(TimelineZone.TrackTrimIn, S(5), "n"), command: false, shift: false);
+        gestures.Move(S(4), shift: false);
+        Assert.Equal((S(4), S(9)), (host.Track[1].Start, host.Track[1].In));
+        // Not over "m", which ends at 3 s.
+        gestures.Move(S(1), shift: false);
+        Assert.Equal((S(3), S(8)), (host.Track[1].Start, host.Track[1].In));
+        gestures.Release();
+
+        gestures.Press(new TimelineHit(TimelineZone.TrackTrimOut, S(3), "m"), command: false, shift: false);
+        gestures.Move(S(10), shift: false);
+        // Up to where "n" now starts.
+        Assert.Equal(S(3), host.Track[0].End);
+        gestures.Release();
+        Assert.Equal(["m"], host.Selection);
     }
 }

@@ -231,7 +231,7 @@ public class AudioReplacementTests
             // A replacement whose audio file is gone falls back to the clip's own audio.
             var orphan = ProjectFile.Deserialize(json.Replace("\"id\": \"f\"", "\"id\": \"g\""), path);
             Assert.Null(orphan.State.Timeline.Clips[0].ReplacedAudio);
-            Assert.Throws<ProjectFileException>(() => ProjectFile.Deserialize(json.Replace("\"version\": 2", "\"version\": 4"), path));
+            Assert.Throws<ProjectFileException>(() => ProjectFile.Deserialize(json.Replace("\"version\": 2", $"\"version\": {ProjectFile.CurrentVersion + 1}"), path));
         }
         finally
         {

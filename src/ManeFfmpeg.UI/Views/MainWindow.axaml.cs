@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -345,12 +346,12 @@ public partial class MainWindow : Window, IMainWindowView
         var paths = DroppedPaths(e);
         e.DragEffects = paths is { Count: > 0 } ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
-        // Audio files from the file manager over a clip replace its sound when dropped: show which clip.
+        // Audio files from the file manager over a clip replace its sound when dropped, and over A2 are mixed in: show where.
         var audio = paths?.FirstOrDefault(LooksLikeAudio);
-        var clip = audio is null ? null : ClipAt(e.GetPosition(TimelineView));
-        ViewModel.Timeline.ShowAudioDrop(audio is null || clip is null
+        var target = audio is null ? null : DropAt(e.GetPosition(TimelineView));
+        ViewModel.Timeline.ShowAudioDrop(audio is null || target is not { } at
             ? null
-            : new AudioDropTarget(Path.GetFileName(audio), ViewModel.AudioFileColor(Path.GetFullPath(audio)), clip));
+            : new AudioDropTarget(Path.GetFileName(audio), ViewModel.AudioFileColor(Path.GetFullPath(audio)), at.ClipId, at.TrackStart));
     }
 
     private async void OnDrop(object? sender, DragEventArgs e)
@@ -368,10 +369,13 @@ public partial class MainWindow : Window, IMainWindowView
                 await ViewModel.AddAudioAsync(paths);
                 return;
             }
-            // Onto a clip: audio files are added and the first replaces that clip's sound.
-            if (ClipAt(e.GetPosition(TimelineView)) is { } clip && paths.Any(LooksLikeAudio))
+            // Onto a clip: audio files are added and the first replaces that clip's sound; onto A2, it's mixed in there.
+            if (DropAt(e.GetPosition(TimelineView)) is { } target && paths.Any(LooksLikeAudio))
             {
-                await ViewModel.ReplaceClipAudioFromFilesAsync(paths, clip);
+                if (target.ClipId is { } clip)
+                    await ViewModel.ReplaceClipAudioFromFilesAsync(paths, clip);
+                else
+                    await ViewModel.AddToTrackFromFilesAsync(paths, target.TrackStart!.Value);
                 return;
             }
         }
@@ -380,13 +384,20 @@ public partial class MainWindow : Window, IMainWindowView
 
     private static bool IsOver(Control control, Point p) => p.X >= 0 && p.Y >= 0 && p.X < control.Bounds.Width && p.Y < control.Bounds.Height;
 
-    /// <summary>The clip under a point of the timeline control (either row), or null.</summary>
-    private string? ClipAt(Point p)
+    /// <summary>
+    /// Where an audio file dropped at a point of the timeline control goes: the V1 clip under it (V1 or A1 row), or A2 at
+    /// the time under it (anywhere on that row; a clip already there refuses it on drop). Null elsewhere.
+    /// </summary>
+    private AudioDropPoint? DropAt(Point p)
     {
         var vm = ViewModel.Timeline;
         if (vm.Zoom <= 0 || !IsOver(TimelineView, p) || p.X < TimelineLayout.Header)
             return null;
-        return TimelineLayout.HitTest(vm.Timeline, vm.Zoom, vm.Scroll, p.X, p.Y) is { ClipId: { } id, Zone: not (ViewModels.TimelineZone.Ruler or ViewModels.TimelineZone.Empty) } ? id : null;
+        if (TimelineLayout.InTrackRow(p.Y))
+            return AudioDropPoint.OnTrack(TimelineLayout.Time(vm.Zoom, vm.Scroll, p.X));
+        return TimelineLayout.HitTest(vm.State, vm.Zoom, vm.Scroll, p.X, p.Y) is { ClipId: { } id, Zone: ViewModels.TimelineZone.Clip or ViewModels.TimelineZone.TrimIn or ViewModels.TimelineZone.TrimOut or ViewModels.TimelineZone.Audio }
+            ? AudioDropPoint.OnClip(id)
+            : null;
     }
 
     // ---- Dragging an audio file onto a clip (AudioDragGesture) -------------------------------------
@@ -402,11 +413,11 @@ public partial class MainWindow : Window, IMainWindowView
     {
         var p = e.GetPosition(this);
         var started = !ViewModel.AudioDrag.IsDragging;
-        if (!ViewModel.AudioDrag.Move(Math.Abs(p.X - _audioPressPoint.X) + Math.Abs(p.Y - _audioPressPoint.Y), ClipAt(e.GetPosition(TimelineView))))
+        if (!ViewModel.AudioDrag.Move(Math.Abs(p.X - _audioPressPoint.X) + Math.Abs(p.Y - _audioPressPoint.Y), DropAt(e.GetPosition(TimelineView))))
             return;
         if (started)
             e.Pointer.Capture(AudioList);
-        AudioList.Cursor = ViewModel.AudioDrag.TargetClip is null ? NoDropCursor : DropCursor;
+        AudioList.Cursor = ViewModel.AudioDrag.Target is null ? NoDropCursor : DropCursor;
         e.Handled = true;
     }
 
@@ -446,6 +457,9 @@ public partial class MainWindow : Window, IMainWindowView
         AudioList.AddHandler(PointerMovedEvent, OnAudioListMoved, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
         AudioList.AddHandler(PointerReleasedEvent, OnAudioListReleased, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
         AudioList.PointerCaptureLost += (_, _) => CancelAudioDrag();
+        // A drag of the volume slider's thumb is one undo step, and is heard as it goes.
+        VolumeSlider.AddHandler(Thumb.DragStartedEvent, (_, _) => ViewModel.BeginVolumeDrag(), RoutingStrategies.Bubble, handledEventsToo: true);
+        VolumeSlider.AddHandler(Thumb.DragCompletedEvent, (_, _) => ViewModel.EndVolumeDrag(), RoutingStrategies.Bubble, handledEventsToo: true);
     }
 
     // ---- Closing ----------------------------------------------------------------------------------

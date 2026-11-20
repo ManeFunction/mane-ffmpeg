@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using ManeFfmpeg.Core.Editing;
 using ManeFfmpeg.Core.Model;
 
@@ -23,6 +24,15 @@ public enum TimelineZone
 
     /// <summary>A clip in A1: select, or drag to slip its audio.</summary>
     Audio,
+
+    /// <summary>A clip's body in A2: select, or drag to move it along the timeline.</summary>
+    TrackClip,
+
+    /// <summary>An A2 clip's left edge.</summary>
+    TrackTrimIn,
+
+    /// <summary>An A2 clip's right edge.</summary>
+    TrackTrimOut,
 }
 
 /// <param name="Time">Timeline time under the point.</param>
@@ -53,13 +63,23 @@ public interface ITimelineGestureHost
 
     /// <summary>Where the clip's heard audio stream ends; null when it has none or isn't analyzed yet.</summary>
     TimeSpan? AudioEnd(Clip clip);
+
+    /// <summary>The A2 track.</summary>
+    ImmutableList<TrackClip> Track { get; }
+
+    /// <summary>Shows a dragged A2 track (inside a gesture, like <see cref="PreviewTimeline"/>).</summary>
+    void PreviewTrack(ImmutableList<TrackClip> track);
+
+    /// <summary>Where an A2 clip's file runs out; null when it isn't analyzed yet.</summary>
+    TimeSpan? FileEnd(TrackClip clip);
 }
 
 /// <summary>
 /// The timeline's pointer gestures in timeline terms: a press on a zone, moves to a time, a release. Only the
 /// ruler moves the playhead: a click there seeks, a drag scrubs. On the track rows a click selects (or clears the
-/// selection) and a drag reorders clips, trims edges or slips audio, each drag one undo step.
-/// Scrubbing with Shift held snaps the playhead to clip edges and audio edges.
+/// selection) and a drag reorders clips, trims edges or slips audio, or moves and trims A2 clips, each drag one undo
+/// step. Scrubbing with Shift held snaps the playhead to clip edges and audio edges; with Shift, a moved A2 clip or a
+/// dragged A2 edge snaps to the same points.
 /// </summary>
 public sealed class TimelineGestures(ITimelineGestureHost host)
 {
@@ -69,13 +89,15 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
     /// <summary>How close (pixels) a Shift-scrub must come to a clip or audio edge to snap to it.</summary>
     public const double SnapRadius = 8;
 
-    private enum Drag { None, Idle, Scrub, PendingClip, Reorder, TrimIn, TrimOut, PendingSlip, Slip }
+    private enum Drag { None, Idle, Scrub, PendingClip, Reorder, TrimIn, TrimOut, PendingSlip, Slip, PendingTrack, TrackMove, TrackTrimIn, TrackTrimOut }
 
     private Drag _drag;
     private TimeSpan _pressTime;
     private TimeSpan _lastTime;
     private Clip? _clip;
     private Timeline? _gestureStart;
+    private TrackClip? _trackClip;
+    private ImmutableList<TrackClip>? _trackStart;
     private bool _command;
     private bool _shift;
 
@@ -99,6 +121,24 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
         {
             _drag = Drag.Scrub;
             host.Seek(shift ? Snap(hit.Time) : hit.Time, scrubbing: true);
+            return;
+        }
+        if (hit.Zone is TimelineZone.TrackClip or TimelineZone.TrackTrimIn or TimelineZone.TrackTrimOut
+            && host.Track.Find(c => c.Id == hit.ClipId) is { } trackClip)
+        {
+            _trackClip = trackClip;
+            _trackStart = host.Track;
+            _drag = hit.Zone switch
+            {
+                TimelineZone.TrackTrimIn => Drag.TrackTrimIn,
+                TimelineZone.TrackTrimOut => Drag.TrackTrimOut,
+                _ => Drag.PendingTrack,
+            };
+            if (_drag != Drag.PendingTrack)
+            {
+                SelectPressedTrackClip();
+                host.BeginGesture();
+            }
             return;
         }
         if (index < 0)
@@ -159,6 +199,19 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
                 host.PreviewAudioDrag(slip);
                 break;
             }
+            case Drag.PendingTrack when dragged:
+                SelectPressedTrackClip();
+                host.BeginGesture();
+                _drag = Drag.TrackMove;
+                MoveTrack(delta, shift);
+                break;
+            case Drag.TrackMove:
+                MoveTrack(delta, shift);
+                break;
+            case Drag.TrackTrimIn:
+            case Drag.TrackTrimOut:
+                TrimTrack(delta, shift);
+                break;
         }
     }
 
@@ -167,6 +220,26 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
     {
         if (_drag == Drag.Scrub)
             host.Seek(shift ? Snap(_lastTime) : _lastTime, scrubbing: true);
+        if (_drag is Drag.TrackTrimIn or Drag.TrackTrimOut)
+            TrimTrack(_lastTime - _pressTime, shift);
+        if (_drag == Drag.TrackMove)
+            MoveTrack(_lastTime - _pressTime, shift);
+    }
+
+    /// <summary>
+    /// Moves the dragged A2 clip edge by <paramref name="delta"/>; with Shift held the edge snaps to where the playhead
+    /// would (clip edges and audio edges on V1/A1).
+    /// </summary>
+    private void TrimTrack(TimeSpan delta, bool shift)
+    {
+        var clip = _trackClip!;
+        var trimIn = _drag == Drag.TrackTrimIn;
+        var edge = (trimIn ? clip.Start : clip.End) + delta;
+        if (shift)
+            edge = Snap(edge);
+        host.PreviewTrack(trimIn
+            ? TrackEditor.TrimIn(_trackStart!, clip.Id, clip.In + (edge - clip.Start))
+            : TrackEditor.TrimOut(_trackStart!, clip.Id, clip.Out + (edge - clip.End), host.FileEnd(clip)));
     }
 
     public void Release()
@@ -179,6 +252,14 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
             case Drag.PendingClip:
             case Drag.PendingSlip:
                 host.Select(_clip!.Id, toggle: _command, range: _shift);
+                break;
+            case Drag.PendingTrack:
+                host.Select(_trackClip!.Id, toggle: _command, range: _shift);
+                break;
+            case Drag.TrackMove:
+            case Drag.TrackTrimIn:
+            case Drag.TrackTrimOut:
+                host.EndGesture();
                 break;
             case Drag.Reorder:
                 host.MoveSelection(InsertIndex);
@@ -198,7 +279,7 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
     /// <summary>The pointer was taken away mid-gesture: keeps what was dragged so far.</summary>
     public void Abort()
     {
-        if (_drag is Drag.TrimIn or Drag.TrimOut or Drag.Slip)
+        if (_drag is Drag.TrimIn or Drag.TrimOut or Drag.Slip or Drag.TrackMove or Drag.TrackTrimIn or Drag.TrackTrimOut)
             host.EndGesture();
         if (_drag == Drag.Slip)
             host.PreviewAudioDrag(TimeSpan.Zero);
@@ -211,6 +292,32 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
     {
         if (!host.Selection.Contains(_clip!.Id))
             host.Select(_clip.Id, toggle: false, range: false);
+    }
+
+    private void SelectPressedTrackClip()
+    {
+        if (!host.Selection.Contains(_trackClip!.Id))
+            host.Select(_trackClip.Id, toggle: false, range: false);
+    }
+
+    /// <summary>
+    /// Moves the dragged A2 clip by <paramref name="delta"/>. With Shift held, its start or its end (whichever is nearer
+    /// to one) snaps where the playhead would: clip edges and audio edges on V1/A1. Without Shift it doesn't snap.
+    /// </summary>
+    private void MoveTrack(TimeSpan delta, bool shift)
+    {
+        var clip = _trackClip!;
+        var start = clip.Start + delta;
+        if (shift)
+        {
+            var byStart = Snap(start) - start;
+            var byEnd = Snap(start + clip.Duration) - (start + clip.Duration);
+            // Each is zero when nothing is in reach; take the one that snapped, the nearer when both did.
+            start += byStart == TimeSpan.Zero ? byEnd
+                : byEnd == TimeSpan.Zero ? byStart
+                : byStart.Duration() <= byEnd.Duration() ? byStart : byEnd;
+        }
+        host.PreviewTrack(TrackEditor.Move(_trackStart!, clip.Id, start));
     }
 
     /// <summary>The clip or audio edge within <see cref="SnapRadius"/> pixels of <paramref name="time"/>, else the time itself.</summary>
@@ -233,6 +340,8 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
         _drag = Drag.None;
         _clip = null;
         _gestureStart = null;
+        _trackClip = null;
+        _trackStart = null;
         InsertIndex = -1;
     }
 }

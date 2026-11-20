@@ -18,10 +18,10 @@ public static class ProjectFile
     public const string Extension = "mfvp";
     public const string FormatName = "mane-ffmpeg-project";
     /// <summary>
-    /// Version 2 adds audio files and replaced clip audio, version 3 the output crop. A project is written with the
-    /// lowest version that holds it, so one without audio files or a crop is still 1.
+    /// Version 2 adds audio files and replaced clip audio, version 3 the output crop, version 4 clip volumes and the A2
+    /// track. A project is written with the lowest version that holds it, so one without audio files or a crop is still 1.
     /// </summary>
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     public static async Task SaveAsync(Project project, string path, CancellationToken ct = default)
     {
@@ -49,11 +49,12 @@ public static class ProjectFile
         };
         var hasAudioFiles = project.State.AudioFiles.Count > 0;
         var crop = project.State.Crop;
+        var mixes = project.State.AudioTrack.Count > 0 || project.State.Timeline.Clips.Any(c => !Gain.IsUnity(c.Volume));
         var dto = new ProjectDto
         {
             Format = FormatName,
             // An older app would silently drop replaced audio or the crop, so it is told this file is newer.
-            Version = crop is not null ? 3 : hasAudioFiles ? 2 : 1,
+            Version = mixes ? 4 : crop is not null ? 3 : hasAudioFiles ? 2 : 1,
             Sources = [.. project.State.Sources.Select(Source)],
             AudioFiles = hasAudioFiles ? [.. project.State.AudioFiles.Select(Source)] : null,
             Clips = [.. project.State.Timeline.Clips.Select(c => new ClipDto
@@ -66,6 +67,16 @@ public static class ProjectFile
                 ReplacedAudio = c.ReplacedAudio is { } r
                     ? new ReplacementDto { File = r.FileId, Anchor = r.Anchor, Offset = r.Offset, Loop = r.Loop }
                     : null,
+                Volume = Gain.IsUnity(c.Volume) ? null : c.Volume,
+            })],
+            AudioTrack = project.State.AudioTrack.Count == 0 ? null : [.. project.State.AudioTrack.Select(c => new TrackClipDto
+            {
+                Id = c.Id,
+                File = c.FileId,
+                Start = c.Start,
+                In = c.In,
+                Out = c.Out,
+                Volume = Gain.IsUnity(c.Volume) ? null : c.Volume,
             })],
             Crop = crop is null ? null : new CropDto { X = crop.X, Y = crop.Y, Width = crop.Width, Height = crop.Height },
             Export = project.Export,
@@ -120,18 +131,21 @@ public static class ProjectFile
             .Where(c => c is { Id.Length: > 0, Source.Length: > 0 } && c.Out > c.In)
             .Select(c => new Clip
             {
-                Id = c.Id, SourceId = c.Source, In = c.In, Out = c.Out, AudioOffset = c.AudioOffset,
+                Id = c.Id, SourceId = c.Source, In = c.In, Out = c.Out, AudioOffset = c.AudioOffset, Volume = Gain.Clamp(c.Volume ?? 1),
                 ReplacedAudio = c.ReplacedAudio is { File: { } file } r
                     ? new AudioReplacement { FileId = file, Anchor = r.Anchor, Offset = r.Offset, Loop = r.Loop }
                     : null,
             })
             .ToImmutableList();
+        var track = (dto.AudioTrack ?? []).OfType<TrackClipDto>()
+            .Where(c => c is { Id.Length: > 0, File.Length: > 0 } && c.Out > c.In)
+            .Select(c => new TrackClip { Id = c.Id, FileId = c.File, Start = c.Start, In = c.In, Out = c.Out, Volume = Gain.Clamp(c.Volume ?? 1) });
 
         return new Project
         {
             // Clips of a video that isn't listed are dropped; a replacement whose audio file is gone leaves the clip
             // with its own audio.
-            State = ProjectEditor.DropOrphans(new ProjectState(sources, new Timeline(clips), audioFiles))
+            State = ProjectEditor.DropOrphans(new ProjectState(sources, new Timeline(clips), audioFiles) { AudioTrack = [.. track] })
                 .WithCrop(dto.Crop is { } c ? new CropRect(c.X, c.Y, c.Width, c.Height) : null),
             Export = dto.Export ?? new ExportSettings(),
             Layout = dto.Layout ?? new ProjectLayout(),
@@ -159,6 +173,7 @@ public static class ProjectFile
         public List<SourceDto?>? Sources { get; set; } = [];
         public List<SourceDto?>? AudioFiles { get; set; }
         public List<ClipDto?>? Clips { get; set; } = [];
+        public List<TrackClipDto?>? AudioTrack { get; set; }
         public CropDto? Crop { get; set; }
         public ExportSettings? Export { get; set; }
         public ProjectLayout? Layout { get; set; }
@@ -182,6 +197,20 @@ public static class ProjectFile
         public TimeSpan Out { get; set; }
         public TimeSpan AudioOffset { get; set; }
         public ReplacementDto? ReplacedAudio { get; set; }
+
+        /// <summary>The clip's gain; left out at 1.</summary>
+        public double? Volume { get; set; }
+    }
+
+    /// <summary>A clip on the A2 track.</summary>
+    internal sealed class TrackClipDto
+    {
+        public string Id { get; set; } = "";
+        public string File { get; set; } = "";
+        public TimeSpan Start { get; set; }
+        public TimeSpan In { get; set; }
+        public TimeSpan Out { get; set; }
+        public double? Volume { get; set; }
     }
 
     /// <summary>The kept part of the output frame, as fractions of its width and height.</summary>

@@ -214,8 +214,14 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
             return;
         // A drag in progress is heard through audio-delay and seen on the timeline; the EDL is rebuilt on release.
         // Rebuilding mid-drag would reset audio-delay on load and then add the whole drag on top of the new EDL.
+        // A volume drag changes only the mix, which is applied in place (and heard) as it goes.
         if (_owner.History.InGesture)
+        {
+            if (_silencePath is not null && _preview.IsTimelineLoaded && TimelineEdl.Build(State, _owner.Media, _silencePath) is { } same
+                && _preview.IsLoaded(same))
+                _preview.LoadTimeline(same, Timeline.Playhead, TimelineMix.For(State));
             return;
+        }
         if (!_owner.HasClips)
         {
             _preview.Unload();
@@ -234,7 +240,7 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
             return;
         }
         PreviewMessage = null;
-        _preview.LoadTimeline(url, Timeline.Playhead);
+        _preview.LoadTimeline(url, Timeline.Playhead, TimelineMix.For(State));
     }
 
     private async Task PrepareSilenceAsync()

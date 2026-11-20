@@ -140,6 +140,24 @@ public static class TimelineEditor
     public static Timeline SetAudioLoop(Timeline timeline, IReadOnlySet<string> clipIds, bool loop) =>
         Map(timeline, clipIds, c => c.ReplacedAudio is { } r ? c with { ReplacedAudio = r with { Loop = loop } } : c);
 
+    /// <summary>Sets the volume of each clip (a gain, clamped to 0…<see cref="Gain.Max"/>).</summary>
+    public static Timeline SetVolume(Timeline timeline, IReadOnlySet<string> clipIds, double gain)
+    {
+        gain = Gain.Clamp(gain);
+        return Map(timeline, clipIds, c => c with { Volume = gain });
+    }
+
+    /// <summary>
+    /// Gives every clip of video <paramref name="sourceId"/> that plays its own sound the same volume; clips whose sound
+    /// is replaced keep theirs.
+    /// </summary>
+    public static Timeline SetVolumeForSource(Timeline timeline, string sourceId, double gain) =>
+        SetVolume(timeline, timeline.Clips.Where(c => c.SourceId == sourceId && c.ReplacedAudio is null).Select(c => c.Id).ToHashSet(), gain);
+
+    /// <summary>Gives every clip whose sound audio file <paramref name="fileId"/> replaces the same volume.</summary>
+    public static Timeline SetVolumeForAudioFile(Timeline timeline, string fileId, double gain) =>
+        SetVolume(timeline, timeline.Clips.Where(c => c.ReplacedAudio?.FileId == fileId).Select(c => c.Id).ToHashSet(), gain);
+
     /// <summary>Clips playing an audio file that is removed go back to their own audio.</summary>
     public static Timeline RemoveAudioFile(Timeline timeline, string fileId)
     {

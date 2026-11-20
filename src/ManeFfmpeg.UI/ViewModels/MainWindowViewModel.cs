@@ -264,6 +264,34 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable, IA
         ShowAdded(added, replacedClip: ReferenceEquals(state, added.State) ? null : clipId);
     }
 
+    /// <summary>
+    /// Files dropped on A2: added like <see cref="AddMediaAsync"/>, and the first audio file is mixed in at
+    /// <paramref name="start"/> in the same undo step.
+    /// </summary>
+    public async Task AddToTrackFromFilesAsync(IEnumerable<string> paths, TimeSpan start)
+    {
+        if (await ProbeFilesAsync(paths) is not { } probed)
+            return;
+        var added = ProjectEditor.AddProbed(State, probed, AddRouting.ByContent, NewSource);
+        var (state, id) = added.AudioFiles.Count > 0 && ProbedLength(added.State, added.AudioFiles[0], probed) is { } length
+            ? ProjectEditor.AddTrackClip(added.State, added.AudioFiles[0], start, length)
+            : (added.State, null);
+        CommitKeepingFit(state);
+        ShowAdded(added, replacedClip: null);
+        if (id is not null)
+        {
+            Timeline.SelectOnly(id);
+            StatusMessage = TrackMessage(added.AudioFiles[0]);
+        }
+    }
+
+    /// <summary>Where a just-probed audio file's sound ends (the catalog may not have it yet).</summary>
+    private static TimeSpan? ProbedLength(ProjectState state, string fileId, IEnumerable<ProbedFile> probed) =>
+        state.AudioFile(fileId) is { } file && probed.FirstOrDefault(p => p.Path == file.Path)?.Info is { } info
+        && info.Audio(file.AudioStreamIndex) is { } stream
+            ? info.AudioEnd(stream)
+            : null;
+
     private async Task<AddedFiles?> AddProbedAsync(IEnumerable<string> paths, AddRouting routing) =>
         await ProbeFilesAsync(paths) is { } results ? ProjectEditor.AddProbed(State, results, routing, NewSource) : null;
 

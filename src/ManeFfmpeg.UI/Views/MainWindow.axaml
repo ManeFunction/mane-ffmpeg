@@ -263,6 +263,22 @@
                                 <Button Classes="tool" Content="{Binding ApplyOffsetText}" HorizontalAlignment="Stretch"
                                         Command="{Binding ApplyOffsetToSourceCommand}" />
                             </StackPanel>
+                            <!-- Volume of the selected V1 or A2 clips -->
+                            <StackPanel Spacing="6" IsVisible="{Binding HasAnySelection}">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Volume" Classes="dim" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="{Binding ClipVolumeText}" Classes="dim" FontFeatures="tnum" VerticalAlignment="Center" />
+                                </Grid>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <Slider x:Name="VolumeSlider" Minimum="0" Maximum="200" TickFrequency="1" IsSnapToTickEnabled="True"
+                                            SmallChange="1" LargeChange="10" Value="{Binding ClipVolume}" VerticalAlignment="Center"
+                                            ToolTip.Tip="Volume of the selected clips: 100 % leaves the sound as it is, 200 % is about +6 dB" />
+                                    <Button Grid.Column="1" Classes="tool" Content="100 %" Margin="6,0,0,0" Command="{Binding ResetVolumeCommand}"
+                                            ToolTip.Tip="Reset to the original volume" />
+                                </Grid>
+                                <Button Classes="tool" Content="{Binding ApplyVolumeText}" HorizontalAlignment="Stretch"
+                                        Command="{Binding ApplyVolumeToAllCommand}" />
+                            </StackPanel>
                         </StackPanel>
                         </ScrollViewer>
                     </Border>
@@ -352,6 +368,9 @@
             <!-- Timeline -->
             <Border Grid.Row="2" Classes="panel" Padding="0" ClipToBounds="True">
                 <DockPanel>
+                    <!-- Reserved for the mixer: live level bars that show clipping, and the master volume -->
+                    <Border x:Name="MixerStrip" DockPanel.Dock="Left" Width="56" Background="#26272E"
+                            BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="0,0,1,0" />
                     <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" Margin="8,6">
                         <StackPanel Orientation="Horizontal" Spacing="4">
                             <!-- Transport while the preview is hidden -->

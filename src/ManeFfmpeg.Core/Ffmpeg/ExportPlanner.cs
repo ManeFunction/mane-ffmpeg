@@ -131,30 +131,44 @@ public static class ExportPlanner
                 throw new ExportPlanException(
                     $"The output file is one of the {(file == item.Source ? "source videos" : "audio files")}. Choose another name.");
         }
+        var track = ResolveTrack(job.State, job.Media, args);
+        if (track.Select(t => t.Heard.File).Distinct().FirstOrDefault(f => SameFile(f.Path, job.OutputPath)) is not null)
+            throw new ExportPlanException("The output file is one of the audio files. Choose another name.");
 
         if (job.Preset.Kind == PresetKind.Audio)
         {
             // The crop is the picture's; saved audio has none.
-            var audio = AudioOnly(new Context(job, args, fallback, items, OutputFrame.Of([.. items.Select(i => i.Video)]), null));
-            return audio with { Notes = [.. analysis.Warnings, .. audio.Notes], OutputPath = job.OutputPath, WorkDirectory = job.WorkDirectory };
+            var audioContext = new Context(job, args, fallback, items, OutputFrame.Of([.. items.Select(i => i.Video)]), null) { Track = track };
+            var audio = AudioOnly(audioContext);
+            return audio with
+            {
+                Notes = [.. analysis.Warnings, .. audio.Notes, .. TrackNotes(audioContext)],
+                OutputPath = job.OutputPath,
+                WorkDirectory = job.WorkDirectory,
+            };
         }
 
         var crop = job.State.Crop;
         if (crop is not null && args.VideoCopy)
             throw new ExportPlanException(
                 $"Preset \"{job.Preset.Name}\" copies the video, and a copied picture can't be cropped. Choose an encoding preset or reset the crop.");
-        var ctx = new Context(job, args, fallback, items, OutputFrame.Of([.. items.Select(i => i.Video)]), crop);
-        var plan = items.Count == 1 && IsWholeFile(items[0])
+        var ctx = new Context(job, args, fallback, items, OutputFrame.Of([.. items.Select(i => i.Video)]), crop) { Track = track };
+        var plan = items.Count == 1 && IsWholeFile(items[0]) && !ctx.HasTrack
             ? Passthrough(ctx)
             : args.VideoCopy
                 ? StreamCopy(ctx)
-                : items.Count == 1 && args.AudioCopy && items[0].Audio is not null
+                : items.Count == 1 && args.AudioCopy && items[0].Audio is not null && !ctx.HasTrack
                     ? SingleClipAudioCopy(ctx) ?? Encode(ctx)
                     : Encode(ctx);
         IEnumerable<string> cropped = ctx.CropPixels is { } p
             ? [$"Cropped to {p.Width}×{p.Height}, from {p.X},{p.Y} of the {ctx.Frame.Width}×{ctx.Frame.Height} frame."]
             : [];
-        return plan with { Notes = [.. args.Warnings, .. plan.Notes, .. cropped], OutputPath = job.OutputPath, WorkDirectory = job.WorkDirectory };
+        return plan with
+        {
+            Notes = [.. args.Warnings, .. plan.Notes, .. TrackNotes(ctx), .. cropped],
+            OutputPath = job.OutputPath,
+            WorkDirectory = job.WorkDirectory,
+        };
     }
 
     /// <param name="Heard">What the clip plays (an audio file dropped on it, or <paramref name="Source"/>), or null for silence.</param>
@@ -169,16 +183,30 @@ public static class ExportPlanner
         /// </summary>
         public bool PlaysOwnAudio => Clip.ReplacedAudio is null;
 
-        /// <summary>The clip plays its own audio, not slipped: the audio can be copied along with the video.</summary>
-        public bool OwnAudioInSync => PlaysOwnAudio && Clip.AudioOffset == TimeSpan.Zero;
+        /// <summary>The clip plays its own audio, not slipped and at its own volume: it can be copied along with the video.</summary>
+        public bool OwnAudioInSync => PlaysOwnAudio && Clip.AudioOffset == TimeSpan.Zero && Gain.IsUnity(Clip.Volume);
     }
+
+    /// <summary>An A2 clip with the file it plays.</summary>
+    private sealed record TrackItem(TrackClip Clip, HeardAudio Heard);
 
     /// <param name="Frame">The joined picture, which the crop is a part of.</param>
     /// <param name="Crop">The part of the frame to keep, or null for all of it.</param>
     private sealed record Context(ExportJob Job, PresetArguments Args, IReadOnlyList<string> Fallback, List<Item> Items, OutputFrame Frame, CropRect? Crop)
     {
         public string Out => Job.OutputPath;
-        public bool AnyAudio => Items.Any(i => i.Audio is not null);
+
+        /// <summary>The A2 clips mixed over the clips' audio; empty when A2 has none or the preset drops audio.</summary>
+        public IReadOnlyList<TrackItem> Track { get; init; } = [];
+
+        public bool HasTrack => Track.Count > 0;
+
+        /// <summary>The clips have sound of their own, or A2 adds some.</summary>
+        public bool AnyAudio => Items.Any(i => i.Audio is not null) || HasTrack;
+
+        /// <summary>The format all audio is converted to before it's joined and mixed; null without audio.</summary>
+        public (int Rate, string Layout)? AudioFormat =>
+            ExportPlanner.AudioFormat([.. Items.Select(i => i.Audio), .. Track.Select(t => t.Heard.Stream)]);
 
         /// <summary>What the crop keeps of the frame, or null without one.</summary>
         public PixelCrop? CropPixels => Crop is null ? null : Frame.Pixels(Crop);
@@ -207,6 +235,35 @@ public static class ExportPlanner
         if (stream is null && !args.NoAudio)
             throw new ExportPlanException($"\"{file.DisplayName}\" has no audio stream.");
         return new Item(clip, source, media, video, args.NoAudio ? null : new HeardAudio(file, fileMedia, stream!));
+    }
+
+    /// <summary>The A2 clips with their files; none when the preset drops audio.</summary>
+    private static List<TrackItem> ResolveTrack(ProjectState state, IReadOnlyDictionary<string, MediaInfo> mediaById, PresetArguments args)
+    {
+        var track = new List<TrackItem>();
+        if (args.NoAudio)
+            return track;
+        foreach (var clip in state.AudioTrack)
+        {
+            var file = state.AudioFile(clip.FileId)
+                ?? throw new ExportPlanException("An A2 clip plays an audio file that is no longer in the project.");
+            if (!mediaById.TryGetValue(file.Id, out var media))
+                throw new ExportPlanException($"\"{file.DisplayName}\" is missing or hasn't been analyzed yet.");
+            var stream = media.Audio(file.AudioStreamIndex)
+                ?? throw new ExportPlanException($"\"{file.DisplayName}\" has no audio stream.");
+            track.Add(new TrackItem(clip, new HeardAudio(file, media, stream)));
+        }
+        return track;
+    }
+
+    private static IEnumerable<string> TrackNotes(Context ctx)
+    {
+        if (!ctx.HasTrack)
+            yield break;
+        var heard = ctx.Track.Count(t => t.Clip.Start < ctx.Job.State.Timeline.Duration);
+        yield return heard == ctx.Track.Count
+            ? $"A2 is mixed in: {ctx.Track.Count} clip(s)."
+            : $"A2 is mixed in: {heard} of {ctx.Track.Count} clip(s); the rest start after the timeline ends.";
     }
 
     private static bool IsWholeFile(Item item) =>
@@ -240,7 +297,7 @@ public static class ExportPlanner
         var graph = new StringBuilder();
         var reference = ctx.Items[0].Video;
         var norm = VideoNormalization(ctx);
-        var audioFormat = AudioFormat(ctx.Items);
+        var audioFormat = ctx.AudioFormat;
         var n = ctx.Items.Count;
 
         for (var i = 0; i < n; i++)
@@ -259,9 +316,10 @@ public static class ExportPlanner
                 var chain = AudioChain(item, item.Clip.In, item.Clip.Duration, audioFormat!.Value, ref audioInput, inputs);
                 graph.Append(chain).Append($"[a{i}];");
             }
+            AppendTrack(graph, ctx, [(TimeSpan.Zero, ctx.Job.State.Timeline.Duration)], audioFormat!.Value, ref audioInput, inputs);
         }
 
-        AppendConcat(graph, n, video: true, audio: ctx.AnyAudio, ctx.VideoFilter, ctx.Args.AudioFilter);
+        AppendConcat(graph, n, video: true, audio: ctx.AnyAudio, ctx.VideoFilter, ctx.Args.AudioFilter, track: ctx.HasTrack);
 
         var a = new List<string>(Prefix);
         a.AddRange(inputs);
@@ -319,7 +377,7 @@ public static class ExportPlanner
         var sameAudio = allHaveAudio && ctx.Items.All(i =>
             i.Audio!.Codec == first.Audio!.Codec && i.Audio.SampleRate == first.Audio.SampleRate
             && i.Audio.Channels == first.Audio.Channels && i.Audio.Index == first.Audio.Index);
-        var copyAudio = ctx.AnyAudio && ctx.Args.AudioCopy && sameAudio && ctx.Items.All(i => i.OwnAudioInSync);
+        var copyAudio = ctx.AnyAudio && ctx.Args.AudioCopy && sameAudio && ctx.Items.All(i => i.OwnAudioInSync) && !ctx.HasTrack;
 
         // Where the container seeks unreliably (MPEG-TS…), the concat demuxer's inpoint lands early, so each
         // clip is first cut into an exact temporary segment and the segments are joined.
@@ -392,14 +450,18 @@ public static class ExportPlanner
         var outputTokens = ctx.Args.OutputTokens;
         if (filteredAudio)
         {
-            var audioFormat = AudioFormat(ctx.Items)!.Value;
+            var audioFormat = ctx.AudioFormat!.Value;
             var audioInput = 1;
             for (var i = 0; i < ctx.Items.Count; i++)
             {
                 var item = ctx.Items[i];
                 graph.Append(AudioChain(item, starts[i], item.Clip.Out - starts[i], audioFormat, ref audioInput, inputs)).Append($"[a{i}];");
             }
-            AppendConcat(graph, ctx.Items.Count, video: false, audio: true, null, ctx.Args.AudioFilter, audioOut: "ashift");
+            // Each clip starts at its keyframe, a little before its in point, so A2 under it starts that much earlier too.
+            var bounds = ctx.Job.State.Timeline.Bounds;
+            AppendTrack(graph, ctx, [.. ctx.Items.Select((item, i) => (bounds[i] - (item.Clip.In - starts[i]), bounds[i + 1]))],
+                audioFormat, ref audioInput, inputs);
+            AppendConcat(graph, ctx.Items.Count, video: false, audio: true, null, ctx.Args.AudioFilter, audioOut: "ashift", track: ctx.HasTrack);
             outputTokens = AudioTokens(ctx, true, notes,
                 AudioReencodeReason(ctx, otherwise: allHaveAudio ? "the clips' audio formats differ" : "some clips have no audio"));
         }
@@ -462,7 +524,7 @@ public static class ExportPlanner
         var item = ctx.Items[0];
         var heard = item.Heard!;
         var clip = item.Clip;
-        if (!item.PlaysOwnAudio)
+        if (!item.PlaysOwnAudio || !Gain.IsUnity(clip.Volume))
             return null;
         if (heard.Layout(clip) is not AudioLayout.Placed { Placement: { IsSilent: false } placement })
             return null;
@@ -536,7 +598,7 @@ public static class ExportPlanner
         try
         {
             var items = state.Timeline.Clips.Select(c => Resolve(state, media, c, args)).ToList();
-            if (CopiedAudio(items, args) is { } copied)
+            if (CopiedAudio(items, args, hasTrack: state.AudioTrack.Count > 0 && !args.NoAudio) is { } copied)
                 return AudioExtension(copied.Item.Audio!.Codec);
             return AudioExtension(args.AudioCopy ? PresetArguments.Parse(preset.AudioFallbackArguments).AudioCodec : args.AudioCodec);
         }
@@ -550,16 +612,17 @@ public static class ExportPlanner
     {
         if (!ctx.AnyAudio)
             throw new ExportPlanException("The timeline has no audio to save.");
-        return CopiedAudio(ctx.Items, ctx.Args) is { } copied ? AudioCopy(ctx, copied.Item, copied.Placement) : AudioEncode(ctx);
+        return CopiedAudio(ctx.Items, ctx.Args, ctx.HasTrack) is { } copied ? AudioCopy(ctx, copied.Item, copied.Placement) : AudioEncode(ctx);
     }
 
     /// <summary>
     /// The clip whose audio can be saved without re-encoding: the only one on the timeline, playing its own audio, with
-    /// all of it read from the file (no silence before or after). Null when the audio has to be encoded.
+    /// all of it read from the file (no silence before or after), at its own volume and with nothing on A2. Null when the
+    /// audio has to be encoded.
     /// </summary>
-    private static (Item Item, AudioPlacement Placement)? CopiedAudio(List<Item> items, PresetArguments args)
+    private static (Item Item, AudioPlacement Placement)? CopiedAudio(List<Item> items, PresetArguments args, bool hasTrack)
     {
-        if (!args.AudioCopy || items is not [{ PlaysOwnAudio: true, Heard: { } heard } item])
+        if (!args.AudioCopy || hasTrack || items is not [{ PlaysOwnAudio: true, Heard: { } heard } item] || !Gain.IsUnity(item.Clip.Volume))
             return null;
         return heard.Layout(item.Clip) is AudioLayout.Placed { Placement: { IsSilent: false } placement }
             && placement.Lead <= Tolerance && placement.Tail <= Tolerance
@@ -602,7 +665,7 @@ public static class ExportPlanner
         var notes = new List<string>();
         var inputs = new List<string>();
         var graph = new StringBuilder();
-        var format = AudioFormat(ctx.Items)!.Value;
+        var format = ctx.AudioFormat!.Value;
         var n = ctx.Items.Count;
         var input = 0;
         for (var i = 0; i < n; i++)
@@ -610,7 +673,8 @@ public static class ExportPlanner
             var item = ctx.Items[i];
             graph.Append(AudioChain(item, item.Clip.In, item.Clip.Duration, format, ref input, inputs)).Append($"[a{i}];");
         }
-        AppendConcat(graph, n, video: false, audio: true, null, ctx.Args.AudioFilter);
+        AppendTrack(graph, ctx, [(TimeSpan.Zero, ctx.Job.State.Timeline.Duration)], format, ref input, inputs);
+        AppendConcat(graph, n, video: false, audio: true, null, ctx.Args.AudioFilter, track: ctx.HasTrack);
 
         var a = new List<string>(Prefix);
         a.AddRange(inputs);
@@ -630,6 +694,64 @@ public static class ExportPlanner
     /// drift. Adds an input when audio is read.
     /// </summary>
     private static string AudioChain(Item item, TimeSpan videoStart, TimeSpan length, (int Rate, string Layout) format,
+        ref int nextInput, List<string> inputs)
+    {
+        var chain = HeardChain(item, videoStart, length, format, ref nextInput, inputs);
+        return item.Heard is null || Gain.IsUnity(item.Clip.Volume) ? chain : chain + VolumeFilter(item.Clip.Volume);
+    }
+
+    /// <summary>",volume=…" for a clip's gain.</summary>
+    private static string VolumeFilter(double gain) =>
+        string.Create(CultureInfo.InvariantCulture, $",volume={Gain.Clamp(gain):0.######}");
+
+    /// <summary>
+    /// Appends the A2 track over the timeline ranges, joined in order, as [atrack]; nothing when A2 has no clips. Every
+    /// piece is cut to the samples between its start and end in the joined track, so it never drifts against the clips.
+    /// </summary>
+    private static void AppendTrack(StringBuilder graph, Context ctx, IReadOnlyList<(TimeSpan From, TimeSpan To)> ranges,
+        (int Rate, string Layout) format, ref int nextInput, List<string> inputs)
+    {
+        if (!ctx.HasTrack)
+            return;
+        var clips = ctx.Track.Select(t => t.Clip).ToList();
+        var heard = ctx.Track.ToDictionary(t => t.Clip.Id, t => t.Heard);
+        var fmt = $"aformat=sample_rates={format.Rate}:channel_layouts={format.Layout}";
+        var labels = new StringBuilder();
+        var count = 0;
+        var at = TimeSpan.Zero;
+        foreach (var (from, to) in ranges)
+        foreach (var span in TrackLayout.Spans(clips, from, to, c => heard[c.Id].End))
+        {
+            var samples = Samples(at + span.Length, format.Rate) - Samples(at, format.Rate);
+            at += span.Length;
+            if (samples <= 0)
+                continue;
+            if (span.Clip is not { } clip)
+            {
+                graph.Append(CultureInfo.InvariantCulture, $"anullsrc=r={format.Rate}:cl={format.Layout},atrim=end_sample={samples}[t{count}];");
+            }
+            else
+            {
+                var file = heard[clip.Id];
+                var trim = Input(inputs, file.File.Path, file.Info, span.ReadFrom, span.Length);
+                graph.Append($"[{nextInput}:{file.Stream.Index}]");
+                if (trim.Length > 0)
+                    graph.Append($"atrim={trim}duration={TimeFormat.Seconds(span.Length)},asetpts=PTS-STARTPTS,");
+                graph.Append(fmt);
+                if (!Gain.IsUnity(clip.Volume))
+                    graph.Append(VolumeFilter(clip.Volume));
+                graph.Append(CultureInfo.InvariantCulture, $",apad=whole_len={samples},atrim=end_sample={samples}[t{count}];");
+                nextInput++;
+            }
+            labels.Append($"[t{count}]");
+            count++;
+        }
+        if (count == 0)
+            graph.Append(CultureInfo.InvariantCulture, $"anullsrc=r={format.Rate}:cl={format.Layout},atrim=end_sample=1[t0];");
+        graph.Append(count == 0 ? "[t0]" : labels).Append($"concat=n={Math.Max(count, 1)}:v=0:a=1,asetpts=N/SR/TB[atrack];");
+    }
+
+    private static string HeardChain(Item item, TimeSpan videoStart, TimeSpan length, (int Rate, string Layout) format,
         ref int nextInput, List<string> inputs)
     {
         var fmt = $"aformat=sample_rates={format.Rate}:channel_layouts={format.Layout}";
@@ -750,9 +872,12 @@ public static class ExportPlanner
         return $"start={TimeFormat.Seconds(start - seek)}:";
     }
 
-    /// <summary>Joins the clips' [vN] and [aN], then runs <paramref name="videoFilter"/> and <paramref name="audioFilter"/> on the result.</summary>
+    /// <summary>
+    /// Joins the clips' [vN] and [aN], mixes [atrack] (the A2 track) into the joined audio when <paramref name="track"/> is
+    /// set, then runs <paramref name="videoFilter"/> and <paramref name="audioFilter"/> on the result.
+    /// </summary>
     private static void AppendConcat(StringBuilder graph, int n, bool video, bool audio, string? videoFilter, string? audioFilter,
-        string audioOut = "aout")
+        string audioOut = "aout", bool track = false)
     {
         for (var i = 0; i < n; i++)
         {
@@ -767,7 +892,10 @@ public static class ExportPlanner
         if (video)
             graph.Append($"[{vLabel}]");
         if (audio)
-            graph.Append($"[{aLabel}]");
+            graph.Append(track ? "[amain]" : $"[{aLabel}]");
+        // A sum (normalize=0), as in the preview: A1 keeps its level and A2 adds to it. A1 sets the length.
+        if (audio && track)
+            graph.Append($";[amain][atrack]amix=inputs=2:normalize=0:duration=first:dropout_transition=0[{aLabel}]");
         if (video && videoFilter is not null)
             graph.Append($";[vcat]{videoFilter}[vout]");
         if (audio && audioFilter is not null)
@@ -777,7 +905,9 @@ public static class ExportPlanner
     /// <summary>Why audio can't be copied: replaced or slipped audio first, else <paramref name="otherwise"/>.</summary>
     private static string AudioReencodeReason(Context ctx, string otherwise) =>
         ctx.Items.Any(i => !i.PlaysOwnAudio) ? "clips have replaced audio"
-        : ctx.Items.Any(i => !i.OwnAudioInSync) ? "clips have audio offsets"
+        : ctx.Items.Any(i => i.Clip.AudioOffset != TimeSpan.Zero) ? "clips have audio offsets"
+        : ctx.Items.Any(i => !Gain.IsUnity(i.Clip.Volume)) ? "clips have their volume changed"
+        : ctx.HasTrack ? "A2 is mixed in"
         : otherwise;
 
     /// <summary>Preset output options, with "-c:a copy" swapped for the fallback when audio is filtered.</summary>
@@ -807,12 +937,12 @@ public static class ExportPlanner
     }
 
     /// <summary>
-    /// The format every clip's audio is converted to: the highest sample rate and the widest channel layout among the
-    /// clips, so a low-rate or mono audio file on one clip never downgrades the others.
+    /// The format every clip's audio (and A2's) is converted to: the highest sample rate and the widest channel layout
+    /// among them, so a low-rate or mono audio file never downgrades the others.
     /// </summary>
-    private static (int Rate, string Layout)? AudioFormat(List<Item> items)
+    private static (int Rate, string Layout)? AudioFormat(IEnumerable<AudioStreamInfo?> heard)
     {
-        var streams = items.Select(i => i.Audio).OfType<AudioStreamInfo>().ToList();
+        var streams = heard.OfType<AudioStreamInfo>().ToList();
         if (streams.Count == 0)
             return null;
         var widest = streams.MaxBy(a => a.Channels)!;

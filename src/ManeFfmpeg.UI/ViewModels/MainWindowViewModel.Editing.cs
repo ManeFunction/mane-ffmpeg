@@ -25,6 +25,9 @@ public sealed partial class MainWindowViewModel
 
     private Clip? PrimaryClip => State.Timeline.Clips.FirstOrDefault(c => Timeline.Selection.Contains(c.Id));
 
+    /// <summary>The first selected A2 clip, when A2 clips are selected.</summary>
+    private TrackClip? PrimaryTrackClip => State.AudioTrack.FirstOrDefault(c => Timeline.Selection.Contains(c.Id));
+
     private IReadOnlySet<string> TargetClips()
     {
         if (Timeline.Selection.Count > 0)
@@ -34,21 +37,39 @@ public sealed partial class MainWindowViewModel
             : new HashSet<string>();
     }
 
-    public bool HasSelection => Timeline.Selection.Count > 0;
+    /// <summary>V1 clips are selected (their in/out and audio offset can be edited).</summary>
+    public bool HasSelection => PrimaryClip is not null;
+
+    /// <summary>A2 clips are selected.</summary>
+    public bool HasTrackSelection => PrimaryTrackClip is not null;
+
+    /// <summary>Clips on either track are selected (their volume can be edited).</summary>
+    public bool HasAnySelection => HasSelection || HasTrackSelection;
 
     public string SelectionTitle => Timeline.Selection.Count switch
     {
         0 => "No clip selected",
+        1 when PrimaryTrackClip is { } t => $"A2 · {State.AudioFile(t.FileId)?.DisplayName ?? "missing audio file"}",
         1 => PrimaryClip is { } c ? State.Source(c.SourceId)?.DisplayName ?? "Clip" : "Clip",
-        var n => $"{n} clips selected",
+        var n => HasTrackSelection ? $"{n} A2 clips selected" : $"{n} clips selected",
     };
 
     public string SelectionDetails
     {
         get
         {
+            if (PrimaryTrackClip is { } track)
+            {
+                if (Timeline.Selection.Count > 1)
+                {
+                    var length = State.AudioTrack.Where(c => Timeline.Selection.Contains(c.Id)).Aggregate(TimeSpan.Zero, (s, c) => s + c.Duration);
+                    return $"Total {TimeFormat.Display(length)}";
+                }
+                return $"Starts at {TimeFormat.Display(track.Start)} · {TimeFormat.Display(track.Duration)} long\n" +
+                       $"File {TimeFormat.Display(track.In)} – {TimeFormat.Display(track.Out)}";
+            }
             if (PrimaryClip is not { } clip)
-                return "Click a clip on the timeline to edit it. Space plays, S splits at the playhead.";
+                return "Click a clip on the timeline to edit it. Space plays, S splits at the playhead. Drag an audio file onto A2 to mix it in.";
             if (Timeline.Selection.Count > 1)
             {
                 var total = State.Timeline.Clips.Where(c => Timeline.Selection.Contains(c.Id))
@@ -158,8 +179,124 @@ public sealed partial class MainWindowViewModel
     [RelayCommand]
     private void RestoreOriginalAudio() => CommitTimeline(t => TimelineEditor.RestoreOriginalAudio(t, TargetClips()));
 
+    // ---- Volume -----------------------------------------------------------------------------------
+
+    private bool _volumeDragging;
+
+    /// <summary>The selected clips' volume in percent (0–200), V1 or A2; the first selected clip's when they differ.</summary>
+    public double ClipVolume
+    {
+        get => Math.Round((PrimaryTrackClip?.Volume ?? PrimaryClip?.Volume ?? 1) * 100);
+        set
+        {
+            var gain = Gain.Clamp(value / 100);
+            var next = WithVolume(State, Timeline.Selection, gain);
+            // A slider drag previews every step and records one undo step when it ends.
+            if (_volumeDragging)
+                History.ReplaceCurrent(next);
+            else
+                Commit(next);
+            OnVolumeChanged();
+        }
+    }
+
+    public string ClipVolumeText
+    {
+        get
+        {
+            var gain = ClipVolume / 100;
+            return $"{Gain.Percent(gain)} · {Gain.Decibels(gain)}";
+        }
+    }
+
+    /// <summary>The volume slider's thumb was grabbed: changes until <see cref="EndVolumeDrag"/> are one undo step.</summary>
+    public void BeginVolumeDrag()
+    {
+        History.BeginGesture();
+        _volumeDragging = true;
+    }
+
+    public void EndVolumeDrag()
+    {
+        _volumeDragging = false;
+        History.EndGesture();
+    }
+
+    private static ProjectState WithVolume(ProjectState state, IReadOnlySet<string> ids, double gain) => state with
+    {
+        Timeline = TimelineEditor.SetVolume(state.Timeline, ids, gain),
+        AudioTrack = TrackEditor.SetVolume(state.AudioTrack, ids, gain),
+    };
+
+    [RelayCommand]
+    private void ResetVolume() => Commit(WithVolume(State, Timeline.Selection, 1));
+
+    public string ApplyVolumeText => HasTrackSelection || HasReplacedAudio
+        ? "Use this volume everywhere this audio file plays"
+        : "Use this volume for all clips of this video";
+
+    [RelayCommand]
+    private void ApplyVolumeToAll()
+    {
+        // An audio file's volume goes to every place it plays (A1 replacements and A2); a video's own sound only to its
+        // clips that still play it.
+        var (fileId, gain) = PrimaryTrackClip is { } track ? (track.FileId, track.Volume)
+            : PrimaryClip is { ReplacedAudio: { } r } replaced ? (r.FileId, replaced.Volume)
+            : ((string?)null, 0.0);
+        if (fileId is not null)
+        {
+            Commit(ProjectEditor.SetAudioFileVolume(State, fileId, gain));
+            StatusMessage = $"Volume {Gain.Percent(gain)} applied everywhere {State.AudioFile(fileId)?.DisplayName} plays, on A1 and A2.";
+            return;
+        }
+        if (PrimaryClip is not { } clip)
+            return;
+        CommitTimeline(t => TimelineEditor.SetVolumeForSource(t, clip.SourceId, clip.Volume));
+        StatusMessage = $"Volume {Gain.Percent(clip.Volume)} applied to every clip of {State.Source(clip.SourceId)?.DisplayName} that plays its own sound.";
+    }
+
+    private void OnVolumeChanged()
+    {
+        OnPropertyChanged(nameof(ClipVolume));
+        OnPropertyChanged(nameof(ClipVolumeText));
+    }
+
+    // ---- A2 ---------------------------------------------------------------------------------------
+
+    /// <summary>How long a file would play on A2: where its audio ends, or null while it isn't analyzed.</summary>
+    public TimeSpan? TrackLength(string fileId) =>
+        State.AudioFile(fileId) is { } file && _catalog.Info(fileId) is { } info && info.Audio(file.AudioStreamIndex) is { } stream
+            ? info.AudioEnd(stream)
+            : null;
+
+    /// <summary>Puts audio file <paramref name="fileId"/> on A2 at <paramref name="start"/> (an audio file dragged there).</summary>
+    public void AddToTrack(string fileId, TimeSpan start)
+    {
+        if (TrackLength(fileId) is not { } length)
+        {
+            StatusMessage = $"{State.AudioFile(fileId)?.DisplayName} is still being analyzed; drop it again in a moment.";
+            return;
+        }
+        var (next, id) = ProjectEditor.AddTrackClip(State, fileId, start, length);
+        if (id is null)
+        {
+            StatusMessage = "That part of A2 is taken: drop the file on an empty stretch.";
+            return;
+        }
+        Commit(next);
+        Timeline.SelectOnly(id);
+        StatusMessage = TrackMessage(fileId);
+    }
+
+    private string TrackMessage(string fileId) =>
+        $"{State.AudioFile(fileId)?.DisplayName} is mixed in on A2. Drag it to move it, drag its edges to trim it; Selection sets its volume.";
+
     internal void OnSelectionChanged()
     {
+        OnPropertyChanged(nameof(HasTrackSelection));
+        OnPropertyChanged(nameof(HasAnySelection));
+        OnPropertyChanged(nameof(ApplyVolumeText));
+        OnVolumeChanged();
         OnPropertyChanged(nameof(HasReplacedAudio));
         OnPropertyChanged(nameof(ReplacedAudioName));
         OnPropertyChanged(nameof(ReplacedAudioBrush));
@@ -190,6 +327,18 @@ public sealed partial class MainWindowViewModel
     {
         if (!HasClips)
             return;
+        if (Timeline.SelectionIsTrack)
+        {
+            var track = TrackEditor.Split(State.AudioTrack, Timeline.Selection, Timeline.Playhead);
+            if (ReferenceEquals(track, State.AudioTrack))
+            {
+                StatusMessage = "Move the playhead inside a selected A2 clip (away from its edges) to split it.";
+                return;
+            }
+            Commit(State with { AudioTrack = track });
+            StatusMessage = null;
+            return;
+        }
         var (next, rightId) = TimelineEditor.Split(State.Timeline, Timeline.Playhead, GridOf);
         if (rightId is null)
         {
@@ -213,7 +362,11 @@ public sealed partial class MainWindowViewModel
         // Clips deleted before the playhead pull what's under it earlier; the playhead follows it.
         var playhead = Timeline.Playhead;
         var moved = TimelineEditor.TimeAfterDelete(State.Timeline, Timeline.Selection, playhead);
-        CommitTimeline(t => TimelineEditor.Delete(t, Timeline.Selection));
+        Commit(State with
+        {
+            Timeline = TimelineEditor.Delete(State.Timeline, Timeline.Selection),
+            AudioTrack = TrackEditor.Delete(State.AudioTrack, Timeline.Selection),
+        });
         if (moved != playhead)
             Preview.MovePlayheadAfterEdit(moved);
     }

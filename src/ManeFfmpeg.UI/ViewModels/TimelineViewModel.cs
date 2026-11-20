@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using CommunityToolkit.Mvvm.ComponentModel;
 using ManeFfmpeg.Core.Editing;
 using ManeFfmpeg.Core.Media;
@@ -5,8 +6,12 @@ using ManeFfmpeg.Core.Model;
 
 namespace ManeFfmpeg.UI.ViewModels;
 
-/// <summary>An audio file dragged over the timeline: its name and color, and the clip it would replace the sound of.</summary>
-public readonly record struct AudioDropTarget(string Name, Avalonia.Media.Color Color, string? ClipId);
+/// <summary>
+/// An audio file dragged over the timeline: its name and color, and the clip it would replace the sound of, or where on
+/// A2 it would start (<paramref name="TrackStart"/>) and for how long (<paramref name="TrackLength"/>, zero when unknown).
+/// </summary>
+public readonly record struct AudioDropTarget(string Name, Avalonia.Media.Color Color, string? ClipId,
+    TimeSpan? TrackStart = null, TimeSpan TrackLength = default);
 
 /// <summary>What the timeline control draws (zoom, scroll, playhead, selection) and the edits it performs.</summary>
 public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureHost
@@ -28,8 +33,22 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
 
     private readonly HashSet<string> _selection = [];
 
-    /// <summary>The selected clips' ids; changed through <see cref="Select"/> and friends.</summary>
+    /// <summary>
+    /// The selected clips' ids: V1 clips, or A2 clips (never both); changed through <see cref="Select"/> and friends.
+    /// </summary>
     public IReadOnlySet<string> Selection => _selection;
+
+    /// <summary>The selection is of A2 clips.</summary>
+    public bool SelectionIsTrack => _selection.Count > 0 && State.AudioTrack.Any(c => _selection.Contains(c.Id));
+
+    public ImmutableList<TrackClip> Track => State.AudioTrack;
+
+    public void PreviewTrack(ImmutableList<TrackClip> track) => owner.History.ReplaceCurrent(State with { AudioTrack = track });
+
+    /// <summary>What an A2 clip plays; null when its file has no audio or isn't analyzed yet.</summary>
+    public HeardAudio? Heard(TrackClip clip) => State.HeardAudio(clip, Info);
+
+    public TimeSpan? FileEnd(TrackClip clip) => Heard(clip)?.End;
 
     /// <summary>Presses, drags and releases on the timeline, in timeline terms.</summary>
     public TimelineGestures Gestures { get; }
@@ -118,6 +137,19 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
 
     public void Select(string clipId, bool toggle, bool range)
     {
+        // V1 and A2 clips are never selected together: what the inspector and the edits act on stays clear.
+        var track = State.TrackClip(clipId) is not null;
+        if (_selection.Count > 0 && SelectionIsTrack != track)
+            _selection.Clear();
+        if (track)
+        {
+            if (!toggle)
+                _selection.Clear();
+            if (!(toggle && _selection.Remove(clipId)))
+                _selection.Add(clipId);
+            SelectionChanged();
+            return;
+        }
         if (range && Selection.Count > 0)
         {
             var clips = Timeline.Clips;
@@ -170,7 +202,7 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
     /// <summary>Drops ids that no longer exist (after undo or delete).</summary>
     public void PruneSelection()
     {
-        var ids = Timeline.Clips.Select(c => c.Id).ToHashSet();
+        var ids = Timeline.Clips.Select(c => c.Id).Concat(State.AudioTrack.Select(c => c.Id)).ToHashSet();
         if (_selection.RemoveWhere(id => !ids.Contains(id)) > 0)
             SelectionChanged();
     }

@@ -82,11 +82,23 @@ internal static class DebugAutomation
                     }
                     case "drag-audio":
                     {
-                        // drag-audio <audio file index> <timeline seconds>: a pointer drag from the Audio tab to the A1 row
+                        // drag-audio <audio file index> <timeline seconds> [a2]: a pointer drag from the Audio tab to the A1 row (or A2)
                         var parts = arg.Split(' ');
-                        await DragAudioAsync(window, int.Parse(parts[0], CultureInfo.InvariantCulture), double.Parse(parts[1], CultureInfo.InvariantCulture));
+                        await DragAudioAsync(window, int.Parse(parts[0], CultureInfo.InvariantCulture), double.Parse(parts[1], CultureInfo.InvariantCulture),
+                            parts.Length > 2 && parts[2] == "a2");
                         break;
                     }
+                    case "select-track":
+                        vm.Timeline.Select(vm.State.AudioTrack[int.Parse(arg, CultureInfo.InvariantCulture)].Id, false, false);
+                        break;
+                    case "volume":
+                        // volume <percent>: the selected clips' volume, as the Selection slider sets it
+                        vm.ClipVolume = double.Parse(arg, CultureInfo.InvariantCulture);
+                        Console.WriteLine($"[volume] {vm.ClipVolumeText} graph={vm.Preview.Player?.GetString("lavfi-complex")}");
+                        break;
+                    case "graph":
+                        Console.WriteLine($"[graph] {vm.Preview.Player?.GetString("lavfi-complex")} time-pos={vm.Preview.Player?.GetString("time-pos")}");
+                        break;
                     case "loop":
                         vm.LoopAudio = arg == "on";
                         break;
@@ -179,7 +191,7 @@ internal static class DebugAutomation
                         break;
                     case "drag":
                     {
-                        // drag <ruler|video|audio> <fromSeconds> <toSeconds> [shift] [milliseconds]: by default ten moves,
+                        // drag <ruler|video|audio|a2> <fromSeconds> <toSeconds> [shift] [milliseconds]: by default ten moves,
                         // 16 ms apart; given a duration, a move every 8 ms (and prints the preview frames shown meanwhile)
                         var parts = arg.Split(' ');
                         var duration = parts.Skip(3).Select(p => double.TryParse(p, CultureInfo.InvariantCulture, out var ms) ? ms : (double?)null)
@@ -619,7 +631,13 @@ internal static class DebugAutomation
     {
         var control = window.TimelineView;
         var vm = window.ViewModel.Timeline;
-        var y = row switch { "ruler" => TimelineLayout.RulerCenter, "video" => TimelineLayout.VideoCenter, _ => TimelineLayout.AudioCenter };
+        var y = row switch
+        {
+            "ruler" => TimelineLayout.RulerCenter,
+            "video" => TimelineLayout.VideoCenter,
+            "a2" => TimelineLayout.TrackCenter,
+            _ => TimelineLayout.AudioCenter,
+        };
         Point At(double t) => new(TimelineLayout.X(vm.Zoom, vm.Scroll, TimeSpan.FromSeconds(t)), y);
         var origin = control.TranslatePoint(new Point(0, 0), window) ?? default;
         var moves = milliseconds is { } ms ? Math.Max(1, (int)(ms / 8)) : 10;
@@ -634,7 +652,7 @@ internal static class DebugAutomation
     }
 
     /// <summary>Synthetic drag of an Audio tab item onto the timeline's audio row at <paramref name="at"/> seconds.</summary>
-    private static async Task DragAudioAsync(MainWindow window, int index, double at)
+    private static async Task DragAudioAsync(MainWindow window, int index, double at, bool track = false)
     {
         window.ViewModel.FilesTab = FileKind.Audio;
         await Task.Delay(300);
@@ -642,9 +660,10 @@ internal static class DebugAutomation
         var item = list.ContainerFromIndex(index) ?? throw new InvalidOperationException("no such audio file");
         var vm = window.ViewModel.Timeline;
         var from = item.TranslatePoint(new Point(40, 10), window) ?? default;
-        var to = window.TimelineView.TranslatePoint(new Point(TimelineLayout.X(vm.Zoom, vm.Scroll, TimeSpan.FromSeconds(at)), TimelineLayout.AudioCenter), window) ?? default;
+        var y = track ? TimelineLayout.TrackCenter : TimelineLayout.AudioCenter;
+        var to = window.TimelineView.TranslatePoint(new Point(TimelineLayout.X(vm.Zoom, vm.Scroll, TimeSpan.FromSeconds(at)), y), window) ?? default;
         await SyntheticDragAsync(item, list, window, from, to, KeyModifiers.None,
-            beforeRelease: () => Console.WriteLine($"[drag-audio] target={vm.AudioDrop?.ClipId ?? "none"}"));
+            beforeRelease: () => Console.WriteLine($"[drag-audio] target={vm.AudioDrop?.ClipId ?? "none"} a2={vm.AudioDrop?.TrackStart}"));
     }
 
     /// <summary>

@@ -4,7 +4,7 @@ using ManeFfmpeg.Core.Model;
 namespace ManeFfmpeg.UI.Controls;
 
 /// <summary>
-/// Where things are on the timeline control, in pixels: the track header, the ruler, V1 and A1, and the
+/// Where things are on the timeline control, in pixels: the track header, the ruler, V1, A1 and A2, and the
 /// mapping between x and timeline time at a zoom (pixels per second) and scroll (seconds at the left edge).
 /// </summary>
 public static class TimelineLayout
@@ -17,7 +17,9 @@ public static class TimelineLayout
     public const double VideoHeight = 62;
     public const double AudioTop = VideoTop + VideoHeight + 6;
     public const double AudioHeight = VideoHeight / 2;
-    public const double Height = AudioTop + AudioHeight + TrackMargin;
+    public const double TrackTop = AudioTop + AudioHeight + 6;
+    public const double TrackHeight = AudioHeight;
+    public const double Height = TrackTop + TrackHeight + TrackMargin;
 
     /// <summary>How close to a clip edge a press grabs it for trimming.</summary>
     public const double EdgeGrab = 6;
@@ -53,11 +55,19 @@ public static class TimelineLayout
 
     public static bool InAudioRow(double y) => y >= AudioTop && y < AudioTop + AudioHeight;
 
-    public static TimelineHit HitTest(Timeline timeline, double zoom, double scroll, double x, double y)
+    public static double TrackCenter => TrackTop + TrackHeight / 2;
+
+    /// <summary>On A2 (its whole row, clips or not).</summary>
+    public static bool InTrackRow(double y) => y >= TrackTop && y < TrackTop + TrackHeight;
+
+    public static TimelineHit HitTest(ProjectState state, double zoom, double scroll, double x, double y)
     {
         var time = Time(zoom, scroll, x);
         if (y < VideoTop)
             return new TimelineHit(TimelineZone.Ruler, time);
+        if (InTrackRow(y))
+            return HitTrack(state.AudioTrack, zoom, scroll, x, time);
+        var timeline = state.Timeline;
         if (!InVideoRow(y) && !InAudioRow(y))
             return new TimelineHit(TimelineZone.Empty, time);
         var start = TimeSpan.Zero;
@@ -73,6 +83,23 @@ public static class TimelineLayout
                 : x - x0 <= EdgeGrab ? TimelineZone.TrimIn
                 : x1 - x <= EdgeGrab ? TimelineZone.TrimOut
                 : TimelineZone.Clip;
+            return new TimelineHit(zone, time, clip.Id);
+        }
+        return new TimelineHit(TimelineZone.Empty, time);
+    }
+
+    private static TimelineHit HitTrack(IReadOnlyList<TrackClip> track, double zoom, double scroll, double x, TimeSpan time)
+    {
+        foreach (var clip in track)
+        {
+            var x0 = X(zoom, scroll, clip.Start);
+            var x1 = X(zoom, scroll, clip.End);
+            if (x < x0 || x > x1)
+                continue;
+            var zone = x1 - x0 <= EdgeGrab * 3 ? TimelineZone.TrackClip
+                : x - x0 <= EdgeGrab ? TimelineZone.TrackTrimIn
+                : x1 - x <= EdgeGrab ? TimelineZone.TrackTrimOut
+                : TimelineZone.TrackClip;
             return new TimelineHit(zone, time, clip.Id);
         }
         return new TimelineHit(TimelineZone.Empty, time);

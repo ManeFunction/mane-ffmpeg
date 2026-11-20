@@ -96,6 +96,16 @@ internal sealed class SeekPacer(Action<TimeSpan> send, Func<bool> isSeeking, Act
             (_pending, _seeking) = (null, false);
     }
 
+    /// <summary>No seek is under way or waiting.</summary>
+    public bool Idle
+    {
+        get
+        {
+            lock (_gate)
+                return !_seeking && _pending is null;
+        }
+    }
+
     /// <summary>A position report now may be an echo of the old position: a seek is waiting or was just sent.</summary>
     public bool MayEcho
     {

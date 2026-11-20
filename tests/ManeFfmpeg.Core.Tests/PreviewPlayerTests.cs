@@ -90,6 +90,134 @@ public class PreviewPlayerTests(FfmpegFixture media) : IClassFixture<FfmpegFixtu
         Assert.True(player.IsTimelineLoaded);
     }
 
+    [MpvFact]
+    public async Task The_timeline_plays_A2_mixed_in_at_the_clips_volumes()
+    {
+        var info = await media.ProbeAsync(media.Sync30);
+        var tone = await media.ProbeAsync(media.Tone);
+        // Two clips: 0.5–2.5 s muted (its beep at 2 s would sound at 1.5), 2.5–4.5 s as it is (its beep at 4 s sounds at 3.5).
+        var muted = Clip.Create("s", TimeSpan.FromSeconds(0.5), TimeSpan.FromSeconds(2.5)) with { Volume = 0 };
+        var clip = Clip.Create("s", TimeSpan.FromSeconds(2.5), TimeSpan.FromSeconds(4.5));
+        var state = new ProjectState([new SourceMedia { Id = "s", Path = media.Sync30 }], new Timeline([muted, clip]),
+            [new SourceMedia { Id = "t", Path = media.Tone }])
+        {
+            AudioTrack = [TrackClip.Create("t", TimeSpan.FromSeconds(2), TimeSpan.Zero, TimeSpan.FromSeconds(3))],
+        };
+        var silence = await ManeFfmpeg.Core.Media.SilenceAsset.EnsureAsync(FfmpegFixture.Tools!);
+        var url = TimelineEdl.Build(state, new Dictionary<string, MediaInfo> { ["s"] = info, ["t"] = tone }, silence)!;
+        var wav = Path.Combine(media.Directory, $"preview-{Guid.NewGuid():N}.wav");
+
+        using var player = PreviewPlayer.Create(hardwareDecoding: false, headless: true);
+        // Whatever mpv plays is written to a file, so it can be measured like an export.
+        player.Mpv.SetString("ao", "pcm");
+        player.Mpv.SetString("ao-pcm-file", wav);
+        player.LoadTimeline(url, TimeSpan.Zero, TimelineMix.For(state));
+        // Without a synchronization context the player's events run on mpv's thread: let each graph settle (and its
+        // seek back to the start finish) before the next change.
+        async Task Settled(string what) =>
+            await Wait.Until(() => player.Mpv.GetString("seeking") == "no" && Near(player.Mpv.GetDouble("time-pos"), 0), what);
+        await Wait.Until(() => player.Mpv.GetString("lavfi-complex")?.Contains("amix") == true, "the mix graph");
+        await Settled("the start after the graph is set");
+        Assert.Contains("volume='0+1*gte(t,2)'[a1]", player.Mpv.GetString("lavfi-complex"));
+
+        // The same timeline with another volume changes only the graph, in place.
+        player.LoadTimeline(url, TimeSpan.Zero, TimelineMix.For(state with { Timeline = new Timeline([muted with { Volume = 0.5 }, clip]) }));
+        Assert.Contains("volume='0.5+0.5*gte(t,2)'[a1]", player.Mpv.GetString("lavfi-complex"));
+        player.LoadTimeline(url, TimeSpan.Zero, TimelineMix.For(state));
+        await Settled("the start after the graph changed back");
+
+        player.Paused = false;
+        await Wait.Until(() => player.Mpv.GetDouble("time-pos") > 3.9, "playing to the end");
+        player.Unload();
+        await Wait.Until(() => File.Exists(wav) && new FileInfo(wav).Length > 0, "the recorded audio");
+        await Task.Delay(300);
+        // The muted clip's beep is gone; the A2 tone beeps 0.3 s after it starts at 2, 1.2 s before the second clip's.
+        // (Under load mpv pads the start of the recording with silence while video catches up, so only the gap between
+        // the beeps is compared; Settled checks that setting the graph didn't move the position.)
+        var (beeps, _) = await media.MeasureAudioAsync(wav);
+        Assert.True(beeps.Count == 2 && Math.Abs(beeps[1] - beeps[0] - 1.2) < 0.05, $"beeps at {string.Join(", ", beeps)}");
+    }
+
+    [MpvFact]
+    public async Task Reloading_a_mixed_timeline_keeps_the_position_even_far_from_a_keyframe()
+    {
+        // One keyframe every 10 s: mpv's own restart after a graph change would land on the one at 10 s.
+        var path = Path.Combine(media.Directory, "gop10.mp4");
+        await Cli.Wrap(FfmpegFixture.Tools!.Ffmpeg)
+            .WithArguments([.. FfmpegTools.Quiet, "-y", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30", "-f", "lavfi", "-i", "sine",
+                "-t", "14", "-c:v", "libx264", "-preset", "veryfast", "-g", "300", "-pix_fmt", "yuv420p", "-c:a", "aac", path])
+            .ExecuteAsync();
+        var media2 = new Dictionary<string, MediaInfo> { ["s"] = await media.ProbeAsync(path), ["t"] = await media.ProbeAsync(media.Tone) };
+        var silence = await ManeFfmpeg.Core.Media.SilenceAsset.EnsureAsync(FfmpegFixture.Tools!);
+        ProjectState At(double a2) => new([new SourceMedia { Id = "s", Path = path }], new Timeline([Clip.Create("s", TimeSpan.Zero, TimeSpan.FromSeconds(14))]),
+            [new SourceMedia { Id = "t", Path = media.Tone }]) { AudioTrack = [TrackClip.Create("t", TimeSpan.FromSeconds(a2), TimeSpan.Zero, TimeSpan.FromSeconds(3))] };
+
+        using var player = PreviewPlayer.Create(hardwareDecoding: false, headless: true);
+        var first = At(3);
+        player.LoadTimeline(TimelineEdl.Build(first, media2, silence)!, TimeSpan.FromSeconds(5.2), TimelineMix.For(first));
+        await Wait.Until(() => player.Mpv.GetString("lavfi-complex")?.Contains("amix") == true, "the mix graph");
+        await Wait.Until(() => player.Mpv.GetString("seeking") == "no" && Near(player.Mpv.GetDouble("time-pos"), 5.2), "the start position");
+
+        // An A2 clip moved: a new EDL, reloaded at the playhead.
+        var moved = At(7);
+        player.LoadTimeline(TimelineEdl.Build(moved, media2, silence)!, TimeSpan.FromSeconds(5.2), TimelineMix.For(moved));
+        await Wait.Until(() => player.Mpv.GetString("lavfi-complex")?.Contains("amix") == true && player.Mpv.GetString("seeking") == "no", "the reload");
+        await Task.Delay(500);
+        Assert.True(Near(player.Mpv.GetDouble("time-pos"), 5.2), $"position after the reload: {player.Mpv.GetDouble("time-pos")}");
+    }
+
+    [MpvFact]
+    public async Task A2_stays_in_time_with_A1_after_loading_or_seeking_and_nothing_plays_twice()
+    {
+        // After a seek each input of the mix arrives from wherever its file's seek landed; in a downloaded WebM, mpv
+        // read A1 from up to a minute before the target while A2 came on time, and amix (which joins by arrival)
+        // played A2 that much early. The graph therefore cuts both inputs at the position; this checks the cut and that
+        // A2 lands between A1's beeps. (This WebM seeks exactly; the cut is what makes it independent of that.) Starting
+        // playback after a paused seek rebuilds the graph, and playback waits for the seek back, so no audio repeats.
+        var path = Path.Combine(media.Directory, "nocues.webm");
+        await using (var webm = File.Create(path))
+            await Cli.Wrap(FfmpegFixture.Tools!.Ffmpeg)
+                .WithArguments([.. FfmpegTools.Quiet, "-f", "lavfi", "-i", "color=c=black:s=320x180:r=30", "-f", "lavfi",
+                    "-i", "aevalsrc='if(lt(mod(t\\,2)\\,0.1)\\,0.5*sin(2*PI*1000*t)\\,0)':s=48000:c=stereo",
+                    "-t", "20", "-c:v", "libvpx-vp9", "-deadline", "realtime", "-cpu-used", "8", "-g", "300", "-c:a", "libopus", "-f", "webm", "pipe:1"])
+                .WithStandardOutputPipe(PipeTarget.ToStream(webm))
+                .ExecuteAsync();
+        var media2 = new Dictionary<string, MediaInfo> { ["s"] = await media.ProbeAsync(path), ["t"] = await media.ProbeAsync(media.Tone) };
+        var silence = await ManeFfmpeg.Core.Media.SilenceAsset.EnsureAsync(FfmpegFixture.Tools!);
+        // The tone on A2 from 15 s beeps at 15.3 s, between A1's beeps at 14 and 16 s.
+        var state = new ProjectState([new SourceMedia { Id = "s", Path = path }], new Timeline([Clip.Create("s", TimeSpan.Zero, TimeSpan.FromSeconds(20))]),
+            [new SourceMedia { Id = "t", Path = media.Tone }]) { AudioTrack = [TrackClip.Create("t", TimeSpan.FromSeconds(15), TimeSpan.Zero, TimeSpan.FromSeconds(3))] };
+        var url = TimelineEdl.Build(state, media2, silence)!;
+
+        foreach (var seekFirst in new[] { false, true })
+        {
+            var wav = Path.Combine(media.Directory, $"aligned-{Guid.NewGuid():N}.wav");
+            using var player = PreviewPlayer.Create(hardwareDecoding: false, headless: true);
+            player.Mpv.SetString("ao", "pcm");
+            player.Mpv.SetString("ao-pcm-file", wav);
+            player.LoadTimeline(url, TimeSpan.FromSeconds(seekFirst ? 2 : 13.2), TimelineMix.For(state));
+            await Wait.Until(() => player.Mpv.GetString("lavfi-complex")?.Contains("amix") == true, "the mix graph");
+            if (seekFirst)
+            {
+                // A click on the ruler while paused, then play.
+                await Wait.Until(() => player.Mpv.GetString("seeking") == "no" && Near(player.Mpv.GetDouble("time-pos"), 2), "the first position");
+                player.Seek(TimeSpan.FromSeconds(13.2));
+            }
+            await Wait.Until(() => player.Mpv.GetString("seeking") == "no" && Near(player.Mpv.GetDouble("time-pos"), 13.2), "13.2 s");
+            player.Paused = false;
+            await Wait.Until(() => player.Mpv.GetString("lavfi-complex")?.Contains("atrim=start=13.2,") == true, "the mix cut at 13.2 s");
+            await Wait.Until(() => player.Mpv.GetDouble("time-pos") > 16.6, "playing past 16.6 s");
+            player.Unload();
+            await Wait.Until(() => File.Exists(wav) && new FileInfo(wav).Length > 0, "the recorded audio");
+            await Task.Delay(300);
+            // A1 at 14, A2 at 15.3, A1 at 16: compared as gaps from the first beep.
+            var (beeps, _) = await media.MeasureAudioAsync(wav);
+            var gaps = beeps.Select(b => b - beeps.FirstOrDefault()).ToList();
+            Assert.True(gaps.Count == 3 && Math.Abs(gaps[1] - 1.3) < 0.05 && Math.Abs(gaps[2] - 2) < 0.05,
+                $"{(seekFirst ? "after a seek" : "from the start")}: beeps at {string.Join(", ", beeps)}");
+        }
+    }
+
     /// <summary>Holds posted callbacks until <see cref="RunAll"/>, like a busy UI thread.</summary>
     private sealed class QueuedContext : SynchronizationContext
     {

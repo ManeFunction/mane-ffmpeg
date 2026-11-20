@@ -9,8 +9,8 @@ namespace ManeFfmpeg.Core.Mpv;
 /// audio stream), keeping the position across reloads, audio-only compact mode, pacing rapid seeks so each one
 /// finishes (and shows its frame) before the next (<see cref="SeekPacer"/>),
 /// ignoring position reports that still echo the old position while a seek is under way or come from the
-/// file being replaced, forgetting a file that failed so the next load tries again, and live audio-delay
-/// feedback. Events arrive on the <see cref="SynchronizationContext"/> it was created on.
+/// file being replaced, forgetting a file that failed so the next load tries again, live audio-delay
+/// feedback, and the timeline's audio mix (<see cref="TimelineMix"/>: clip volumes and A2) as a lavfi-complex graph. Events arrive on the <see cref="SynchronizationContext"/> it was created on.
 /// </summary>
 public sealed class PreviewPlayer : IDisposable
 {
@@ -24,6 +24,21 @@ public sealed class PreviewPlayer : IDisposable
     private bool _timeline;
     private int? _sourceAudioStream;
     private bool _compact;
+    private TimelineMix? _mix;
+    private string _graph = "";
+    // The graph without its alignment point, and the tracks it mixes.
+    private string _graphKey = "";
+    private (string A1, string? A2)? _mixTracks;
+    // The graph mixes A2 in, so after a seek its inputs must be aligned again (see TimelineMix.Graph); while paused that
+    // waits for playback to start, so scrubbing doesn't rebuild the graph at every step.
+    private bool _aligns;
+    private bool _alignStale;
+    private TimeSpan? _lastSeek;
+    private bool _paused = true;
+    // Play was pressed while the mix was being realigned: playback starts once that seek has landed (resumeAt), so the
+    // first moment isn't heard twice. The timer starts it anyway if mpv never reports the seek finished.
+    private TimeSpan? _resumeAt;
+    private readonly Timer _resumeTimer;
 
     private PreviewPlayer(MpvPlayer mpv)
     {
@@ -35,6 +50,8 @@ public sealed class PreviewPlayer : IDisposable
             armed => _seekTimer.Change(armed ? SeekPacer.CheckInterval : Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan));
         // Straight from mpv's event thread: the next seek shouldn't wait for a busy UI thread.
         mpv.PlaybackRestarted += _seeks.Restarted;
+        mpv.PlaybackRestarted += () => Post(OnPlaybackRestarted);
+        _resumeTimer = new Timer(_ => Post(() => Resume(force: true)));
         mpv.PropertyChanged += (name, value) => Post(() => OnProperty(name, value));
         mpv.FileLoaded += entry => Post(() => OnFileLoaded(entry));
         mpv.FileFailed += (entry, error) => Post(() => OnFileFailed(entry, error));
@@ -64,6 +81,9 @@ public sealed class PreviewPlayer : IDisposable
     /// <summary>What was loaded can't be played (mpv's error); it counts as unloaded, so loading it again retries.</summary>
     public event Action<string>? LoadFailed;
 
+    /// <summary>Whether <paramref name="url"/> is the timeline EDL that is loaded.</summary>
+    public bool IsLoaded(string url) => IsTimelineLoaded && _loaded == url;
+
     /// <summary>True when the timeline is what's loaded (rather than a source or nothing).</summary>
     public bool IsTimelineLoaded => _timeline && _loaded is not null;
 
@@ -85,14 +105,51 @@ public sealed class PreviewPlayer : IDisposable
 
     public bool Paused
     {
-        set => Mpv.SetFlag("pause", value);
+        set
+        {
+            _paused = value;
+            _resumeAt = null;
+            if (!value && _aligns && _alignStale && (_lastSeek ?? CurrentPosition()) is { } at && BuildGraph(at))
+            {
+                // The rebuilt graph restarts playback: stay paused until the seek back has landed.
+                SeekBack(at);
+                _resumeAt = at;
+                _resumeTimer.Change(ResumeTimeout, Timeout.InfiniteTimeSpan);
+                return;
+            }
+            Mpv.SetFlag("pause", value);
+        }
     }
 
-    /// <summary>Plays the timeline EDL starting at <paramref name="position"/>; nothing happens when it's already loaded.</summary>
-    public void LoadTimeline(string url, TimeSpan position)
+    private static readonly TimeSpan ResumeTimeout = TimeSpan.FromSeconds(2);
+
+    private void OnPlaybackRestarted() => Resume(force: false);
+
+    /// <summary>Starts playback put off by <see cref="Paused"/> once the seek back has landed (or, forced, regardless).</summary>
+    private void Resume(bool force)
     {
-        if (IsTimelineLoaded && _loaded == url)
+        if (_resumeAt is not { } at)
             return;
+        if (!force && (!_seeks.Idle || Mpv.GetString("seeking") == "yes"
+                       || Mpv.GetDouble("time-pos") is not { } seconds || Math.Abs(seconds - at.TotalSeconds) > 0.1))
+            return;
+        _resumeAt = null;
+        _resumeTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        Mpv.SetFlag("pause", false);
+    }
+
+    /// <summary>
+    /// Plays the timeline EDL starting at <paramref name="position"/>, mixed as <paramref name="mix"/> says (null plays A1
+    /// as it is). When that EDL is already loaded only a changed mix is applied, in place.
+    /// </summary>
+    public void LoadTimeline(string url, TimeSpan position, TimelineMix? mix = null)
+    {
+        _mix = mix;
+        if (IsTimelineLoaded && _loaded == url)
+        {
+            ApplyTracks();
+            return;
+        }
         _timeline = true;
         _sourceAudioStream = null;
         Load(url, position);
@@ -120,6 +177,7 @@ public sealed class PreviewPlayer : IDisposable
     {
         // A seek under way is dropped with the file it was in: the next one goes at once.
         _seeks.Reset();
+        _resumeAt = null;
         lock (_gate)
             _loading = true;
         _loaded = target;
@@ -127,6 +185,19 @@ public sealed class PreviewPlayer : IDisposable
         // every file starts from mpv's own choice, and the tracks are picked once it has loaded.
         Mpv.SetString("vid", "auto");
         Mpv.SetString("aid", "auto");
+        // The graph names the old file's tracks; ApplyTracks sets the new one once the file has loaded. No seek back: the
+        // file is being replaced, and a seek sent to it would hold up the first one for the new file.
+        if (_graph.Length > 0)
+        {
+            _graph = "";
+            Mpv.SetString("lavfi-complex", "");
+        }
+        _graphKey = "";
+        _mixTracks = null;
+        _aligns = false;
+        // The new file starts at "start": its graph is built for that position once it has loaded.
+        _alignStale = true;
+        _lastSeek = start;
         Mpv.SetString("start", TimeFormat.Seconds(start));
         _entry = Mpv.LoadFile(target);
     }
@@ -134,12 +205,24 @@ public sealed class PreviewPlayer : IDisposable
     /// <summary>Seeks exactly, paced so each seek finishes and shows its frame before the next (<see cref="SeekPacer"/>).</summary>
     public void Seek(TimeSpan time)
     {
-        if (_loaded is not null)
-            _seeks.Seek(time);
+        if (_loaded is null)
+            return;
+        _lastSeek = time;
+        if (_aligns)
+        {
+            if (_paused)
+                _alignStale = true;
+            else
+                BuildGraph(time);
+        }
+        _seeks.Seek(time);
     }
 
     public void StepFrame(bool back)
     {
+        _lastSeek = null;
+        if (_aligns)
+            _alignStale = true;
         _seeks.ForgetLastSeek();
         Mpv.CommandAsync(back ? "frame-back-step" : "frame-step");
     }
@@ -163,6 +246,7 @@ public sealed class PreviewPlayer : IDisposable
                 DurationChanged?.Invoke(TimeFormat.FromSeconds(seconds));
                 break;
             case "pause" when value is bool paused:
+                _paused = paused;
                 PausedChanged?.Invoke(paused);
                 break;
             case "eof-reached" when value is true:
@@ -226,7 +310,73 @@ public sealed class PreviewPlayer : IDisposable
             Mpv.SetString("vid", "no");
         else if (vid is not null)
             Mpv.SetString("vid", vid);
+        if (_timeline && _mix is { } mix && aid is not null)
+        {
+            _mixTracks = (aid, TrackId(count));
+            // A changed mix, or one whose alignment is stale, is built at the position (a compact toggle or a reload of
+            // the same mix leaves it alone).
+            if (mix.Graph(aid, _mixTracks.Value.A2) != _graphKey || _alignStale || _graph.Length == 0)
+                Realign(_alignStale ? _lastSeek ?? CurrentPosition() : CurrentPosition());
+            return;
+        }
+        _mixTracks = null;
+        _aligns = false;
+        _graphKey = "";
+        if (SetGraph(""))
+            SeekBack(CurrentPosition());
         Mpv.SetString("aid", aid ?? "no");
+    }
+
+    private TimeSpan? CurrentPosition() => Mpv.GetDouble("time-pos") is { } seconds ? TimeFormat.FromSeconds(seconds) : null;
+
+    /// <summary>Builds the mix aligned at <paramref name="at"/> and, if the graph changed, seeks back there.</summary>
+    private void Realign(TimeSpan? at)
+    {
+        if (BuildGraph(at))
+            SeekBack(at);
+    }
+
+    /// <summary>Sets the mix graph for the current tracks, aligned at <paramref name="at"/>; whether it changed.</summary>
+    private bool BuildGraph(TimeSpan? at)
+    {
+        if (_mix is not { } mix || _mixTracks is not var (a1, a2))
+            return false;
+        _graphKey = mix.Graph(a1, a2);
+        _aligns = mix.A2 is not null && a2 is not null;
+        _alignStale = false;
+        return SetGraph(_aligns ? mix.Graph(a1, a2, at ?? TimeSpan.Zero) : _graphKey);
+    }
+
+    /// <summary>
+    /// mpv restarts playback after a graph change with a seek of its own that lands on the next keyframe (up to a GOP
+    /// later); seeking back exactly keeps the position.
+    /// </summary>
+    private void SeekBack(TimeSpan? at)
+    {
+        if (_loaded is not null && at is { } time)
+            _seeks.Seek(time);
+    }
+
+    /// <summary>The id of the EDL's A2 track, or null when it has none.</summary>
+    private string? TrackId(long count)
+    {
+        for (var i = 0; i < count; i++)
+            if (Mpv.GetString($"track-list/{i}/type") == "audio" && Mpv.GetString($"track-list/{i}/title") == TimelineEdl.TrackTitle)
+                return Mpv.GetString($"track-list/{i}/id");
+        return null;
+    }
+
+    /// <summary>
+    /// Sets mpv's lavfi-complex graph, which then picks the audio tracks itself; "" goes back to the track in "aid".
+    /// Only a change is sent: mpv rebuilds the audio chain (a short gap) every time it is set.
+    /// </summary>
+    private bool SetGraph(string graph)
+    {
+        if (graph == _graph)
+            return false;
+        _graph = graph;
+        Mpv.SetString("lavfi-complex", graph);
+        return true;
     }
 
     private void Post(Action action)
@@ -242,6 +392,7 @@ public sealed class PreviewPlayer : IDisposable
         // Seeks also go from mpv's event thread and the timer's; neither may touch the timer once it's gone.
         _seeks.Dispose();
         _seekTimer.Dispose();
+        _resumeTimer.Dispose();
         Mpv.Dispose();
     }
 }

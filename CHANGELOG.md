@@ -7,14 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 ### Added
-- Extract audio: the export button has a dropdown arrow, [ Export video |▼], that switches it to "Extract audio"
-  (green). In that mode the preset menu lists audio presets, and the button saves only the timeline's audio.
+- **Extract audio:** the export button has a dropdown arrow, that switches it to "Extract audio"
+  mode. In that mode the preset menu lists audio presets, and the button saves only the timeline's audio.
 - Audio presets, on a new Audio tab in the presets window. Built-in: "extract audio (as is)", "m4a (AAC 256k)" and
   "mp3 (V0)". "extract audio (as is)" copies a single clip's own audio without re-encoding, into the file type its
   codec belongs in (.m4a for AAC and ALAC, .mp3, .flac, .opus, .wav…; .mka for anything else). Several clips,
   replaced audio, or offsets that need silence are encoded losslessly to FLAC.
+- **A2: a second audio track** under A1, for background music and voice-overs. Drag an audio file from the Audio tab (or
+  from Finder or Explorer) onto the A2 row to mix it in at that point. A2 clips can be moved, trimmed, split and
+  deleted; hold Shift while moving a clip or dragging an edge to snap it where the playhead snaps (clip and audio
+  edges).
+- Volume for each clip: Selection has a 0–200 % slider for the selected V1 or A2 clips, a 100 % reset, and a button
+  that applies the volume more widely. For a clip playing its own sound it reaches the other clips of that video
+  that still play their own sound (not those whose sound was replaced). For an audio file it reaches every place
+  that file plays, on A1 and A2. A changed volume shows as a
+  badge on the clip and scales its waveform. The preview applies it live while the slider moves. Audio whose volume
+  is changed is re-encoded, using the preset's audio fallback where the preset copies audio.
+- The timeline has room on its left for a mixer strip (level meters and a master volume), still to come.
 
 ### Changed
+- Projects with clip volumes or A2 clips are saved as format 4, which older versions refuse to open rather than
+  silently dropping them.
 - The presets window has Video and Audio tabs. Existing presets are video presets; the built-in audio presets are
   added after them.
 
