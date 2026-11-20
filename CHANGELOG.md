@@ -12,7 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Audio presets, on a new Audio tab in the presets window. Built-in: "extract audio (as is)", "m4a (AAC 256k)" and
   "mp3 (V0)". "extract audio (as is)" copies a single clip's own audio without re-encoding, into the file type its
   codec belongs in (.m4a for AAC and ALAC, .mp3, .flac, .opus, .wav…; .mka for anything else). Several clips,
-  replaced audio, or offsets that need silence are encoded losslessly to FLAC.
+  replaced audio, or offsets that need silence are encoded losslessly to FLAC. A file name you chose is checked against
+  what will be written: audio that the file type can't hold is encoded with the preset's fallback, or the export
+  says which file type to use.
 - **A2: a second audio track** under A1, for background music and voice-overs. Drag an audio file from the Audio tab (or
   from Finder or Explorer) onto the A2 row to mix it in at that point. A2 clips can be moved, trimmed, split and
   deleted; hold Shift while moving a clip or dragging an edge to snap it where the playhead snaps (clip and audio
@@ -39,7 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Projects with clip or track volumes or A2 clips are saved as format 4, which older versions refuse to open rather than
   silently dropping them.
 - The presets window has Video and Audio tabs. Existing presets are video presets; the built-in audio presets are
-  added after them.
+  added after them. If an older version saves the presets file in between, the built-in audio presets come back as
+  audio presets.
+- Hearing A2 in the preview needs a libmpv built on FFmpeg 4.4 or newer. With an older one the preview plays A1 alone
+  and says so; the export still mixes A2.
 
 ## [2.2.2] - 2026-11-18
 > [!IMPORTANT]
