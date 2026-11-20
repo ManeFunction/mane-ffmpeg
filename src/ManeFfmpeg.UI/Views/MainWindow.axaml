@@ -346,7 +346,12 @@
                                 <Button Classes="tool accent" Content="Add to timeline" Command="{Binding Preview.AddMarkedRangeCommand}" />
                             </StackPanel>
                             <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4">
-                                <PathIcon Data="{StaticResource IconSpeaker}" Width="14" Height="14" Opacity="0.7" />
+                                <Button x:Name="SpeakerButton" Classes="speaker" Command="{Binding Preview.ToggleMuteCommand}" ToolTip.Tip="{Binding Preview.MuteTip}">
+                                    <Panel>
+                                        <PathIcon Data="{StaticResource IconSpeaker}" IsVisible="{Binding !Preview.IsMuted}" />
+                                        <PathIcon Data="{StaticResource IconSpeakerMuted}" IsVisible="{Binding Preview.IsMuted}" />
+                                    </Panel>
+                                </Button>
                                 <Slider Minimum="0" Maximum="100" Value="{Binding Preview.Volume}" Width="90" VerticalAlignment="Center" />
                             </StackPanel>
                         </Grid>

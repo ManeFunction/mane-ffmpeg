@@ -505,6 +505,14 @@ internal static class DebugAutomation
                     case "master-volume":
                         vm.Preview.Volume = double.Parse(arg, CultureInfo.InvariantCulture);
                         break;
+                    case "mute":
+                        // mute [png]: clicks the preview's speaker icon, prints the volume (and saves the icon at 2×)
+                        window.SpeakerButton.Command?.Execute(null);
+                        await Task.Delay(50);
+                        Console.WriteLine($"[mute] volume={vm.Preview.Volume:0.#} muted={vm.Preview.IsMuted} tip='{vm.Preview.MuteTip}'");
+                        if (arg.Length > 0)
+                            SaveRetina(window.SpeakerButton, arg);
+                        break;
                     case "meters":
                         // meters [png]: the level meters' state (and the mixer strip at 2×)
                         Console.WriteLine($"[meters] width={window.MixerStrip.Bounds.Width:0.#} {window.LevelMeters.Describe()}");

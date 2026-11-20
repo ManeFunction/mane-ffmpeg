@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Selection then has a 0–200 % volume for it. The track volume is applied on top of each clip's own volume, so an 80 %
   clip on a 50 % track plays at 40 %. It is part of the project (undoable, saved) and is applied in the preview,
   the level meters, the waveforms and the export.
+- **Quick mute:** click the speaker icon next to the preview's volume slider to mute or unmute the preview. Unmuting
+  returns to the volume it had before; if the slider was dragged down to 0 %, it goes back to 100 %. While muted, the
+  icon shows a crossed-out speaker.
 
 ### Changed
 - Projects with clip or track volumes or A2 clips are saved as format 4, which older versions refuse to open rather than

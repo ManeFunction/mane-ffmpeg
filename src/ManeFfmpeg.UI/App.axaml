@@ -46,6 +46,9 @@
             <StreamGeometry x:Key="IconToStart">M5,5 H7 V19 H5 Z M13,5 L8,12 L13,19 Z M20,5 L15,12 L20,19 Z</StreamGeometry>
             <StreamGeometry x:Key="IconToEnd">M17,5 H19 V19 H17 Z M11,5 L16,12 L11,19 Z M4,5 L9,12 L4,19 Z</StreamGeometry>
             <StreamGeometry x:Key="IconSpeaker">M4,9 H8 L13,5 V19 L8,15 H4 Z M15.5,8.5 C17,10 17,14 15.5,15.5 L16.9,16.9 C19,14.8 19,9.2 16.9,7.1 Z</StreamGeometry>
+            <!-- The speaker without its waves, crossed out, with a gap around the slash. The empty point at 18.48,19 keeps
+                 the bounds IconSpeaker has, so PathIcon draws both at the same size. -->
+            <StreamGeometry x:Key="IconSpeakerMuted">M10.24,7.21 L13,5 L13,9.96 Z M4,9 L4.96,9 L13,17.04 L13,19 L8,15 L4,15 Z M4,5 L5.91,5 L17.21,16.29 L15.79,17.71 L4,5.91 Z M18.48,19 L18.48,19 Z</StreamGeometry>
             <StreamGeometry x:Key="IconArrowUp">M12,4 L19,11 L17.6,12.4 L13,7.8 V20 H11 V7.8 L6.4,12.4 L5,11 Z</StreamGeometry>
             <StreamGeometry x:Key="IconArrowDown">M12,20 L5,13 L6.4,11.6 L11,16.2 V4 H13 V16.2 L17.6,11.6 L19,13 Z</StreamGeometry>
             <StreamGeometry x:Key="IconChevronDown">M5.4,8.4 L12,15 L18.6,8.4 L17.2,7 L12,12.2 L6.8,7 Z</StreamGeometry>
@@ -152,6 +155,28 @@
         <Style Selector="Button.icon PathIcon">
             <Setter Property="Width" Value="16" />
             <Setter Property="Height" Value="16" />
+        </Style>
+        <!-- The preview's speaker icon: a bare icon that mutes on a click, lit on hover and dimmed while pressed. -->
+        <Style Selector="Button.speaker">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.speaker:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.speaker:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.speaker PathIcon">
+            <Setter Property="Width" Value="14" />
+            <Setter Property="Height" Value="14" />
+            <Setter Property="Opacity" Value="0.7" />
+        </Style>
+        <Style Selector="Button.speaker:pointerover PathIcon">
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+        <Style Selector="Button.speaker:pressed PathIcon">
+            <Setter Property="Opacity" Value="0.5" />
         </Style>
         <!-- Round × in a panel's corner; like the transport buttons, it doesn't take keyboard focus. -->
         <Style Selector="Button.close">

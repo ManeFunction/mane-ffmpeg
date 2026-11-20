@@ -73,7 +73,39 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
     public partial TimeSpan? MarkOut { get; private set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsMuted), nameof(MuteTip))]
     public partial double Volume { get; set; } = 100;
+
+    /// <summary>The preview is silent: the volume is at 0 %, by the speaker icon or the slider.</summary>
+    public bool IsMuted => Volume <= 0;
+
+    public string MuteTip => IsMuted ? "Unmute" : "Mute";
+
+    /// <summary>The volume before the speaker icon muted the preview, which unmuting returns to; null once the slider moves.</summary>
+    private double? _volumeBeforeMute;
+
+    private bool _togglingMute;
+
+    /// <summary>
+    /// The speaker icon: mutes the preview, or unmutes it to the volume it had before the icon muted it (100 % when
+    /// the slider took it to 0 %).
+    /// </summary>
+    [RelayCommand]
+    private void ToggleMute()
+    {
+        var restore = IsMuted ? _volumeBeforeMute ?? 100 : 0;
+        var before = IsMuted ? (double?)null : Volume;
+        _togglingMute = true;
+        try
+        {
+            Volume = restore;
+        }
+        finally
+        {
+            _togglingMute = false;
+        }
+        _volumeBeforeMute = before;
+    }
 
     /// <summary>Compact mode: the video preview is hidden and mpv plays audio only.</summary>
     [ObservableProperty]
@@ -169,6 +201,8 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
 
     partial void OnVolumeChanged(double value)
     {
+        if (!_togglingMute)
+            _volumeBeforeMute = null;
         if (_preview is not null)
             _preview.Volume = value;
     }
