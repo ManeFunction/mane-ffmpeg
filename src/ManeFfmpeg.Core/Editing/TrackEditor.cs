@@ -21,7 +21,8 @@ public static class TrackEditor
             start = TimeSpan.Zero;
         if (track.Any(c => c.Start <= start && start < c.End))
             return (track, null);
-        var next = track.FirstOrDefault(c => c.Start >= start);
+        // The nearest clip after it, whatever order the list is in.
+        var next = track.Where(c => c.Start >= start).MinBy(c => c.Start);
         if (next is not null && next.Start - start < length)
             length = next.Start - start;
         if (length < TimelineEditor.MinClipDuration)

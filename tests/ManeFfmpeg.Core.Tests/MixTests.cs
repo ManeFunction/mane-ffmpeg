@@ -33,6 +33,9 @@ public class MixTests
         var (after, _) = TrackEditor.Add(track, "g", S(15), S(60));
         Assert.Equal(S(75), after[1].End);
         Assert.Equal(S(0), TrackEditor.Add([], "g", S(-3), S(1)).Track[0].Start);
+        // Out of order, the nearest clip after it still cuts it short.
+        var (unsorted, _) = TrackEditor.Add(Track(T("far", 40, 0, 5), T("near", 20, 0, 5)), "g", S(15), S(60));
+        Assert.Equal((S(15), S(5)), (unsorted[0].Start, unsorted[0].Duration));
     }
 
     [Fact]
