@@ -36,11 +36,22 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
     /// Each mode's preset and explicit output path; <see cref="SelectedPreset"/> and <see cref="OutputPath"/> show the
     /// current mode's. The project saves the video ones; the audio ones last while the window is open.
     /// </summary>
-    private Preset? _videoPreset, _audioPreset;
-    private string? _videoOutputPath, _audioOutputPath;
+    private readonly ModeChoice[] _modes = [new(), new()];
 
-    /// <summary>Set while the menu is refilled or the mode changes, when the list's changes aren't the user's choice.</summary>
-    private bool _switching;
+    /// <summary>A mode's preset and explicit output path (null: automatic).</summary>
+    private sealed class ModeChoice
+    {
+        public Preset? Preset;
+        public string? OutputPath;
+    }
+
+    private ModeChoice Choice(PresetKind kind) => _modes[(int)kind];
+
+    /// <summary>The current mode's choice.</summary>
+    private ModeChoice Mode => Choice(Kind);
+
+    /// <summary>Set while the menu is refilled, when its selection changing isn't the user's choice.</summary>
+    private bool _refilling;
 
     private ProjectState State => _owner.State;
     private SourceCatalog Catalog => _owner.Catalog;
@@ -133,9 +144,9 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
     /// <summary>Refills the menu with the current mode's presets, keeping each mode's choice where it still exists.</summary>
     private void ReloadPresets()
     {
-        _videoPreset = Current(_videoPreset, PresetKind.Video);
-        _audioPreset = Current(_audioPreset, PresetKind.Audio);
-        _switching = true;
+        foreach (var kind in Enum.GetValues<PresetKind>())
+            Choice(kind).Preset = Current(Choice(kind).Preset, kind);
+        _refilling = true;
         try
         {
             Presets.Clear();
@@ -144,9 +155,9 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         }
         finally
         {
-            _switching = false;
+            _refilling = false;
         }
-        SelectedPreset = IsAudioMode ? _audioPreset : _videoPreset;
+        SelectedPreset = Mode.Preset;
     }
 
     /// <summary>The store's version of <paramref name="chosen"/>, or the default preset of that kind.</summary>
@@ -162,15 +173,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
 
     partial void OnIsAudioModeChanged(bool value)
     {
-        _switching = true;
-        try
-        {
-            OutputPath = value ? _audioOutputPath : _videoOutputPath;
-        }
-        finally
-        {
-            _switching = false;
-        }
+        OutputPath = Mode.OutputPath;
         ReloadPresets();
         ExportStatus = null;
         CanReveal = false;
@@ -187,12 +190,9 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
     partial void OnSelectedPresetChanged(Preset? value)
     {
         // Refilling the menu clears its selection for a moment; that isn't the user's choice.
-        if (_switching)
+        if (_refilling)
             return;
-        if (IsAudioMode)
-            _audioPreset = value;
-        else
-            _videoPreset = value;
+        Mode.Preset = value;
         if (!IsAudioMode && value is not null && PresetAnalysis.Of(value).Arguments is { } args)
             _owner.SnapToKeyframes = args.VideoCopy;
         OnPropertyChanged(nameof(OutputDisplay));
@@ -202,13 +202,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
 
     partial void OnOutputPathChanged(string? value)
     {
-        if (!_switching)
-        {
-            if (IsAudioMode)
-                _audioOutputPath = value;
-            else
-                _videoOutputPath = value;
-        }
+        Mode.OutputPath = value;
         _owner.RefreshDirty();
         InvalidatePlanPreview();
     }
@@ -220,7 +214,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
     }
 
     internal ExportSettings CurrentExportSettings() =>
-        new() { PresetId = _videoPreset?.Id, PresetSnapshot = _videoPreset, OutputPath = _videoOutputPath };
+        new() { PresetId = Choice(PresetKind.Video).Preset?.Id, PresetSnapshot = Choice(PresetKind.Video).Preset, OutputPath = Choice(PresetKind.Video).OutputPath };
 
     /// <summary>
     /// The project's preset, or one that runs exactly like it. One this machine doesn't have comes from the project file and its arguments go
@@ -247,8 +241,8 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         var output = settings.OutputPath is { } path && Path.IsPathFullyQualified(path) ? path : null;
         if (IsAudioMode)
         {
-            _videoPreset = preset is { Kind: PresetKind.Video } ? preset : DefaultPreset(PresetKind.Video);
-            _videoOutputPath = output;
+            Choice(PresetKind.Video).Preset = preset is { Kind: PresetKind.Video } ? preset : DefaultPreset(PresetKind.Video);
+            Choice(PresetKind.Video).OutputPath = output;
             _owner.RefreshDirty();
             return;
         }
