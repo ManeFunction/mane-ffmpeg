@@ -351,7 +351,8 @@ public partial class MainWindow : Window, IMainWindowView
         var target = audio is null ? null : DropAt(e.GetPosition(TimelineView));
         ViewModel.Timeline.ShowAudioDrop(audio is null || target is not { } at
             ? null
-            : new AudioDropTarget(Path.GetFileName(audio), ViewModel.AudioFileColor(Path.GetFullPath(audio)), at.ClipId, at.TrackStart));
+            : new AudioDropTarget(Path.GetFileName(audio), ViewModel.AudioFileColor(Path.GetFullPath(audio)), at.ClipId, at.TrackStart,
+                at.TrackStart is null ? default : ViewModel.TrackLengthOfPath(audio) ?? default));
     }
 
     private async void OnDrop(object? sender, DragEventArgs e)

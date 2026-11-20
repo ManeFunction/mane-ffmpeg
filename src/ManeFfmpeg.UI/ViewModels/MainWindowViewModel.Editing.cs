@@ -304,6 +304,12 @@ public sealed partial class MainWindowViewModel
             ? info.AudioEnd(stream)
             : null;
 
+    /// <summary>How long a file from the file manager would play on A2, when it's already in the project and analyzed.</summary>
+    public TimeSpan? TrackLengthOfPath(string path) =>
+        State.AudioFiles.FirstOrDefault(f => string.Equals(f.Path, Path.GetFullPath(path), ManeFfmpeg.Core.Platforms.Platform.Current.PathComparison)) is { } file
+            ? TrackLength(file.Id)
+            : null;
+
     /// <summary>Puts audio file <paramref name="fileId"/> on A2 at <paramref name="start"/> (an audio file dragged there).</summary>
     public void AddToTrack(string fileId, TimeSpan start)
     {
