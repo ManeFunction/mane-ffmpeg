@@ -18,11 +18,19 @@ public interface IAudioDragHost
 }
 
 /// <summary>Where a dragged audio file would go: onto a clip (replacing its sound), or onto A2 at a time.</summary>
-public readonly record struct AudioDropPoint(string? ClipId, TimeSpan? TrackStart)
+public abstract record AudioDropPoint
 {
-    public static AudioDropPoint OnClip(string clipId) => new(clipId, null);
+    private AudioDropPoint() { }
 
-    public static AudioDropPoint OnTrack(TimeSpan start) => new(null, start < TimeSpan.Zero ? TimeSpan.Zero : start);
+    /// <summary>Onto a V1 clip, to replace its sound.</summary>
+    public sealed record ClipDrop(string ClipId) : AudioDropPoint;
+
+    /// <summary>Onto A2, to mix it in from timeline time <paramref name="Start"/>.</summary>
+    public sealed record TrackDrop(TimeSpan Start) : AudioDropPoint;
+
+    public static AudioDropPoint OnClip(string clipId) => new ClipDrop(clipId);
+
+    public static AudioDropPoint OnTrack(TimeSpan start) => new TrackDrop(start < TimeSpan.Zero ? TimeSpan.Zero : start);
 }
 
 /// <summary>
@@ -42,7 +50,7 @@ public sealed class AudioDragGesture(IAudioDragHost host)
     public AudioDropPoint? Target { get; private set; }
 
     /// <summary>The clip the file would be dropped on.</summary>
-    public string? TargetClip => Target?.ClipId;
+    public string? TargetClip => (Target as AudioDropPoint.ClipDrop)?.ClipId;
 
     /// <summary>The pointer went down on a row (null when not on a usable file).</summary>
     public void Press(SourceItemViewModel? item)
@@ -67,8 +75,9 @@ public sealed class AudioDragGesture(IAudioDragHost host)
             host.StatusMessage = $"Drop {item.Name} on a clip to replace its sound, or on A2 to mix it in.";
         }
         Target = target;
-        host.ShowAudioDrop(new AudioDropTarget(item.Name, item.Color, target?.ClipId, target?.TrackStart,
-            target?.TrackStart is null ? default : host.TrackLength(item.Id) ?? default));
+        host.ShowAudioDrop(target is AudioDropPoint.TrackDrop(var start)
+            ? new AudioDropTarget(item.Name, item.Color, null, start, host.TrackLength(item.Id) ?? default)
+            : new AudioDropTarget(item.Name, item.Color, (target as AudioDropPoint.ClipDrop)?.ClipId));
         return true;
     }
 
@@ -90,10 +99,15 @@ public sealed class AudioDragGesture(IAudioDragHost host)
         host.StatusMessage = null;
         if (drop && item is not null)
         {
-            if (target?.ClipId is { } clip)
-                host.ReplaceClipAudio(clip, item.Id);
-            else if (target?.TrackStart is { } start)
-                host.AddToTrack(item.Id, start);
+            switch (target)
+            {
+                case AudioDropPoint.ClipDrop(var clip):
+                    host.ReplaceClipAudio(clip, item.Id);
+                    break;
+                case AudioDropPoint.TrackDrop(var start):
+                    host.AddToTrack(item.Id, start);
+                    break;
+            }
         }
         return true;
     }

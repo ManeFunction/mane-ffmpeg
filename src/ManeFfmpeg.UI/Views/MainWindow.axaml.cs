@@ -349,10 +349,13 @@ public partial class MainWindow : Window, IMainWindowView
         // Audio files from the file manager over a clip replace its sound when dropped, and over A2 are mixed in: show where.
         var audio = paths?.FirstOrDefault(LooksLikeAudio);
         var target = audio is null ? null : DropAt(e.GetPosition(TimelineView));
-        ViewModel.Timeline.ShowAudioDrop(audio is null || target is not { } at
-            ? null
-            : new AudioDropTarget(Path.GetFileName(audio), ViewModel.AudioFileColor(Path.GetFullPath(audio)), at.ClipId, at.TrackStart,
-                at.TrackStart is null ? default : ViewModel.TrackLengthOfPath(audio) ?? default));
+        ViewModel.Timeline.ShowAudioDrop(audio is null ? null : target switch
+        {
+            AudioDropPoint.ClipDrop(var clip) => new AudioDropTarget(Path.GetFileName(audio), ViewModel.AudioFileColor(Path.GetFullPath(audio)), clip),
+            AudioDropPoint.TrackDrop(var start) => new AudioDropTarget(Path.GetFileName(audio), ViewModel.AudioFileColor(Path.GetFullPath(audio)), null,
+                start, ViewModel.TrackLengthOfPath(audio) ?? default),
+            _ => null,
+        });
     }
 
     private async void OnDrop(object? sender, DragEventArgs e)
@@ -373,10 +376,10 @@ public partial class MainWindow : Window, IMainWindowView
             // Onto a clip: audio files are added and the first replaces that clip's sound; onto A2, it's mixed in there.
             if (DropAt(e.GetPosition(TimelineView)) is { } target && paths.Any(LooksLikeAudio))
             {
-                if (target.ClipId is { } clip)
+                if (target is AudioDropPoint.ClipDrop(var clip))
                     await ViewModel.ReplaceClipAudioFromFilesAsync(paths, clip);
-                else
-                    await ViewModel.AddToTrackFromFilesAsync(paths, target.TrackStart!.Value);
+                else if (target is AudioDropPoint.TrackDrop(var start))
+                    await ViewModel.AddToTrackFromFilesAsync(paths, start);
                 return;
             }
         }
