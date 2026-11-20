@@ -502,6 +502,15 @@ internal static class DebugAutomation
                                           $"crop={vm.State.Crop} shown={window.Video.Crop} picture={vm.Preview.PictureAspect:0.###} frame={vm.Preview.FrameAspect:0.###} " +
                                           $"pixels={vm.Preview.FramePixels} lock={vm.Preview.AspectLock:0.###} reset={vm.Preview.ResetCropCommand.CanExecute(null)} status='{vm.StatusMessage}' undo={vm.History.CanUndo}");
                         break;
+                    case "master-volume":
+                        vm.Preview.Volume = double.Parse(arg, CultureInfo.InvariantCulture);
+                        break;
+                    case "meters":
+                        // meters [png]: the level meters' state (and the mixer strip at 2×)
+                        Console.WriteLine($"[meters] width={window.MixerStrip.Bounds.Width:0.#} {window.LevelMeters.Describe()}");
+                        if (arg.Length > 0)
+                            SaveRetina(window.MixerStrip, arg);
+                        break;
                     case "snapshot":
                         await Task.Delay(300);
                         Snapshot(window, arg);

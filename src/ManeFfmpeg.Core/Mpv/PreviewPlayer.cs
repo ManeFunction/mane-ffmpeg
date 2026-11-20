@@ -10,7 +10,7 @@ namespace ManeFfmpeg.Core.Mpv;
 /// finishes (and shows its frame) before the next (<see cref="SeekPacer"/>),
 /// ignoring position reports that still echo the old position while a seek is under way or come from the
 /// file being replaced, forgetting a file that failed so the next load tries again, live audio-delay
-/// feedback, and the timeline's audio mix (<see cref="TimelineMix"/>: clip volumes and A2) as a lavfi-complex graph. Events arrive on the <see cref="SynchronizationContext"/> it was created on.
+/// feedback, live level metering (<see cref="LevelMeter"/>), and the timeline's audio mix (<see cref="TimelineMix"/>: clip volumes and A2) as a lavfi-complex graph. Events arrive on the <see cref="SynchronizationContext"/> it was created on.
 /// </summary>
 public sealed class PreviewPlayer : IDisposable
 {
@@ -57,6 +57,7 @@ public sealed class PreviewPlayer : IDisposable
         mpv.FileFailed += (entry, error) => Post(() => OnFileFailed(entry, error));
         // mpv's warnings and errors (unplayable segments, failed commands) explain a blank or silent preview.
         mpv.LogMessage += (level, text) => AppLog.Write($"mpv {level}: {text}");
+        Levels = LevelMeter.Attach(mpv);
     }
 
     /// <param name="headless">No video or audio output (tests).</param>
@@ -68,6 +69,9 @@ public sealed class PreviewPlayer : IDisposable
     /// <see cref="Dispose"/> (the owner unbinds the player first).
     /// </summary>
     public MpvPlayer Mpv { get; }
+
+    /// <summary>The live peak levels of what plays, measured while it plays.</summary>
+    public LevelMeter Levels { get; }
 
     /// <summary>The playback position, except reports that echo an old position during a seek or a load.</summary>
     public event Action<TimeSpan>? PositionChanged;
@@ -178,6 +182,7 @@ public sealed class PreviewPlayer : IDisposable
         // A seek under way is dropped with the file it was in: the next one goes at once.
         _seeks.Reset();
         _resumeAt = null;
+        Levels.Reset();
         lock (_gate)
             _loading = true;
         _loaded = target;
@@ -208,6 +213,7 @@ public sealed class PreviewPlayer : IDisposable
         if (_loaded is null)
             return;
         _lastSeek = time;
+        Levels.Reset();
         if (_aligns)
         {
             if (_paused)
@@ -247,6 +253,7 @@ public sealed class PreviewPlayer : IDisposable
                 break;
             case "pause" when value is bool paused:
                 _paused = paused;
+                Levels.Running = !paused;
                 PausedChanged?.Invoke(paused);
                 break;
             case "eof-reached" when value is true:
@@ -393,6 +400,7 @@ public sealed class PreviewPlayer : IDisposable
         _seeks.Dispose();
         _seekTimer.Dispose();
         _resumeTimer.Dispose();
+        Levels.Dispose();
         Mpv.Dispose();
     }
 }

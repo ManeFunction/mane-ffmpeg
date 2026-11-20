@@ -40,6 +40,10 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     public partial bool IsPlaying { get; private set; }
 
+    /// <summary>The live peak levels of what the preview plays, for the level meters.</summary>
+    [ObservableProperty]
+    public partial LevelMeter? Levels { get; private set; }
+
     [ObservableProperty]
     public partial string? PreviewMessage { get; private set; }
 
@@ -152,6 +156,7 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
                 preview.Compact = true;
             _preview = preview;
             Player = preview.Mpv;
+            Levels = preview.Levels;
             PreviewMessage = "Add videos to start: File → Add Videos, or drop files here.";
             if (_owner.HasClips)
                 ScheduleTimelineReload();
@@ -449,6 +454,7 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
         _reloadTimer.Stop();
         // Unbinding the player first makes the video view drop its renderer, which must go before the player.
         Player = null;
+        Levels = null;
         _preview?.Dispose();
         _preview = null;
     }

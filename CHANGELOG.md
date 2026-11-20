@@ -23,7 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   that file plays, on A1 and A2. A changed volume shows as a
   badge on the clip and scales its waveform. The preview applies it live while the slider moves. Audio whose volume
   is changed is re-encoded, using the preset's audio fallback where the preset copies audio.
-- The timeline has room on its left for a mixer strip (level meters and a master volume), still to come.
+- **Level meters** left of the timeline: one peak bar per channel of what the preview plays (clip volumes and A2
+  included, the preview's own volume not), on a dBFS scale with a peak-hold tick. A red marker on top of a bar lights
+  up when that channel clips (reaches full scale) and stays lit until you click the meters. The strip is as wide as
+  the channels need: mono, stereo, 5.1…
 
 ### Changed
 - Projects with clip volumes or A2 clips are saved as format 4, which older versions refuse to open rather than

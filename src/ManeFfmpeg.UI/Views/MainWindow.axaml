@@ -368,9 +368,12 @@
             <!-- Timeline -->
             <Border Grid.Row="2" Classes="panel" Padding="0" ClipToBounds="True">
                 <DockPanel>
-                    <!-- Reserved for the mixer: live level bars that show clipping, and the master volume -->
-                    <Border x:Name="MixerStrip" DockPanel.Dock="Left" Width="56" Background="#26272E"
-                            BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="0,0,1,0" />
+                    <!-- The mixer strip: live level meters per channel (as wide as the channels need); room for the master volume later -->
+                    <Border x:Name="MixerStrip" DockPanel.Dock="Left" Background="#26272E"
+                            BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="0,0,1,0">
+                        <controls:LevelMeterView x:Name="LevelMeters" Meter="{Binding Preview.Levels}"
+                                                 ToolTip.Tip="Peak levels in dBFS. A red marker on top means that channel clipped; click to clear it." />
+                    </Border>
                     <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" Margin="8,6">
                         <StackPanel Orientation="Horizontal" Spacing="4">
                             <!-- Transport while the preview is hidden -->
