@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [2.3.0] - 2026-11-20
 ### Added
 - **Extract audio:** the export button has a dropdown arrow, that switches it to "Extract audio"
   mode. In that mode the preset menu lists audio presets, and the button saves only the timeline's audio.
