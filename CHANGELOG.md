@@ -52,6 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   audio presets.
 - Hearing A2 in the preview needs a libmpv built on FFmpeg 4.4 or newer. With an older one the preview plays A1 alone
   and says so; the export still mixes A2.
+### Fixed
+- On a busy machine the preview could put the playhead on the next keyframe (up to a GOP later) after loading a
+  timeline with changed clip volumes or A2, or after a change to the mix. It now checks where the preview landed and
+  seeks back again.
 
 ## [2.2.2] - 2026-11-18
 > [!IMPORTANT]

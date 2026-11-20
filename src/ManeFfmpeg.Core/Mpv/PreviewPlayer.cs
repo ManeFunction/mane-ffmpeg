@@ -30,6 +30,13 @@ public sealed class PreviewPlayer : IDisposable
     // first moment isn't heard twice. The timer starts it anyway if mpv never reports the seek finished.
     private TimeSpan? _resumeAt;
     private readonly Timer _resumeTimer;
+    // Where the mix's last seek back should land, while CheckSeekBack watches it, how often it was resent, and where
+    // the last restart landed.
+    private TimeSpan? _seekBack;
+    private int _seekBackRetries;
+    private TimeSpan? _landed;
+    private DateTime _seekBackUntil;
+    private readonly Timer _seekBackTimer;
 
     private PreviewPlayer(MpvPlayer mpv)
     {
@@ -41,12 +48,25 @@ public sealed class PreviewPlayer : IDisposable
             armed => _seekTimer.Change(armed ? SeekPacer.CheckInterval : Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan));
         // Straight from mpv's event thread: the next seek shouldn't wait for a busy UI thread.
         mpv.PlaybackRestarted += _seeks.Restarted;
-        mpv.PlaybackRestarted += () => Post(OnPlaybackRestarted);
+        // The position is read right away: once playback runs on, it no longer tells where the seek landed.
+        mpv.PlaybackRestarted += () =>
+        {
+            var landed = CurrentPosition();
+            Post(() =>
+            {
+                _landed = landed;
+                CheckSeekBack();
+                Resume(force: false);
+            });
+        };
+        _seekBackTimer = new Timer(_ => Post(CheckSeekBack));
         _resumeTimer = new Timer(_ => Post(() => Resume(force: true)));
         _mix = new MixGraph(graph => mpv.SetString("lavfi-complex", graph), at =>
         {
-            if (_loaded is not null)
-                _seeks.Seek(at);
+            if (_loaded is null)
+                return;
+            (_seekBack, _seekBackRetries) = (at, 0);
+            SendSeekBack(at);
         }, CurrentPosition);
         mpv.PropertyChanged += (name, value) => Post(() => OnProperty(name, value));
         mpv.FileLoaded += entry => Post(() => OnFileLoaded(entry));
@@ -144,7 +164,52 @@ public sealed class PreviewPlayer : IDisposable
 
     private static readonly TimeSpan ResumeTimeout = TimeSpan.FromSeconds(2);
 
-    private void OnPlaybackRestarted() => Resume(force: false);
+    /// <summary>How often a seek back that landed elsewhere is sent again.</summary>
+    private const int SeekBackRetries = 3;
+
+    private static readonly TimeSpan SeekBackCheckInterval = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>How long after a seek back mpv may still move the position for the earlier seek it merged it with.</summary>
+    private static readonly TimeSpan SeekBackWatch = TimeSpan.FromSeconds(1.5);
+
+    /// <summary>
+    /// Sends the mix's seek back again when playback restarted somewhere else. Setting lavfi-complex starts mpv's own
+    /// refresh seek at once; when the seek back arrives while that one is still under way, mpv can merge the two and land
+    /// on the next keyframe instead (seen under load: 0.5 s instead of 0). Runs on every restart and, as mpv doesn't
+    /// always report a restart once it stops seeking, on a timer for a while after the seek back (a check can come before
+    /// the merged seek moves the position). Paused, the position is where it landed; playing, the last restart tells.
+    /// </summary>
+    private void CheckSeekBack()
+    {
+        if (_seekBack is not { } target)
+            return;
+        if (!_seeks.Idle || Mpv.GetString("seeking") != "no"
+            || (Mpv.GetString("pause") == "yes" ? CurrentPosition() : _landed) is not { } at)
+        {
+            ArmSeekBackCheck();
+            return;
+        }
+        if (Math.Abs((at - target).TotalSeconds) <= 0.1 || _seekBackRetries >= SeekBackRetries)
+        {
+            if (DateTime.UtcNow < _seekBackUntil && _seekBackRetries < SeekBackRetries)
+                ArmSeekBackCheck();
+            else
+                _seekBack = null;
+            return;
+        }
+        _seekBackRetries++;
+        AppLog.Write($"Preview: the seek back to {TimeFormat.Seconds(target)} landed at {TimeFormat.Seconds(at)}; seeking again.");
+        SendSeekBack(target);
+    }
+
+    private void SendSeekBack(TimeSpan target)
+    {
+        _seekBackUntil = DateTime.UtcNow + SeekBackWatch;
+        _seeks.Seek(target);
+        ArmSeekBackCheck();
+    }
+
+    private void ArmSeekBackCheck() => _seekBackTimer.Change(SeekBackCheckInterval, Timeout.InfiniteTimeSpan);
 
     /// <summary>Starts playback put off by <see cref="Paused"/> once the seek back has landed (or, forced, regardless).</summary>
     private void Resume(bool force)
@@ -202,6 +267,7 @@ public sealed class PreviewPlayer : IDisposable
     public void Unload()
     {
         _seeks.Reset();
+        _seekBack = null;
         if (_loaded is null)
             return;
         _loaded = null;
@@ -214,6 +280,7 @@ public sealed class PreviewPlayer : IDisposable
         // A seek under way is dropped with the file it was in: the next one goes at once.
         _seeks.Reset();
         _resumeAt = null;
+        _seekBack = null;
         Levels.Reset();
         lock (_gate)
             _loading = true;
@@ -234,12 +301,14 @@ public sealed class PreviewPlayer : IDisposable
         if (_loaded is null)
             return;
         Levels.Reset();
+        _seekBack = null;
         _mix.OnSeek(time, _paused);
         _seeks.Seek(time);
     }
 
     public void StepFrame(bool back)
     {
+        _seekBack = null;
         _mix.OnFrameStep();
         _seeks.ForgetLastSeek();
         Mpv.CommandAsync(back ? "frame-back-step" : "frame-step");
@@ -358,6 +427,7 @@ public sealed class PreviewPlayer : IDisposable
         _seeks.Dispose();
         _seekTimer.Dispose();
         _resumeTimer.Dispose();
+        _seekBackTimer.Dispose();
         Levels.Dispose();
         Mpv.Dispose();
     }

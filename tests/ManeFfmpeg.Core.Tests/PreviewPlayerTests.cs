@@ -26,6 +26,11 @@ public sealed class MpvFactAttribute : FactAttribute
 /// <summary>The preview player against a headless libmpv: tracks, position across reloads, compact mode, seeks.</summary>
 public class PreviewPlayerTests(FfmpegFixture media) : IClassFixture<FfmpegFixture>
 {
+    /// <summary>What the waits look at, for a timeout's message.</summary>
+    private static string State(PreviewPlayer player) =>
+        $"time-pos {player.Mpv.GetDouble("time-pos")?.ToString() ?? "none"}, seeking {player.Mpv.GetString("seeking")}, " +
+        $"paused {player.Mpv.GetString("pause")}, lavfi-complex {player.Mpv.GetString("lavfi-complex")}";
+
     private static bool Near(double? seconds, double expected) => seconds is { } s && Math.Abs(s - expected) < 0.05;
 
     private Task<string> TimelineUrl(params (double In, double Out)[] clips) => TimelineUrl(media.Sync30, clips);
@@ -115,7 +120,7 @@ public class PreviewPlayerTests(FfmpegFixture media) : IClassFixture<FfmpegFixtu
         // Without a synchronization context the player's events run on mpv's thread: let each graph settle (and its
         // seek back to the start finish) before the next change.
         async Task Settled(string what) =>
-            await Wait.Until(() => player.Mpv.GetString("seeking") == "no" && Near(player.Mpv.GetDouble("time-pos"), 0), what);
+            await Wait.Until(() => player.Mpv.GetString("seeking") == "no" && Near(player.Mpv.GetDouble("time-pos"), 0), what, () => State(player));
         await Wait.Until(() => player.Mpv.GetString("lavfi-complex")?.Contains("amix") == true, "the mix graph");
         await Settled("the start after the graph is set");
         Assert.Contains("volume='0+1*gte(t,2)'[a1]", player.Mpv.GetString("lavfi-complex"));
@@ -160,7 +165,7 @@ public class PreviewPlayerTests(FfmpegFixture media) : IClassFixture<FfmpegFixtu
         player.Mpv.SetString("ao-pcm-file", wav);
         player.LoadTimeline(preview, TimeSpan.Zero);
         await Wait.Until(() => player.Mpv.GetString("lavfi-complex")?.Contains("gte(t,2)") == true, "the volume graph");
-        await Wait.Until(() => player.Mpv.GetString("seeking") == "no" && Near(player.Mpv.GetDouble("time-pos"), 0), "the start");
+        await Wait.Until(() => player.Mpv.GetString("seeking") == "no" && Near(player.Mpv.GetDouble("time-pos"), 0), "the start", () => State(player));
         player.Paused = false;
         await Wait.Until(() => player.Mpv.GetDouble("time-pos") > 3.9, "playing to the end");
         player.Unload();
