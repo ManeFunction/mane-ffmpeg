@@ -25,6 +25,9 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
     private PreviewPlayer? _preview;
     private string? _silencePath;
     private bool _scrubbing;
+
+    /// <summary>The status said once that this libmpv can't mix A2.</summary>
+    private bool _toldNoA2;
     private bool _resumeAfterScrub;
     private bool _settingPlayheadFromPlayer;
     private bool _disposed;
@@ -278,6 +281,11 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
             return;
         }
         PreviewMessage = null;
+        if (State.AudioTrack.Count > 0 && !_preview.MixesA2 && !_toldNoA2)
+        {
+            _toldNoA2 = true;
+            _owner.StatusMessage = $"This libmpv's ffmpeg ({_preview.FfmpegVersion}) can't mix A2 into the preview (it needs 4.4 or newer); the export still mixes it.";
+        }
         _preview.LoadTimeline(timeline, Timeline.Playhead);
     }
 

@@ -54,6 +54,9 @@ public sealed class PreviewPlayer : IDisposable
         // mpv's warnings and errors (unplayable segments, failed commands) explain a blank or silent preview.
         mpv.LogMessage += (level, text) => AppLog.Write($"mpv {level}: {text}");
         Levels = LevelMeter.Attach(mpv);
+        MixesA2 = SupportsTrackMix(FfmpegVersion);
+        if (!MixesA2)
+            AppLog.Write($"libmpv's ffmpeg {FfmpegVersion} is older than 4.4: the preview plays A1 without A2.");
     }
 
     /// <param name="headless">No video or audio output (tests).</param>
@@ -65,6 +68,25 @@ public sealed class PreviewPlayer : IDisposable
     /// <see cref="Dispose"/> (the owner unbinds the player first).
     /// </summary>
     public MpvPlayer Mpv { get; }
+
+    /// <summary>
+    /// Whether the preview can mix A2 in: libmpv's own ffmpeg must have amix's normalize option (4.4+). Without it the
+    /// preview plays A1 alone (the export is unaffected: it uses the system ffmpeg).
+    /// </summary>
+    public bool MixesA2 { get; }
+
+    /// <summary>The ffmpeg version libmpv was built with, as mpv reports it ("7.1.1", "n4.3.2", a git build…).</summary>
+    public string? FfmpegVersion => Mpv.GetString("ffmpeg-version");
+
+    /// <summary>Whether an ffmpeg version has what the A2 mix needs; unrecognized versions (git builds) are assumed new.</summary>
+    internal static bool SupportsTrackMix(string? version)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(version ?? "", @"^n?(\d+)\.(\d+)");
+        if (!match.Success)
+            return true;
+        var (major, minor) = (int.Parse(match.Groups[1].Value), int.Parse(match.Groups[2].Value));
+        return major > 4 || (major == 4 && minor >= 4);
+    }
 
     /// <summary>The live peak levels of what plays, measured while it plays.</summary>
     public LevelMeter Levels { get; }
@@ -307,7 +329,7 @@ public sealed class PreviewPlayer : IDisposable
             Mpv.SetString("vid", "no");
         else if (vid is not null)
             Mpv.SetString("vid", vid);
-        if (!_mix.OnTracks(_timeline && _mix.Mix is not null && aid is not null ? (aid, TrackId(count)) : null))
+        if (!_mix.OnTracks(_timeline && _mix.Mix is not null && aid is not null ? (aid, MixesA2 ? TrackId(count) : null) : null))
             Mpv.SetString("aid", aid ?? "no");
     }
 

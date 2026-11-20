@@ -72,6 +72,17 @@ public class MixGraphTests
         Assert.Equal(WithA2.Graph("1", "3", S(1.04)), f.Graphs[^1]);
     }
 
+    [Theory]
+    [InlineData("7.1.1", true)]
+    [InlineData("n4.4.2", true)]
+    [InlineData("4.4.2-0ubuntu0.22.04.1", true)]
+    [InlineData("n4.3.1", false)]
+    [InlineData("4.2.7", false)]
+    [InlineData("N-113000-g1234abcd", true)]
+    [InlineData(null, true)]
+    public void A2_is_mixed_in_the_preview_only_with_ffmpeg_4_4_or_newer(string? version, bool mixes) =>
+        Assert.Equal(mixes, PreviewPlayer.SupportsTrackMix(version));
+
     [Fact]
     public void A_mix_without_A2_needs_no_alignment()
     {

@@ -87,7 +87,7 @@ Download the latest build from the [Releases page](https://github.com/ManeFuncti
 | | macOS | Linux | Windows (10, 11) |
 |---|---|---|---|
 | ffmpeg + ffprobe (5.0+) | `brew install ffmpeg` | `sudo apt install ffmpeg` (or your distro's package) | `winget install Gyan.FFmpeg` (or Scoop, Chocolatey, any build) |
-| libmpv (0.33+) for preview | IINA.app installed (its libmpv is used), or `brew install mpv` | `sudo apt install libmpv2` · `dnf install mpv-libs` · `pacman -S mpv` | included |
+| libmpv (0.33+) for preview; built on FFmpeg 4.4+ to hear A2 there | IINA.app installed (its libmpv is used), or `brew install mpv` | `sudo apt install libmpv2` · `dnf install mpv-libs` · `pacman -S mpv` | included |
 | Notifications | built in (`osascript`) | `notify-send` (libnotify) or `gdbus` | built in (toasts through Windows PowerShell) |
 | Staying awake during exports | built in (IOKit power assertion) | `systemd-inhibit` (systemd) | built in (power request) |
 
