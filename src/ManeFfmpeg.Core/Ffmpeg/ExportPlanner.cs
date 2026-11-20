@@ -114,6 +114,58 @@ public static class ExportPlanner
 
     public static ExportPlan Plan(ExportJob job)
     {
+        var ctx = Prepare(job);
+        foreach (var item in ctx.Items)
+        foreach (var file in new[] { item.Source, ctx.Job.State.AudioSourceOf(item.Clip) }.OfType<SourceMedia>().Distinct())
+        {
+            if (SameFile(file.Path, job.OutputPath))
+                throw new ExportPlanException(
+                    $"The output file is one of the {(file == item.Source ? "source videos" : "audio files")}. Choose another name.");
+        }
+        if (ctx.Track.Select(t => t.Heard.File).Distinct().FirstOrDefault(f => SameFile(f.Path, job.OutputPath)) is not null)
+            throw new ExportPlanException("The output file is one of the audio files. Choose another name.");
+
+        if (job.Preset.Kind == PresetKind.Audio)
+        {
+            var audio = AudioOnly(ctx);
+            return audio with
+            {
+                Notes = [.. ctx.Analysis.Warnings, .. audio.Notes, .. TrackNotes(ctx)],
+                OutputPath = job.OutputPath,
+                WorkDirectory = job.WorkDirectory,
+            };
+        }
+
+        var crop = ctx.Job.State.Crop;
+        if (crop is not null && ctx.Args.VideoCopy)
+            throw new ExportPlanException(
+                $"Preset \"{job.Preset.Name}\" copies the video, and a copied picture can't be cropped. Choose an encoding preset or reset the crop.");
+        ctx = ctx with { Crop = crop };
+        var items = ctx.Items;
+        var plan = items.Count == 1 && IsWholeFile(items[0]) && ctx.CopyBlocker is null
+            ? Passthrough(ctx)
+            : ctx.Args.VideoCopy
+                ? StreamCopy(ctx)
+                : items.Count == 1 && ctx.Args.AudioCopy && items[0].Audio is not null && ctx.CutBlocker is null
+                    ? SingleClipAudioCopy(ctx) ?? Encode(ctx)
+                    : Encode(ctx);
+        IEnumerable<string> cropped = ctx.CropPixels is { } p
+            ? [$"Cropped to {p.Width}×{p.Height}, from {p.X},{p.Y} of the {ctx.Frame.Width}×{ctx.Frame.Height} frame."]
+            : [];
+        return plan with
+        {
+            Notes = [.. ctx.Args.Warnings, .. plan.Notes, .. TrackNotes(ctx), .. cropped],
+            OutputPath = job.OutputPath,
+            WorkDirectory = job.WorkDirectory,
+        };
+    }
+
+    /// <summary>
+    /// What every plan starts from, and what <see cref="AudioExtensionFor"/> asks the same questions of: the track
+    /// volumes folded into the clips' gains, the preset's arguments, and each clip and A2 clip with the audio it plays.
+    /// </summary>
+    private static Context Prepare(ExportJob job)
+    {
         // Track volumes become part of each clip's gain, so everything below only looks at clip volumes.
         job = job with { State = job.State.WithTrackVolumesApplied() };
         var clips = job.State.Timeline.Clips;
@@ -124,53 +176,10 @@ public static class ExportPlanner
         if (!analysis.IsValid)
             throw new ExportPlanException($"Preset \"{job.Preset.Name}\": {analysis.Errors[0]}");
         var args = analysis.Arguments!;
-        var fallback = analysis.Fallback;
-
         var items = clips.Select(c => Resolve(job.State, job.Media, c, args)).ToList();
-        foreach (var item in items)
-        foreach (var file in new[] { item.Source, job.State.AudioSourceOf(item.Clip) }.OfType<SourceMedia>().Distinct())
+        return new Context(job, analysis, items, OutputFrame.Of([.. items.Select(i => i.Video)]))
         {
-            if (SameFile(file.Path, job.OutputPath))
-                throw new ExportPlanException(
-                    $"The output file is one of the {(file == item.Source ? "source videos" : "audio files")}. Choose another name.");
-        }
-        var track = ResolveTrack(job.State, job.Media, args);
-        if (track.Select(t => t.Heard.File).Distinct().FirstOrDefault(f => SameFile(f.Path, job.OutputPath)) is not null)
-            throw new ExportPlanException("The output file is one of the audio files. Choose another name.");
-
-        if (job.Preset.Kind == PresetKind.Audio)
-        {
-            // The crop is the picture's; saved audio has none.
-            var audioContext = new Context(job, args, fallback, items, OutputFrame.Of([.. items.Select(i => i.Video)]), null) { Track = track };
-            var audio = AudioOnly(audioContext);
-            return audio with
-            {
-                Notes = [.. analysis.Warnings, .. audio.Notes, .. TrackNotes(audioContext)],
-                OutputPath = job.OutputPath,
-                WorkDirectory = job.WorkDirectory,
-            };
-        }
-
-        var crop = job.State.Crop;
-        if (crop is not null && args.VideoCopy)
-            throw new ExportPlanException(
-                $"Preset \"{job.Preset.Name}\" copies the video, and a copied picture can't be cropped. Choose an encoding preset or reset the crop.");
-        var ctx = new Context(job, args, fallback, items, OutputFrame.Of([.. items.Select(i => i.Video)]), crop) { Track = track };
-        var plan = items.Count == 1 && IsWholeFile(items[0]) && !ctx.HasTrack
-            ? Passthrough(ctx)
-            : args.VideoCopy
-                ? StreamCopy(ctx)
-                : items.Count == 1 && args.AudioCopy && items[0].Audio is not null && !ctx.HasTrack
-                    ? SingleClipAudioCopy(ctx) ?? Encode(ctx)
-                    : Encode(ctx);
-        IEnumerable<string> cropped = ctx.CropPixels is { } p
-            ? [$"Cropped to {p.Width}×{p.Height}, from {p.X},{p.Y} of the {ctx.Frame.Width}×{ctx.Frame.Height} frame."]
-            : [];
-        return plan with
-        {
-            Notes = [.. args.Warnings, .. plan.Notes, .. TrackNotes(ctx), .. cropped],
-            OutputPath = job.OutputPath,
-            WorkDirectory = job.WorkDirectory,
+            Track = ResolveTrack(job.State, job.Media, args),
         };
     }
 
@@ -185,19 +194,23 @@ public static class ExportPlanner
         /// file's codec may not fit the output container.
         /// </summary>
         public bool PlaysOwnAudio => Clip.ReplacedAudio is null;
-
-        /// <summary>The clip plays its own audio, not slipped and at its own volume: it can be copied along with the video.</summary>
-        public bool OwnAudioInSync => PlaysOwnAudio && Clip.AudioOffset == TimeSpan.Zero && Gain.IsUnity(Clip.Volume);
     }
 
     /// <summary>An A2 clip with the file it plays.</summary>
     private sealed record TrackItem(TrackClip Clip, HeardAudio Heard);
 
     /// <param name="Frame">The joined picture, which the crop is a part of.</param>
-    /// <param name="Crop">The part of the frame to keep, or null for all of it.</param>
-    private sealed record Context(ExportJob Job, PresetArguments Args, IReadOnlyList<string> Fallback, List<Item> Items, OutputFrame Frame, CropRect? Crop)
+    private sealed record Context(ExportJob Job, PresetAnalysis Analysis, List<Item> Items, OutputFrame Frame)
     {
         public string Out => Job.OutputPath;
+
+        public PresetArguments Args => Analysis.Arguments!;
+
+        /// <summary>The preset's audio fallback, used where it copies audio that has to be encoded.</summary>
+        public IReadOnlyList<string> Fallback => Analysis.Fallback;
+
+        /// <summary>The part of the frame to keep, or null for all of it (and for audio alone).</summary>
+        public CropRect? Crop { get; init; }
 
         /// <summary>The A2 clips mixed over the clips' audio; empty when A2 has none or the preset drops audio.</summary>
         public IReadOnlyList<TrackItem> Track { get; init; } = [];
@@ -206,6 +219,26 @@ public static class ExportPlanner
 
         /// <summary>The clips have sound of their own, or A2 adds some.</summary>
         public bool AnyAudio => Items.Any(i => i.Audio is not null) || HasTrack;
+
+        /// <summary>
+        /// Why the clips' audio can't be copied along with the video, or null when it can: every clip plays its own
+        /// sound, in sync and at its own volume, with nothing on A2. This is the one place that decides it; every mode
+        /// and every note asks here.
+        /// </summary>
+        public string? CopyBlocker => Blocker(offsets: true);
+
+        /// <summary>
+        /// Like <see cref="CopyBlocker"/>, for audio cut on its own (one clip's, then muxed or saved): a slipped clip
+        /// can still be cut without re-encoding, so offsets don't block it.
+        /// </summary>
+        public string? CutBlocker => Blocker(offsets: false);
+
+        private string? Blocker(bool offsets) =>
+            Items.Any(i => !i.PlaysOwnAudio) ? "clips have replaced audio"
+            : offsets && Items.Any(i => i.Clip.AudioOffset != TimeSpan.Zero) ? "clips have audio offsets"
+            : Items.Any(i => !Gain.IsUnity(i.Clip.Volume)) ? "clips or A1 have their volume changed"
+            : HasTrack ? "A2 is mixed in"
+            : null;
 
         /// <summary>The format all audio is converted to before it's joined and mixed; null without audio.</summary>
         public (int Rate, string Layout)? AudioFormat =>
@@ -270,7 +303,7 @@ public static class ExportPlanner
     }
 
     private static bool IsWholeFile(Item item) =>
-        item.Clip.In <= Tolerance && item.Clip.Out >= item.Media.Duration - Tolerance && item.OwnAudioInSync;
+        item.Clip.In <= Tolerance && item.Clip.Out >= item.Media.Duration - Tolerance;
 
     // ---- Passthrough -----------------------------------------------------------------------------------
 
@@ -380,7 +413,7 @@ public static class ExportPlanner
         var sameAudio = allHaveAudio && ctx.Items.All(i =>
             i.Audio!.Codec == first.Audio!.Codec && i.Audio.SampleRate == first.Audio.SampleRate
             && i.Audio.Channels == first.Audio.Channels && i.Audio.Index == first.Audio.Index);
-        var copyAudio = ctx.AnyAudio && ctx.Args.AudioCopy && sameAudio && ctx.Items.All(i => i.OwnAudioInSync) && !ctx.HasTrack;
+        var copyAudio = ctx.AnyAudio && ctx.Args.AudioCopy && sameAudio && ctx.CopyBlocker is null;
 
         // Where the container seeks unreliably (MPEG-TS…), the concat demuxer's inpoint lands early, so each
         // clip is first cut into an exact temporary segment and the segments are joined.
@@ -527,8 +560,6 @@ public static class ExportPlanner
         var item = ctx.Items[0];
         var heard = item.Heard!;
         var clip = item.Clip;
-        if (!item.PlaysOwnAudio || !Gain.IsUnity(clip.Volume))
-            return null;
         if (heard.Layout(clip) is not AudioLayout.Placed { Placement: { IsSilent: false } placement })
             return null;
         var (lead, readFrom, readLength, _) = placement;
@@ -596,15 +627,10 @@ public static class ExportPlanner
     {
         if (preset.Extension?.Trim().TrimStart('.') is { Length: > 0 } own)
             return own;
-        if (PresetAnalysis.Of(preset).Arguments is not { } args || state.Timeline.Clips.Count == 0)
-            return null;
-        state = state.WithTrackVolumesApplied();
         try
         {
-            var items = state.Timeline.Clips.Select(c => Resolve(state, media, c, args)).ToList();
-            if (CopiedAudio(items, args, hasTrack: !args.NoAudio && state.AudioTrack.Any(c => c.Start < state.Timeline.Duration)) is { } copied)
-                return AudioExtension(copied.Item.Audio!.Codec);
-            return AudioExtension(args.AudioCopy ? PresetArguments.Parse(preset.AudioFallbackArguments).AudioCodec : args.AudioCodec);
+            var ctx = Prepare(new ExportJob { State = state, Media = media, Preset = preset, OutputPath = "", WorkDirectory = "" });
+            return AudioExtension(CopiedAudio(ctx) is { } copied ? copied.Item.Audio!.Codec : EncodedAudioCodec(ctx));
         }
         catch (Exception ex) when (ex is ExportPlanException or FormatException)
         {
@@ -612,11 +638,15 @@ public static class ExportPlanner
         }
     }
 
+    /// <summary>The encoder the preset's audio goes through when it isn't copied: its own, or its fallback for "-c:a copy".</summary>
+    private static string? EncodedAudioCodec(Context ctx) =>
+        ctx.Args.AudioCopy ? PresetArguments.Parse(ctx.Job.Preset.AudioFallbackArguments).AudioCodec : ctx.Args.AudioCodec;
+
     private static ExportPlan AudioOnly(Context ctx)
     {
         if (!ctx.AnyAudio)
             throw new ExportPlanException("The timeline has no audio to save.");
-        return CopiedAudio(ctx.Items, ctx.Args, ctx.HasTrack) is { } copied ? AudioCopy(ctx, copied.Item, copied.Placement) : AudioEncode(ctx);
+        return CopiedAudio(ctx) is { } copied ? AudioCopy(ctx, copied.Item, copied.Placement) : AudioEncode(ctx);
     }
 
     /// <summary>
@@ -624,9 +654,9 @@ public static class ExportPlanner
     /// all of it read from the file (no silence before or after), at its own volume and with nothing on A2. Null when the
     /// audio has to be encoded.
     /// </summary>
-    private static (Item Item, AudioPlacement Placement)? CopiedAudio(List<Item> items, PresetArguments args, bool hasTrack)
+    private static (Item Item, AudioPlacement Placement)? CopiedAudio(Context ctx)
     {
-        if (!args.AudioCopy || hasTrack || items is not [{ PlaysOwnAudio: true, Heard: { } heard } item] || !Gain.IsUnity(item.Clip.Volume))
+        if (!ctx.Args.AudioCopy || ctx.CutBlocker is not null || ctx.Items is not [{ Heard: { } heard } item])
             return null;
         return heard.Layout(item.Clip) is AudioLayout.Placed { Placement: { IsSilent: false } placement }
             && placement.Lead <= Tolerance && placement.Tail <= Tolerance
@@ -905,13 +935,8 @@ public static class ExportPlanner
             graph.Append($";[acat]{audioFilter}[{audioOut}]");
     }
 
-    /// <summary>Why audio can't be copied: replaced or slipped audio first, else <paramref name="otherwise"/>.</summary>
-    private static string AudioReencodeReason(Context ctx, string otherwise) =>
-        ctx.Items.Any(i => !i.PlaysOwnAudio) ? "clips have replaced audio"
-        : ctx.Items.Any(i => i.Clip.AudioOffset != TimeSpan.Zero) ? "clips have audio offsets"
-        : ctx.Items.Any(i => !Gain.IsUnity(i.Clip.Volume)) ? "clips or A1 have their volume changed"
-        : ctx.HasTrack ? "A2 is mixed in"
-        : otherwise;
+    /// <summary>Why audio can't be copied: <see cref="Context.CopyBlocker"/>, else <paramref name="otherwise"/>.</summary>
+    private static string AudioReencodeReason(Context ctx, string otherwise) => ctx.CopyBlocker ?? otherwise;
 
     /// <summary>Preset output options, with "-c:a copy" swapped for the fallback when audio is filtered.</summary>
     private static IReadOnlyList<string> AudioTokens(Context ctx, bool audioFiltered, List<string> notes, string reason)
