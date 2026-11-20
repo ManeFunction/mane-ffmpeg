@@ -203,8 +203,14 @@ public sealed record ProjectState(ImmutableList<SourceMedia> Sources, Timeline T
     public TrackClip? TrackClip(string id) => AudioTrack.Find(c => c.Id == id);
 
     /// <summary>The A2 clip's file with its probe results and chosen stream; null when it would be silent.</summary>
-    public HeardAudio? HeardAudio(TrackClip clip, Func<string, MediaInfo?> info) =>
-        AudioFile(clip.FileId) is { } file && info(file.Id) is { } media && media.Audio(file.AudioStreamIndex) is { } stream
+    public HeardAudio? HeardAudio(TrackClip clip, Func<string, MediaInfo?> info) => HeardAudioFile(clip.FileId, info);
+
+    /// <summary>
+    /// Audio file <paramref name="fileId"/> with its probe results and chosen stream; null when it isn't listed, isn't
+    /// analyzed (<paramref name="info"/> returns null for its id) or has no such stream.
+    /// </summary>
+    public HeardAudio? HeardAudioFile(string fileId, Func<string, MediaInfo?> info) =>
+        AudioFile(fileId) is { } file && info(file.Id) is { } media && media.Audio(file.AudioStreamIndex) is { } stream
             ? new HeardAudio(file, media, stream)
             : null;
 

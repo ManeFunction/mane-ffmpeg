@@ -299,10 +299,7 @@ public sealed partial class MainWindowViewModel
     // ---- A2 ---------------------------------------------------------------------------------------
 
     /// <summary>How long a file would play on A2: where its audio ends, or null while it isn't analyzed.</summary>
-    public TimeSpan? TrackLength(string fileId) =>
-        State.AudioFile(fileId) is { } file && _catalog.Info(fileId) is { } info && info.Audio(file.AudioStreamIndex) is { } stream
-            ? info.AudioEnd(stream)
-            : null;
+    public TimeSpan? TrackLength(string fileId) => State.HeardAudioFile(fileId, _catalog.Info)?.End;
 
     /// <summary>How long a file from the file manager would play on A2, when it's already in the project and analyzed.</summary>
     public TimeSpan? TrackLengthOfPath(string path) =>

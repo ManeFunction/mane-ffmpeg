@@ -289,10 +289,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable, IA
 
     /// <summary>Where a just-probed audio file's sound ends (the catalog may not have it yet).</summary>
     private static TimeSpan? ProbedLength(ProjectState state, string fileId, IEnumerable<ProbedFile> probed) =>
-        state.AudioFile(fileId) is { } file && probed.FirstOrDefault(p => p.Path == file.Path)?.Info is { } info
-        && info.Audio(file.AudioStreamIndex) is { } stream
-            ? info.AudioEnd(stream)
-            : null;
+        state.HeardAudioFile(fileId, id => probed.FirstOrDefault(p => p.Path == state.AudioFile(id)?.Path)?.Info)?.End;
 
     private async Task<AddedFiles?> AddProbedAsync(IEnumerable<string> paths, AddRouting routing) =>
         await ProbeFilesAsync(paths) is { } results ? ProjectEditor.AddProbed(State, results, routing, NewSource) : null;
