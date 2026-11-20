@@ -17,8 +17,8 @@ public sealed record TrackClip
     public required TimeSpan In { get; init; }
     public required TimeSpan Out { get; init; }
 
-    /// <summary>Gain (1 = unchanged), between 0 and <see cref="Gain.Max"/>.</summary>
-    public double Volume { get; init; } = 1;
+    /// <summary>Gain (1 = unchanged), like <see cref="Clip.Volume"/>.</summary>
+    public double Volume { get; init => field = Gain.ClampHeard(value); } = 1;
 
     public TimeSpan Duration => Out - In;
 

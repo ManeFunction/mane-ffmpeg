@@ -76,6 +76,18 @@ public class MixTests
     }
 
     [Fact]
+    public void Clip_volumes_are_never_negative_NaN_or_past_a_folded_track_volume()
+    {
+        Assert.Equal(1, T("a", 0, 0, 1, volume: double.NaN).Volume);
+        Assert.Equal(0, T("a", 0, 0, 1, volume: -1).Volume);
+        Assert.Equal(Gain.MaxCombined, T("a", 0, 0, 1, volume: 9).Volume);
+        Assert.Equal(0, (Clip.Create("v", S(0), S(1)) with { Volume = -0.5 }).Volume);
+        // A clip at 200 % on a track at 200 % keeps its 400 %.
+        var state = new ProjectState([], new Timeline([Clip.Create("v", S(0), S(1)) with { Volume = 2 }])) { A1Volume = 2 };
+        Assert.Equal(4, state.WithTrackVolumesApplied().Timeline.Clips[0].Volume);
+    }
+
+    [Fact]
     public void Removing_an_audio_file_takes_its_A2_clips_along()
     {
         var state = new ProjectState([], Timeline.Empty, [new SourceMedia { Id = "f", Path = "/m/song.m4a" }])

@@ -31,8 +31,11 @@ public sealed record Clip
     /// <summary>An audio file played instead of the clip's own audio; null plays its own.</summary>
     public AudioReplacement? ReplacedAudio { get; init; }
 
-    /// <summary>Gain applied to whatever the clip plays (1 = unchanged), between 0 and <see cref="Gain.Max"/>.</summary>
-    public double Volume { get; init; } = 1;
+    /// <summary>
+    /// Gain applied to whatever the clip plays (1 = unchanged): between 0 and <see cref="Gain.Max"/> as edited, up to
+    /// <see cref="Gain.MaxCombined"/> once a track volume is folded in (<see cref="ProjectState.WithTrackVolumesApplied"/>).
+    /// </summary>
+    public double Volume { get; init => field = Gain.ClampHeard(value); } = 1;
 
     /// <summary>A new clip of <paramref name="sourceId"/> from <paramref name="in"/> to <paramref name="out"/>, with a fresh id.</summary>
     public static Clip Create(string sourceId, TimeSpan @in, TimeSpan @out) => new() { Id = Ids.New(), SourceId = sourceId, In = @in, Out = @out };

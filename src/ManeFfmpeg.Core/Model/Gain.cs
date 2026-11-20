@@ -11,6 +11,12 @@ public static class Gain
 
     public static double Clamp(double gain) => double.IsNaN(gain) ? 1 : Math.Clamp(gain, 0, Max);
 
+    /// <summary>
+    /// The widest a stored gain can be: a clip's gain with its track's folded in. Clip volumes are clamped to this when
+    /// set, so no gain read from anywhere can be negative or NaN; the editors clamp to <see cref="Max"/>.
+    /// </summary>
+    public static double ClampHeard(double gain) => double.IsNaN(gain) ? 1 : Math.Clamp(gain, 0, MaxCombined);
+
     /// <summary>Whether a gain leaves the sound as it is (within rounding of a slider).</summary>
     public static bool IsUnity(double gain) => Math.Abs(gain - 1) < 1e-4;
 
