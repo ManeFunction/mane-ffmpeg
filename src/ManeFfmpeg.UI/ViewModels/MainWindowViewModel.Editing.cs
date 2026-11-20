@@ -43,11 +43,29 @@ public sealed partial class MainWindowViewModel
     /// <summary>A2 clips are selected.</summary>
     public bool HasTrackSelection => PrimaryTrackClip is not null;
 
-    /// <summary>Clips on either track are selected (their volume can be edited).</summary>
-    public bool HasAnySelection => HasSelection || HasTrackSelection;
+    /// <summary>A whole audio track is selected by its label: Selection shows only its volume.</summary>
+    public bool IsWholeTrackSelected => Timeline.SelectedTrack is not null;
+
+    public bool IsA1Selected => Timeline.SelectedTrack == MixTrack.A1;
+
+    public bool IsA2Selected => Timeline.SelectedTrack == MixTrack.A2;
+
+    /// <summary>Clips on either track, or a whole track, are selected (their volume can be edited).</summary>
+    public bool HasAnySelection => HasSelection || HasTrackSelection || IsWholeTrackSelected;
+
+    [RelayCommand]
+    private void SelectA1Track() => Timeline.SelectTrack(MixTrack.A1);
+
+    [RelayCommand]
+    private void SelectA2Track() => Timeline.SelectTrack(MixTrack.A2);
+
+    public string A1TrackTip => $"A1: the clips' sound. Click to select the whole track and set its volume ({Gain.Percent(State.A1Volume)} now).";
+
+    public string A2TrackTip => $"A2: audio mixed over the clips. Click to select the whole track and set its volume ({Gain.Percent(State.A2Volume)} now).";
 
     public string SelectionTitle => Timeline.Selection.Count switch
     {
+        0 when Timeline.SelectedTrack is { } whole => $"{whole} track selected",
         0 => "No clip selected",
         1 when PrimaryTrackClip is { } t => $"A2 · {State.AudioFile(t.FileId)?.DisplayName ?? "missing audio file"}",
         1 => PrimaryClip is { } c ? State.Source(c.SourceId)?.DisplayName ?? "Clip" : "Clip",
@@ -58,6 +76,13 @@ public sealed partial class MainWindowViewModel
     {
         get
         {
+            if (Timeline.SelectedTrack is { } whole)
+            {
+                var what = whole == MixTrack.A2
+                    ? State.AudioTrack.Count switch { 0 => "A2 has no clips yet", 1 => "1 clip on A2", var n => $"{n} clips on A2" }
+                    : State.Timeline.Clips.Count == 1 ? "The sound of the clip on V1" : $"The sound of all {State.Timeline.Clips.Count} clips on V1";
+                return $"{what}. Its volume applies on top of each clip's own volume, in the preview and the export.";
+            }
             if (PrimaryTrackClip is { } track)
             {
                 if (Timeline.Selection.Count > 1)
@@ -183,14 +208,17 @@ public sealed partial class MainWindowViewModel
 
     private bool _volumeDragging;
 
-    /// <summary>The selected clips' volume in percent (0–200), V1 or A2; the first selected clip's when they differ.</summary>
+    /// <summary>
+    /// The selected clips' volume in percent (0–200), V1 or A2; the first selected clip's when they differ. With a whole
+    /// track selected, that track's volume.
+    /// </summary>
     public double ClipVolume
     {
-        get => Math.Round((PrimaryTrackClip?.Volume ?? PrimaryClip?.Volume ?? 1) * 100);
+        get => Math.Round((Timeline.SelectedTrack is { } whole ? State.TrackVolume(whole) : PrimaryTrackClip?.Volume ?? PrimaryClip?.Volume ?? 1) * 100);
         set
         {
             var gain = Gain.Clamp(value / 100);
-            var next = WithVolume(State, Timeline.Selection, gain);
+            var next = Timeline.SelectedTrack is { } whole ? State.WithTrackVolume(whole, gain) : WithVolume(State, Timeline.Selection, gain);
             // A slider drag previews every step and records one undo step when it ends.
             if (_volumeDragging)
                 History.ReplaceCurrent(next);
@@ -229,7 +257,12 @@ public sealed partial class MainWindowViewModel
     };
 
     [RelayCommand]
-    private void ResetVolume() => Commit(WithVolume(State, Timeline.Selection, 1));
+    private void ResetVolume() =>
+        Commit(Timeline.SelectedTrack is { } whole ? State.WithTrackVolume(whole, 1) : WithVolume(State, Timeline.Selection, 1));
+
+    public string VolumeTip => Timeline.SelectedTrack is { } whole
+        ? $"Volume of the whole {whole} track, on top of each clip's own: 100 % leaves it as it is, 200 % is about +6 dB"
+        : "Volume of the selected clips: 100 % leaves the sound as it is, 200 % is about +6 dB";
 
     public string ApplyVolumeText => HasTrackSelection || HasReplacedAudio
         ? "Use this volume everywhere this audio file plays"
@@ -259,6 +292,8 @@ public sealed partial class MainWindowViewModel
     {
         OnPropertyChanged(nameof(ClipVolume));
         OnPropertyChanged(nameof(ClipVolumeText));
+        OnPropertyChanged(nameof(A1TrackTip));
+        OnPropertyChanged(nameof(A2TrackTip));
     }
 
     // ---- A2 ---------------------------------------------------------------------------------------
@@ -293,6 +328,10 @@ public sealed partial class MainWindowViewModel
 
     internal void OnSelectionChanged()
     {
+        OnPropertyChanged(nameof(IsWholeTrackSelected));
+        OnPropertyChanged(nameof(IsA1Selected));
+        OnPropertyChanged(nameof(IsA2Selected));
+        OnPropertyChanged(nameof(VolumeTip));
         OnPropertyChanged(nameof(HasTrackSelection));
         OnPropertyChanged(nameof(HasAnySelection));
         OnPropertyChanged(nameof(ApplyVolumeText));

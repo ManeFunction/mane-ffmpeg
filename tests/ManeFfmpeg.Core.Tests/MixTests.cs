@@ -159,6 +159,24 @@ public class MixTests
     }
 
     [Fact]
+    public void Track_volumes_multiply_every_clip_gain_in_the_preview()
+    {
+        var clips = new Timeline([Clip.Create("v", S(0), S(2)), Clip.Create("v", S(4), S(7)) with { Volume = 0.5 }]);
+        var state = new ProjectState([], clips) { AudioTrack = Track(T("a", 3, 0, 1, 1.5)), A1Volume = 0.5, A2Volume = 2 };
+        Assert.Equal("[aid2]volume=eval=frame:volume='0.5-0.25*gte(t,2)'[a1];[aid3]volume=3[a2];" +
+                     "[a1][a2]amix=inputs=2:normalize=0:duration=first:dropout_transition=0[ao]", TimelineMix.For(state)!.Graph("2", "3"));
+
+        // A track volume alone is enough to mix.
+        var plain = new ProjectState([], new Timeline([Clip.Create("v", S(0), S(2))]));
+        Assert.Null(TimelineMix.For(plain));
+        Assert.Equal("[aid2]volume=0[ao]", TimelineMix.For(plain with { A1Volume = 0 })!.Graph("2", null));
+        Assert.Equal(2, (plain with { A1Volume = 5 }).A1Volume);
+        // The stored state keeps the volumes apart; only the heard state multiplies them.
+        Assert.Equal(0.5, state.Timeline.Clips[1].Volume);
+        Assert.Same(plain, plain.WithTrackVolumesApplied());
+    }
+
+    [Fact]
     public void The_preview_EDL_carries_A2_padded_to_the_timeline()
     {
         var video = new MediaInfo
@@ -205,6 +223,14 @@ public class MixTests
             Assert.Equal(0.4, read.Timeline.Clips[0].Volume);
             Assert.Equal(mixed.AudioTrack, read.AudioTrack);
             Assert.Equal(mixed, read);
+
+            // A track volume alone needs format 4 too.
+            var louder = plain with { A2Volume = 1.25 };
+            var louderJson = ProjectFile.Serialize(new Project { State = louder }, path);
+            Assert.Contains("\"version\": 4", louderJson);
+            Assert.Contains("\"a2Volume\": 1.25", louderJson);
+            Assert.DoesNotContain("a1Volume", louderJson);
+            Assert.Equal(louder, ProjectFile.Deserialize(louderJson, path).State);
         }
         finally
         {
@@ -265,6 +291,24 @@ public class MixTests
 
         var audioOnly = ExportPlanner.Plan(Job(Preset.ExtractAudio, [], whole with { Volume = 0.5 }) with { OutputPath = "/out/edit.flac" });
         Assert.Equal(ExportMode.AudioEncode, audioOnly.Mode);
+    }
+
+    [Fact]
+    public void Track_volumes_are_exported_as_part_of_each_clip_gain()
+    {
+        var whole = Clip.Create("v", S(0), S(10));
+        var job = Job(Encode, [T("a", 2, 5, 25, 2)], whole with { Volume = 2 });
+        var graph = Graph(ExportPlanner.Plan(job with { State = job.State with { A1Volume = 2, A2Volume = 0.25 } }));
+        // 200 % on a 200 % track is 400 %; 200 % on a 25 % track is 50 %.
+        Assert.Contains(",volume=4[a0]", graph);
+        Assert.Contains("channel_layouts=stereo,volume=0.5,apad", graph);
+
+        // An A1 volume alone stops the whole file from being copied.
+        var plain = Job(Encode, [], whole);
+        var quieter = ExportPlanner.Plan(plain with { State = plain.State with { A1Volume = 0.5 } });
+        Assert.Equal(ExportMode.Encode, quieter.Mode);
+        Assert.Contains(",volume=0.5[a0]", Graph(quieter));
+        Assert.Equal(ExportMode.Passthrough, ExportPlanner.Plan(plain with { State = plain.State with { A2Volume = 0.5 } }).Mode);
     }
 
     [Fact]

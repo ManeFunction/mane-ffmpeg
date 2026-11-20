@@ -38,6 +38,22 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
     /// </summary>
     public IReadOnlySet<string> Selection => _selection;
 
+    /// <summary>
+    /// A whole audio track, selected by clicking its label (Selection then sets the track's volume); null while clips or
+    /// nothing are selected. Selecting clips unselects it.
+    /// </summary>
+    public MixTrack? SelectedTrack { get; private set; }
+
+    /// <summary>Selects the whole track instead of any clips.</summary>
+    public void SelectTrack(MixTrack track)
+    {
+        if (SelectedTrack == track && _selection.Count == 0)
+            return;
+        _selection.Clear();
+        SelectedTrack = track;
+        SelectionChanged();
+    }
+
     /// <summary>The selection is of A2 clips.</summary>
     public bool SelectionIsTrack => _selection.Count > 0 && State.AudioTrack.Any(c => _selection.Contains(c.Id));
 
@@ -138,6 +154,7 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
     public void Select(string clipId, bool toggle, bool range)
     {
         // V1 and A2 clips are never selected together: what the inspector and the edits act on stays clear.
+        SelectedTrack = null;
         var track = State.TrackClip(clipId) is not null;
         if (_selection.Count > 0 && SelectionIsTrack != track)
             _selection.Clear();
@@ -177,6 +194,7 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
 
     public void SelectAll()
     {
+        SelectedTrack = null;
         _selection.Clear();
         foreach (var clip in Timeline.Clips)
             _selection.Add(clip.Id);
@@ -186,6 +204,7 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
     /// <summary>Selects just this clip.</summary>
     public void SelectOnly(string clipId)
     {
+        SelectedTrack = null;
         _selection.Clear();
         _selection.Add(clipId);
         SelectionChanged();
@@ -193,9 +212,10 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
 
     public void ClearSelection()
     {
-        if (Selection.Count == 0)
+        if (Selection.Count == 0 && SelectedTrack is null)
             return;
         _selection.Clear();
+        SelectedTrack = null;
         SelectionChanged();
     }
 

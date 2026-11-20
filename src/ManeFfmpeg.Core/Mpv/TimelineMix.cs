@@ -9,7 +9,7 @@ public readonly record struct GainStep(TimeSpan At, double Gain);
 
 /// <summary>
 /// What the preview mixes on top of the EDL's audio streams (<see cref="TimelineEdl"/>): each clip's volume on A1, and
-/// the A2 track with its clips' volumes. mpv plays it through a "lavfi-complex" graph whose volume filters follow the
+/// the A2 track with its clips' volumes, each times its track's volume. mpv plays it through a "lavfi-complex" graph whose volume filters follow the
 /// timeline time, so one graph serves the whole timeline and seeking needs no rebuild.
 /// </summary>
 /// <param name="A1">The A1 gain over time, starting at 0.</param>
@@ -19,6 +19,7 @@ public sealed record TimelineMix(IReadOnlyList<GainStep> A1, IReadOnlyList<GainS
     /// <summary>The mix for a project, or null when there is nothing to mix (no A2, every volume unchanged).</summary>
     public static TimelineMix? For(ProjectState state)
     {
+        state = state.WithTrackVolumesApplied();
         var clips = state.Timeline.Clips;
         if (state.AudioTrack.Count == 0 && clips.All(c => Gain.IsUnity(c.Volume)))
             return null;

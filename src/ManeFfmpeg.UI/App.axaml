@@ -108,6 +108,17 @@
             <Setter Property="Padding" Value="7,1.5,7,1" />
             <Setter Property="FontSize" Value="11" />
         </Style>
+        <!-- The A1/A2 labels on the timeline's header: centred, never taking focus (Space stays play/pause), and lit
+             while their whole track is selected. -->
+        <Style Selector="Button.track">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.track.selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#E6E7EB" />
+            <Setter Property="Foreground" Value="#1D1E22" />
+        </Style>
         <Style Selector="ComboBox.small">
             <Setter Property="MinHeight" Value="18" />
             <Setter Property="Height" Value="18" />

@@ -18,8 +18,8 @@ public static class ProjectFile
     public const string Extension = "mfvp";
     public const string FormatName = "mane-ffmpeg-project";
     /// <summary>
-    /// Version 2 adds audio files and replaced clip audio, version 3 the output crop, version 4 clip volumes and the A2
-    /// track. A project is written with the lowest version that holds it, so one without audio files or a crop is still 1.
+    /// Version 2 adds audio files and replaced clip audio, version 3 the output crop, version 4 clip and track volumes and
+    /// the A2 track. A project is written with the lowest version that holds it, so one without audio files or a crop is still 1.
     /// </summary>
     public const int CurrentVersion = 4;
 
@@ -49,7 +49,8 @@ public static class ProjectFile
         };
         var hasAudioFiles = project.State.AudioFiles.Count > 0;
         var crop = project.State.Crop;
-        var mixes = project.State.AudioTrack.Count > 0 || project.State.Timeline.Clips.Any(c => !Gain.IsUnity(c.Volume));
+        var mixes = project.State.AudioTrack.Count > 0 || project.State.Timeline.Clips.Any(c => !Gain.IsUnity(c.Volume))
+            || !Gain.IsUnity(project.State.A1Volume) || !Gain.IsUnity(project.State.A2Volume);
         var dto = new ProjectDto
         {
             Format = FormatName,
@@ -78,6 +79,8 @@ public static class ProjectFile
                 Out = c.Out,
                 Volume = Gain.IsUnity(c.Volume) ? null : c.Volume,
             })],
+            A1Volume = Gain.IsUnity(project.State.A1Volume) ? null : project.State.A1Volume,
+            A2Volume = Gain.IsUnity(project.State.A2Volume) ? null : project.State.A2Volume,
             Crop = crop is null ? null : new CropDto { X = crop.X, Y = crop.Y, Width = crop.Width, Height = crop.Height },
             Export = project.Export,
             Layout = project.Layout,
@@ -145,7 +148,7 @@ public static class ProjectFile
         {
             // Clips of a video that isn't listed are dropped; a replacement whose audio file is gone leaves the clip
             // with its own audio.
-            State = ProjectEditor.DropOrphans(new ProjectState(sources, new Timeline(clips), audioFiles) { AudioTrack = [.. track] })
+            State = ProjectEditor.DropOrphans(new ProjectState(sources, new Timeline(clips), audioFiles) { AudioTrack = [.. track], A1Volume = dto.A1Volume ?? 1, A2Volume = dto.A2Volume ?? 1 })
                 .WithCrop(dto.Crop is { } c ? new CropRect(c.X, c.Y, c.Width, c.Height) : null),
             Export = dto.Export ?? new ExportSettings(),
             Layout = dto.Layout ?? new ProjectLayout(),
@@ -174,6 +177,10 @@ public static class ProjectFile
         public List<SourceDto?>? AudioFiles { get; set; }
         public List<ClipDto?>? Clips { get; set; } = [];
         public List<TrackClipDto?>? AudioTrack { get; set; }
+
+        /// <summary>The whole tracks' gains; left out at 1.</summary>
+        public double? A1Volume { get; set; }
+        public double? A2Volume { get; set; }
         public CropDto? Crop { get; set; }
         public ExportSettings? Export { get; set; }
         public ProjectLayout? Layout { get; set; }

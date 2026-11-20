@@ -263,7 +263,7 @@
                                 <Button Classes="tool" Content="{Binding ApplyOffsetText}" HorizontalAlignment="Stretch"
                                         Command="{Binding ApplyOffsetToSourceCommand}" />
                             </StackPanel>
-                            <!-- Volume of the selected V1 or A2 clips -->
+                            <!-- Volume of the selected V1 or A2 clips, or of a whole track -->
                             <StackPanel Spacing="6" IsVisible="{Binding HasAnySelection}">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBlock Text="Volume" Classes="dim" VerticalAlignment="Center" />
@@ -272,12 +272,12 @@
                                 <Grid ColumnDefinitions="*,Auto">
                                     <Slider x:Name="VolumeSlider" Minimum="0" Maximum="200" TickFrequency="1" IsSnapToTickEnabled="True"
                                             SmallChange="1" LargeChange="10" Value="{Binding ClipVolume}" VerticalAlignment="Center"
-                                            ToolTip.Tip="Volume of the selected clips: 100 % leaves the sound as it is, 200 % is about +6 dB" />
+                                            ToolTip.Tip="{Binding VolumeTip}" />
                                     <Button Grid.Column="1" Classes="tool" Content="100 %" Margin="6,0,0,0" Command="{Binding ResetVolumeCommand}"
                                             ToolTip.Tip="Reset to the original volume" />
                                 </Grid>
                                 <Button Classes="tool" Content="{Binding ApplyVolumeText}" HorizontalAlignment="Stretch"
-                                        Command="{Binding ApplyVolumeToAllCommand}" />
+                                        Command="{Binding ApplyVolumeToAllCommand}" IsVisible="{Binding !IsWholeTrackSelected}" />
                             </StackPanel>
                         </StackPanel>
                         </ScrollViewer>
@@ -404,7 +404,22 @@
                             <Button Classes="tool" Content="+" Command="{Binding ZoomInCommand}" ToolTip.Tip="Zoom in (+)" />
                         </StackPanel>
                     </Grid>
-                    <controls:TimelineControl x:Name="TimelineView" Timeline="{Binding Timeline}" />
+                    <Panel>
+                        <controls:TimelineControl x:Name="TimelineView" Timeline="{Binding Timeline}" />
+                        <!-- Track labels over the timeline's header: a click selects the whole track, for its volume -->
+                        <Canvas IsVisible="{Binding HasClips}">
+                            <Border Canvas.Top="{x:Static controls:TimelineLayout.AudioTop}" Width="{x:Static controls:TimelineLayout.Header}"
+                                    Height="{x:Static controls:TimelineLayout.AudioHeight}">
+                                <Button x:Name="A1TrackButton" Classes="tool small track" Classes.selected="{Binding IsA1Selected}" Content="A1"
+                                        Command="{Binding SelectA1TrackCommand}" ToolTip.Tip="{Binding A1TrackTip}" />
+                            </Border>
+                            <Border Canvas.Top="{x:Static controls:TimelineLayout.TrackTop}" Width="{x:Static controls:TimelineLayout.Header}"
+                                    Height="{x:Static controls:TimelineLayout.TrackHeight}">
+                                <Button x:Name="A2TrackButton" Classes="tool small track" Classes.selected="{Binding IsA2Selected}" Content="A2"
+                                        Command="{Binding SelectA2TrackCommand}" ToolTip.Tip="{Binding A2TrackTip}" />
+                            </Border>
+                        </Canvas>
+                    </Panel>
                 </DockPanel>
             </Border>
         </Grid>

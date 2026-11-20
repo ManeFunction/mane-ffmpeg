@@ -113,6 +113,8 @@ public static class ExportPlanner
 
     public static ExportPlan Plan(ExportJob job)
     {
+        // Track volumes become part of each clip's gain, so everything below only looks at clip volumes.
+        job = job with { State = job.State.WithTrackVolumesApplied() };
         var clips = job.State.Timeline.Clips;
         if (clips.Count == 0)
             throw new ExportPlanException("The timeline is empty.");
@@ -595,6 +597,7 @@ public static class ExportPlanner
             return own;
         if (PresetAnalysis.Of(preset).Arguments is not { } args || state.Timeline.Clips.Count == 0)
             return null;
+        state = state.WithTrackVolumesApplied();
         try
         {
             var items = state.Timeline.Clips.Select(c => Resolve(state, media, c, args)).ToList();
@@ -700,9 +703,9 @@ public static class ExportPlanner
         return item.Heard is null || Gain.IsUnity(item.Clip.Volume) ? chain : chain + VolumeFilter(item.Clip.Volume);
     }
 
-    /// <summary>",volume=…" for a clip's gain.</summary>
+    /// <summary>",volume=…" for a clip's gain (its own times its track's).</summary>
     private static string VolumeFilter(double gain) =>
-        string.Create(CultureInfo.InvariantCulture, $",volume={Gain.Clamp(gain):0.######}");
+        string.Create(CultureInfo.InvariantCulture, $",volume={Math.Clamp(gain, 0, Gain.MaxCombined):0.######}");
 
     /// <summary>
     /// Appends the A2 track over the timeline ranges, joined in order, as [atrack]; nothing when A2 has no clips. Every
@@ -906,7 +909,7 @@ public static class ExportPlanner
     private static string AudioReencodeReason(Context ctx, string otherwise) =>
         ctx.Items.Any(i => !i.PlaysOwnAudio) ? "clips have replaced audio"
         : ctx.Items.Any(i => i.Clip.AudioOffset != TimeSpan.Zero) ? "clips have audio offsets"
-        : ctx.Items.Any(i => !Gain.IsUnity(i.Clip.Volume)) ? "clips have their volume changed"
+        : ctx.Items.Any(i => !Gain.IsUnity(i.Clip.Volume)) ? "clips or A1 have their volume changed"
         : ctx.HasTrack ? "A2 is mixed in"
         : otherwise;
 

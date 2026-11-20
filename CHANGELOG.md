@@ -27,9 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   included, the preview's own volume not), on a dBFS scale with a peak-hold tick. A red marker on top of a bar lights
   up when that channel clips (reaches full scale) and stays lit until you click the meters. The strip is as wide as
   the channels need: mono, stereo, 5.1…
+- **Track volume:** the A1 and A2 labels on the timeline are buttons. Clicking one selects that whole track, and
+  Selection then has a 0–200 % volume for it. The track volume is applied on top of each clip's own volume, so an 80 %
+  clip on a 50 % track plays at 40 %. It is part of the project (undoable, saved) and is applied in the preview,
+  the level meters, the waveforms and the export.
 
 ### Changed
-- Projects with clip volumes or A2 clips are saved as format 4, which older versions refuse to open rather than
+- Projects with clip or track volumes or A2 clips are saved as format 4, which older versions refuse to open rather than
   silently dropping them.
 - The presets window has Video and Audio tabs. Existing presets are video presets; the built-in audio presets are
   added after them.

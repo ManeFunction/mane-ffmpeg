@@ -167,6 +167,9 @@ public static class Gain
     /// <summary>The loudest a clip can be made: 200 %, about +6 dB.</summary>
     public const double Max = 2;
 
+    /// <summary>The loudest anything is played: a clip at <see cref="Max"/> on a track at <see cref="Max"/>.</summary>
+    public const double MaxCombined = Max * Max;
+
     public static double Clamp(double gain) => double.IsNaN(gain) ? 1 : Math.Clamp(gain, 0, Max);
 
     /// <summary>Whether a gain leaves the sound as it is (within rounding of a slider).</summary>
@@ -179,6 +182,13 @@ public static class Gain
     public static string Decibels(double gain) => gain <= 0
         ? "−∞ dB"
         : (20 * Math.Log10(gain)).ToString("+0.0 dB;−0.0 dB;0.0 dB", System.Globalization.CultureInfo.InvariantCulture);
+}
+
+/// <summary>The two audio tracks of the mix: A1 (what the V1 clips play) and A2 (the clips mixed over them).</summary>
+public enum MixTrack
+{
+    A1,
+    A2,
 }
 
 /// <summary>The undoable part of a project.</summary>
@@ -206,6 +216,37 @@ public sealed record ProjectState(ImmutableList<SourceMedia> Sources, Timeline T
 
     /// <summary>The A2 track: audio clips mixed over the timeline, ordered by start and never overlapping.</summary>
     public ImmutableList<TrackClip> AudioTrack { get; init; } = [];
+
+    /// <summary>Gain of the whole A1 track, on top of each clip's own (1 = unchanged), between 0 and <see cref="Gain.Max"/>.</summary>
+    public double A1Volume { get; init => field = Gain.Clamp(value); } = 1;
+
+    /// <summary>Gain of the whole A2 track, on top of each A2 clip's own, between 0 and <see cref="Gain.Max"/>.</summary>
+    public double A2Volume { get; init => field = Gain.Clamp(value); } = 1;
+
+    public double TrackVolume(MixTrack track) => track == MixTrack.A2 ? A2Volume : A1Volume;
+
+    public ProjectState WithTrackVolume(MixTrack track, double gain) =>
+        track == MixTrack.A2 ? this with { A2Volume = gain } : this with { A1Volume = gain };
+
+    /// <summary>
+    /// The state as it is heard: each clip's volume multiplied by its track's, and both track volumes back at 1. The
+    /// preview's mix and every export read this, so a track volume is one more factor on each clip's gain (up to
+    /// <see cref="Gain.MaxCombined"/>) and blocks audio copying the way a clip volume does.
+    /// </summary>
+    public ProjectState WithTrackVolumesApplied()
+    {
+        if (Gain.IsUnity(A1Volume) && Gain.IsUnity(A2Volume))
+            return this;
+        var a1 = A1Volume;
+        var a2 = A2Volume;
+        return this with
+        {
+            Timeline = Timeline with { Clips = [.. Timeline.Clips.Select(c => c with { Volume = c.Volume * a1 })] },
+            AudioTrack = [.. AudioTrack.Select(c => c with { Volume = c.Volume * a2 })],
+            A1Volume = 1,
+            A2Volume = 1,
+        };
+    }
 
     public SourceMedia? Source(string id) => Sources.Find(s => s.Id == id);
 
@@ -245,7 +286,7 @@ public sealed record ProjectState(ImmutableList<SourceMedia> Sources, Timeline T
     public bool Equals(ProjectState? other) =>
         other is not null && Sources.SequenceEqual(other.Sources) && AudioFiles.SequenceEqual(other.AudioFiles)
         && Timeline.Equals(other.Timeline) && Equals(Crop, other.Crop)
-        && AudioTrack.SequenceEqual(other.AudioTrack);
+        && AudioTrack.SequenceEqual(other.AudioTrack) && A1Volume.Equals(other.A1Volume) && A2Volume.Equals(other.A2Volume);
 
     public override int GetHashCode() => HashCode.Combine(Sources.Count, AudioFiles.Count, Timeline.Clips.Count);
 }

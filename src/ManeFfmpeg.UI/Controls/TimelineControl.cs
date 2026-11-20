@@ -196,8 +196,12 @@ public sealed class TimelineControl : Control
 
         context.FillRectangle(HeaderBrush, new Rect(0, 0, Header, size.Height));
         DrawText(context, "V1", new Point(14, VideoTop + VideoHeight / 2 - 8), TextBrush, 12);
-        DrawText(context, "A1", new Point(14, AudioTop + AudioHeight / 2 - 8), TextBrush, 12);
-        DrawText(context, "A2", new Point(14, TrackTop + TrackHeight / 2 - 8), TextBrush, 12);
+        // A1 and A2 are labelled by buttons over the header (they select the whole track; MainWindow.axaml).
+        if (vm.SelectedTrack is { } whole)
+        {
+            var (top, height) = whole == MixTrack.A2 ? (TrackTop, TrackHeight) : (AudioTop, AudioHeight);
+            context.DrawRectangle(null, SelectedPen, new Rect(Header + 1, top, Math.Max(1, size.Width - Header - 2), height), 4, 4);
+        }
     }
 
     private void DrawRuler(DrawingContext context, TimelineViewModel vm, Size size)
@@ -283,7 +287,7 @@ public sealed class TimelineControl : Control
                 DrawSilence(context, vm, start, audioRect, layout, replaced is null ? HatchPen : InkHatchPen);
                 if (layout is AudioLayout.Looped looped)
                     DrawSeams(context, vm, start, audioRect, looped, width);
-                DrawWaveform(context, vm, start, audioRect, layout, vm.Waveform(sound.File), width, replaced is null ? WavePen : InkPen, clip.Volume);
+                DrawWaveform(context, vm, start, audioRect, layout, vm.Waveform(sound.File), width, replaced is null ? WavePen : InkPen, clip.Volume * vm.State.A1Volume);
             }
             if (clip.ActiveAudioOffset != TimeSpan.Zero)
             {
@@ -348,7 +352,7 @@ public sealed class TimelineControl : Control
             {
                 // The clip as a stretch of its file played once from its in point.
                 var layout = new AudioLayout.Placed(new AudioPlacement(TimeSpan.Zero, clip.In, clip.Duration, clip.Duration), clip.In);
-                DrawWaveform(context, vm, clip.Start, rect, layout, vm.Waveform(heard.File), width, InkPen, clip.Volume);
+                DrawWaveform(context, vm, clip.Start, rect, layout, vm.Waveform(heard.File), width, InkPen, clip.Volume * vm.State.A2Volume);
             }
             var label = Text($"♫ {file?.DisplayName ?? "missing audio file"}", missing ? LabelBrush : InkBrush, 10, FontWeight.SemiBold);
             var chip = new Rect(textX, rect.Top + (rect.Height - label.Height - 2) / 2, label.Width + 10, label.Height + 2);
