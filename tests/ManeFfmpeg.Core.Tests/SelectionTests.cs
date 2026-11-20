@@ -67,6 +67,35 @@ public class SelectionTests
     }
 
     [Fact]
+    public void Edits_of_the_selection_go_to_the_track_it_is_on()
+    {
+        var v1 = TimelineSelection.OfClips(State, ["c1"]);
+        var a2 = TimelineSelection.OfClips(State, ["t2"]);
+
+        var louder = ProjectEditor.SetVolume(State, v1, 1.5);
+        Assert.Equal([1.5, 1, 1, 1], louder.Timeline.Clips.Select(c => c.Volume));
+        Assert.All(louder.AudioTrack, c => Assert.Equal(1, c.Volume));
+        Assert.Equal([1, 0.5], ProjectEditor.SetVolume(State, a2, 0.5).AudioTrack.Select(c => c.Volume));
+        Assert.Equal(0.25, ProjectEditor.SetVolume(State, TimelineSelection.OfTrack(MixTrack.A2), 0.25).A2Volume);
+        Assert.Same(State, ProjectEditor.SetVolume(State, TimelineSelection.None, 2));
+
+        // Deleting a V1 clip before the playhead pulls it earlier; deleting an A2 clip moves nothing.
+        var (noFirst, playhead) = ProjectEditor.DeleteSelection(State, v1, S(5));
+        Assert.Equal(["c2", "c3", "c4"], noFirst.Timeline.Clips.Select(c => c.Id));
+        Assert.Equal(S(3), playhead);
+        var (noT2, still) = ProjectEditor.DeleteSelection(State, a2, S(5));
+        Assert.Equal(["t1"], noT2.AudioTrack.Select(c => c.Id));
+        Assert.Equal((4, S(5)), (noT2.Timeline.Clips.Count, still));
+
+        // Splitting A2 needs a selected A2 clip under the playhead; V1 splits the clip under it and selects its left half.
+        Assert.Null(ProjectEditor.Split(State, a2, S(1), _ => null));
+        Assert.Equal(3, ProjectEditor.Split(State, a2, S(3.5), _ => null)!.Value.State.AudioTrack.Count);
+        var (splitV1, left) = ProjectEditor.Split(State, TimelineSelection.None, S(3), _ => null)!.Value;
+        Assert.Equal(5, splitV1.Timeline.Clips.Count);
+        Assert.Equal("c2", left);
+    }
+
+    [Fact]
     public void Clips_that_are_gone_drop_out()
     {
         var both = TimelineSelection.OfClips(State, ["c1", "c2"]);

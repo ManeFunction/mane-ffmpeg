@@ -222,7 +222,7 @@ public sealed partial class MainWindowViewModel
         set
         {
             var gain = Gain.Clamp(value / 100);
-            var next = Timeline.SelectedTrack is { } whole ? State.WithTrackVolume(whole, gain) : WithVolume(State, Timeline.Selection, gain);
+            var next = ProjectEditor.SetVolume(State, Timeline.Selected, gain);
             // A slider drag previews every step and records one undo step when it ends.
             if (_volumeDragging)
                 History.ReplaceCurrent(next);
@@ -254,15 +254,8 @@ public sealed partial class MainWindowViewModel
         History.EndGesture();
     }
 
-    private static ProjectState WithVolume(ProjectState state, IReadOnlySet<string> ids, double gain) => state with
-    {
-        Timeline = TimelineEditor.SetVolume(state.Timeline, ids, gain),
-        AudioTrack = TrackEditor.SetVolume(state.AudioTrack, ids, gain),
-    };
-
     [RelayCommand]
-    private void ResetVolume() =>
-        Commit(Timeline.SelectedTrack is { } whole ? State.WithTrackVolume(whole, 1) : WithVolume(State, Timeline.Selection, 1));
+    private void ResetVolume() => Commit(ProjectEditor.SetVolume(State, Timeline.Selected, 1));
 
     public string VolumeTip => Timeline.SelectedTrack is { } whole
         ? $"Volume of the whole {whole} track, on top of each clip's own: 100 % leaves it as it is, 200 % is about +6 dB"
@@ -367,27 +360,17 @@ public sealed partial class MainWindowViewModel
     {
         if (!HasClips)
             return;
-        if (Timeline.SelectionIsTrack)
+        if (ProjectEditor.Split(State, Timeline.Selected, Timeline.Playhead, GridOf) is not { } split)
         {
-            var track = TrackEditor.Split(State.AudioTrack, Timeline.Selection, Timeline.Playhead);
-            if (ReferenceEquals(track, State.AudioTrack))
-            {
-                StatusMessage = "Move the playhead inside a selected A2 clip (away from its edges) to split it.";
-                return;
-            }
-            Commit(State with { AudioTrack = track });
-            StatusMessage = null;
+            StatusMessage = Timeline.SelectionIsTrack
+                ? "Move the playhead inside a selected A2 clip (away from its edges) to split it."
+                : "Move the playhead inside a clip (away from its edges) to split.";
             return;
         }
-        var (next, rightId) = TimelineEditor.Split(State.Timeline, Timeline.Playhead, GridOf);
-        if (rightId is null)
-        {
-            StatusMessage = "Move the playhead inside a clip (away from its edges) to split.";
-            return;
-        }
-        Commit(State with { Timeline = next });
-        // The left half, the part already played, keeps the clip's id.
-        Timeline.SelectOnly(next.Clips[next.IndexOf(rightId) - 1].Id);
+        Commit(split.State);
+        // The left half of a V1 clip, the part already played, keeps the clip's id.
+        if (split.Select is { } left)
+            Timeline.SelectOnly(left);
         StatusMessage = null;
     }
 
@@ -399,14 +382,9 @@ public sealed partial class MainWindowViewModel
             StatusMessage = "Select clips to delete.";
             return;
         }
-        // Clips deleted before the playhead pull what's under it earlier; the playhead follows it.
         var playhead = Timeline.Playhead;
-        var moved = TimelineEditor.TimeAfterDelete(State.Timeline, Timeline.Selection, playhead);
-        Commit(State with
-        {
-            Timeline = TimelineEditor.Delete(State.Timeline, Timeline.Selection),
-            AudioTrack = TrackEditor.Delete(State.AudioTrack, Timeline.Selection),
-        });
+        var (next, moved) = ProjectEditor.DeleteSelection(State, Timeline.Selected, playhead);
+        Commit(next);
         if (moved != playhead)
             Preview.MovePlayheadAfterEdit(moved);
     }

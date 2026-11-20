@@ -63,6 +63,46 @@ public static class ProjectEditor
         return state.WithFiles(kind, state.Files(kind).RemoveAll(f => f.Id == id)) with { Timeline = timeline, AudioTrack = track };
     }
 
+    // ---- Edits of the selection: each goes to the track the selection is on -----------------------
+
+    /// <summary>The selection's volume: its V1 clips', its A2 clips' or its whole track's.</summary>
+    public static ProjectState SetVolume(ProjectState state, TimelineSelection selection, double gain) => selection.Kind switch
+    {
+        SelectionKind.WholeTrack => state.WithTrackVolume(selection.Track!.Value, gain),
+        SelectionKind.TimelineClips => state with { Timeline = TimelineEditor.SetVolume(state.Timeline, selection.Ids, gain) },
+        SelectionKind.TrackClips => state with { AudioTrack = TrackEditor.SetVolume(state.AudioTrack, selection.Ids, gain) },
+        _ => state,
+    };
+
+    /// <summary>
+    /// Deletes the selected clips. V1 clips deleted before the playhead pull what's under it earlier, so the returned
+    /// playhead follows it; A2 clips leave everything in place.
+    /// </summary>
+    public static (ProjectState State, TimeSpan Playhead) DeleteSelection(ProjectState state, TimelineSelection selection, TimeSpan playhead) =>
+        selection.Kind switch
+        {
+            SelectionKind.TimelineClips => (state with { Timeline = TimelineEditor.Delete(state.Timeline, selection.Ids) },
+                TimelineEditor.TimeAfterDelete(state.Timeline, selection.Ids, playhead)),
+            SelectionKind.TrackClips => (state with { AudioTrack = TrackEditor.Delete(state.AudioTrack, selection.Ids) }, playhead),
+            _ => (state, playhead),
+        };
+
+    /// <summary>
+    /// Splits at the playhead: the selected A2 clips under it, or else the V1 clip under it. Returns null when there's
+    /// nothing to split there (no clip, or too close to an edge); for V1, the left half, which keeps the clip's id, to select.
+    /// </summary>
+    public static (ProjectState State, string? Select)? Split(ProjectState state, TimelineSelection selection, TimeSpan playhead,
+        Func<string, CutGrid?> grids)
+    {
+        if (selection.Kind == SelectionKind.TrackClips)
+        {
+            var track = TrackEditor.Split(state.AudioTrack, selection.Ids, playhead);
+            return ReferenceEquals(track, state.AudioTrack) ? null : (state with { AudioTrack = track }, null);
+        }
+        var (next, rightId) = TimelineEditor.Split(state.Timeline, playhead, grids);
+        return rightId is null ? null : (state with { Timeline = next }, next.Clips[next.IndexOf(rightId) - 1].Id);
+    }
+
     /// <summary>Gives every use of audio file <paramref name="fileId"/> the same volume: clips it replaces the sound of on A1, and its A2 clips.</summary>
     public static ProjectState SetAudioFileVolume(ProjectState state, string fileId, double gain) => state with
     {
