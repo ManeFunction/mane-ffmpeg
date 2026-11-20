@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using ManeFfmpeg.Core.Media;
 using ManeFfmpeg.Core.Model;
+using ManeFfmpeg.Core.Mpv;
 using ManeFfmpeg.Core.Platforms;
 
 namespace ManeFfmpeg.Core.Ffmpeg;
@@ -896,9 +897,8 @@ public static class ExportPlanner
             graph.Append($"[{vLabel}]");
         if (audio)
             graph.Append(track ? "[amain]" : $"[{aLabel}]");
-        // A sum (normalize=0), as in the preview: A1 keeps its level and A2 adds to it. A1 sets the length.
         if (audio && track)
-            graph.Append($";[amain][atrack]amix=inputs=2:normalize=0:duration=first:dropout_transition=0[{aLabel}]");
+            graph.Append(';').Append(TimelineMix.Mix("amain", "atrack", aLabel));
         if (video && videoFilter is not null)
             graph.Append($";[vcat]{videoFilter}[vout]");
         if (audio && audioFilter is not null)

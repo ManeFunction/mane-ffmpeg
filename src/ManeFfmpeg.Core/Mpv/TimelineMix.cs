@@ -47,9 +47,16 @@ public sealed record TimelineMix(IReadOnlyList<GainStep> A1, IReadOnlyList<GainS
         if (A2 is null || a2 is null)
             return $"[aid{a1}]{Volume(A1)}[ao]";
         var align = from is { } t ? string.Create(CultureInfo.InvariantCulture, $"atrim=start={t.TotalSeconds:0.######},") : "";
-        // normalize=0: a sum, like the export, rather than each input at half volume.
-        return $"[aid{a1}]{align}{Volume(A1)}[a1];[aid{a2}]{align}{Volume(A2)}[a2];[a1][a2]amix=inputs=2:normalize=0:duration=first:dropout_transition=0[ao]";
+        return $"[aid{a1}]{align}{Volume(A1)}[a1];[aid{a2}]{align}{Volume(A2)}[a2];{Mix("a1", "a2", "ao")}";
     }
+
+    /// <summary>
+    /// The filter that mixes A2 into A1, for the preview and the export alike, so both sound the same: a sum
+    /// (normalize=0), so neither track is turned down, as long as A1.
+    /// </summary>
+    internal static string Mix(string a1, string a2, string output) =>
+        $"[{a1}][{a2}]amix=inputs=2:normalize=0:duration=first:dropout_transition=0[{output}]";
+
     /// <summary>
     /// A volume filter for the gains: a constant, or an expression evaluated per audio frame on the timeline time
     /// <c>t</c>. The expression is a flat sum of steps, <c>g0+(g1−g0)*gte(t,T1)+…</c>, because ffmpeg limits how deeply
