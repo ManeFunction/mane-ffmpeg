@@ -46,6 +46,10 @@ public static class ProjectEditor
             ? state.Timeline.Clips.Count(c => c.ReplacedAudio?.FileId == id) + state.AudioTrack.Count(c => c.FileId == id)
             : state.Timeline.Clips.Count(c => c.SourceId == id);
 
+    /// <summary>Where audio file <paramref name="id"/> plays: the clips whose sound it replaces, and its A2 clips.</summary>
+    public static (int Replaced, int OnTrack) AudioFileUses(ProjectState state, string id) =>
+        (state.Timeline.Clips.Count(c => c.ReplacedAudio?.FileId == id), state.AudioTrack.Count(c => c.FileId == id));
+
     /// <summary>
     /// Removes a file with what depends on it: a video's clips go too, clips playing an audio file go back to their
     /// own sound, and its A2 clips go.

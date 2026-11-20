@@ -379,12 +379,23 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable, IA
         if (used > 0)
         {
             var (title, message) = item.Kind == FileKind.Audio
-                ? ("Remove audio file?", $"\"{item.Name}\" plays on {used} clip(s). They will go back to their own audio (you can undo).")
+                ? ("Remove audio file?", RemoveAudioMessage(item.Name, ProjectEditor.AudioFileUses(State, item.Id)))
                 : ("Remove video?", $"\"{item.Name}\" is used by {used} clip(s) on the timeline. They will be removed too (you can undo).");
             if (await View.AskAsync(title, message, "Remove", "Cancel") != 0)
                 return;
         }
         Commit(ProjectEditor.RemoveFile(State, item.Kind, item.Id));
+    }
+
+    /// <summary>What removing an audio file does: clips it replaces the sound of go back to their own, its A2 clips go.</summary>
+    internal static string RemoveAudioMessage(string name, (int Replaced, int OnTrack) uses)
+    {
+        var parts = new List<string>();
+        if (uses.Replaced > 0)
+            parts.Add($"{uses.Replaced} clip(s) will go back to their own audio");
+        if (uses.OnTrack > 0)
+            parts.Add($"its {uses.OnTrack} A2 clip(s) will be removed");
+        return $"\"{name}\" is in use: {string.Join(", and ", parts)} (you can undo).";
     }
 
     [RelayCommand]

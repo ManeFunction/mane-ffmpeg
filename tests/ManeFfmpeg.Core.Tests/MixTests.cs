@@ -83,6 +83,7 @@ public class MixTests
             AudioTrack = Track(T("a", 0, 0, 2), T("b", 5, 0, 2)),
         };
         Assert.Equal(2, ProjectEditor.ClipsUsing(state, FileKind.Audio, "f"));
+        Assert.Equal((0, 2), ProjectEditor.AudioFileUses(state, "f"));
         Assert.Empty(ProjectEditor.RemoveFile(state, FileKind.Audio, "f").AudioTrack);
         Assert.Empty(ProjectEditor.DropOrphans(state with { AudioFiles = [] }).AudioTrack);
     }
