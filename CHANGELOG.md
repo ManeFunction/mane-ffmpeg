@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Quick mute:** click the speaker icon next to the preview's volume slider to mute or unmute the preview. Unmuting
   returns to the volume it had before; if the slider was dragged down to 0 %, it goes back to 100 %. While muted, the
   icon shows a crossed-out speaker.
+- **Check clipping:** a button above the timeline checks the whole timeline's audio for clipping, mixed exactly as it
+  would be exported, with every clip, A1 and A2 volume applied. Only the audio is decoded, so it runs at hundreds of
+  times real time (a 20-minute timeline takes about 2 seconds). Clipped places are marked red on the ruler and over the
+  audio rows, and the status line gives how many there are and the loudest peak. After an edit the marks fade until
+  the next check. Click the button again while it runs to cancel.
 
 ### Changed
 - Projects with clip or track volumes or A2 clips are saved as format 4, which older versions refuse to open rather than

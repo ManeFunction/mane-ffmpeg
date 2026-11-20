@@ -402,6 +402,9 @@
                                    TextTrimming="CharacterEllipsis" Margin="12,0" />
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
                             <TextBlock Text="{Binding TimelineDurationText}" VerticalAlignment="Center" Classes="dim" FontFeatures="tnum" Margin="0,0,8,0" />
+                            <Button Classes="tool" Content="{Binding ClipScanText}" Command="{Binding ScanClippingCommand}" IsEnabled="{Binding HasClips}"
+                                    Margin="0,0,8,0" FontFeatures="tnum"
+                                    ToolTip.Tip="Check the whole timeline's audio for clipping at the current clip and track volumes (as it would be exported). Clipped places are marked red on the timeline; click again while it runs to cancel." />
                             <Button Classes="tool" Content="{Binding Preview.PreviewToggleText}" Command="{Binding Preview.ToggleCompactCommand}"
                                     Margin="0,0,8,0" ToolTip.Tip="{Binding Preview.CompactTip}" />
                             <Button Classes="tool" Content="−" Command="{Binding ZoomOutCommand}" ToolTip.Tip="Zoom out (−)" />

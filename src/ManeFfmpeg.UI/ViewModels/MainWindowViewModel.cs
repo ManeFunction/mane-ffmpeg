@@ -424,6 +424,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable, IA
         Export.ApplyExportSettings(project.Export, preset);
         _savedExport = Export.CurrentExportSettings();
         _savedState = project.State;
+        ForgetClipMarks();
         History.Reset(project.State);
         Timeline.ClearSelection();
         Timeline.Zoom = project.Layout.TimelineZoom;
@@ -504,6 +505,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable, IA
     public void Dispose()
     {
         _app.ToolsChanged -= OnToolsChanged;
+        _clipScan?.Cancel();
         Export.Dispose();
         Preview.Dispose();
     }

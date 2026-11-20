@@ -124,6 +124,25 @@ public static partial class ExportPlanner
     {
         var notes = new List<string>();
         var inputs = new List<string>();
+        var graph = AudioGraph(ctx, inputs, ctx.Args.AudioFilter);
+        var n = ctx.Items.Count;
+
+        var a = new List<string>(Prefix);
+        a.AddRange(inputs);
+        a.AddRange(["-filter_complex", graph, "-map", "[aout]"]);
+        a.AddRange(AudioTokens(ctx, true, notes,
+            AudioReencodeReason(ctx, otherwise: reason ?? (n > 1 ? "the timeline has several clips" : "the audio doesn't cover the whole clip"))));
+        a.Add(ctx.Out);
+        var duration = ctx.Items.Aggregate(TimeSpan.Zero, (s, it) => s + it.Clip.Duration);
+        return new ExportPlan(ExportMode.AudioEncode, [new ExportStep("Saving audio", a, duration, true)], [], duration, notes);
+    }
+
+    /// <summary>
+    /// The timeline's audio as [aout]: every clip's audio (silence where a clip has none) at its volume, joined, with A2
+    /// mixed in, then <paramref name="audioFilter"/>. Adds the inputs it reads to <paramref name="inputs"/>.
+    /// </summary>
+    private static string AudioGraph(Context ctx, List<string> inputs, string? audioFilter)
+    {
         var graph = new StringBuilder();
         var format = ctx.AudioFormat!.Value;
         var n = ctx.Items.Count;
@@ -134,15 +153,7 @@ public static partial class ExportPlanner
             graph.Append(AudioChain(item, item.Clip.In, item.Clip.Duration, format, ref input, inputs)).Append($"[a{i}];");
         }
         AppendTrack(graph, ctx, [(TimeSpan.Zero, ctx.Job.State.Timeline.Duration)], format, ref input, inputs);
-        AppendConcat(graph, n, video: false, audio: true, null, ctx.Args.AudioFilter, track: ctx.HasTrack);
-
-        var a = new List<string>(Prefix);
-        a.AddRange(inputs);
-        a.AddRange(["-filter_complex", graph.ToString(), "-map", "[aout]"]);
-        a.AddRange(AudioTokens(ctx, true, notes,
-            AudioReencodeReason(ctx, otherwise: reason ?? (n > 1 ? "the timeline has several clips" : "the audio doesn't cover the whole clip"))));
-        a.Add(ctx.Out);
-        var duration = ctx.Items.Aggregate(TimeSpan.Zero, (s, it) => s + it.Clip.Duration);
-        return new ExportPlan(ExportMode.AudioEncode, [new ExportStep("Saving audio", a, duration, true)], [], duration, notes);
+        AppendConcat(graph, n, video: false, audio: true, null, audioFilter, track: ctx.HasTrack);
+        return graph.ToString();
     }
 }

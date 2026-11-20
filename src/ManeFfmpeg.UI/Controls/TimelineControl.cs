@@ -38,6 +38,10 @@ public sealed class TimelineControl : Control
     private static readonly IPen MinorTickPen = new Pen(new SolidColorBrush(Color.Parse("#34363D")), 1);
     private static readonly IPen SelectedPen = new Pen(Brushes.White, 2);
     private static readonly IPen ClipPen = new Pen(new SolidColorBrush(Color.FromArgb(90, 0, 0, 0)), 1);
+    private static readonly IBrush ClipMarkBrush = new SolidColorBrush(Color.FromArgb(130, 255, 40, 40));
+    private static readonly IBrush ClipMarkRulerBrush = new SolidColorBrush(Color.Parse("#FF3030"));
+    private static readonly IBrush StaleClipMarkBrush = new SolidColorBrush(Color.FromArgb(50, 255, 40, 40));
+    private static readonly IBrush StaleClipMarkRulerBrush = new SolidColorBrush(Color.FromArgb(110, 255, 48, 48));
     private static readonly IPen PlayheadPen = new Pen(new SolidColorBrush(Color.Parse("#FF5252")), 1.5);
     private static readonly IPen DropPen = new Pen(new SolidColorBrush(Color.Parse("#FFD54F")), 3);
     private static readonly IPen WavePen = new Pen(WaveBrush, 1);
@@ -172,6 +176,8 @@ public sealed class TimelineControl : Control
             if (end < size.Width)
                 context.FillRectangle(SilenceBrush, new Rect(Math.Max(end, Header), TrackTop, size.Width - Math.Max(end, Header), TrackHeight));
 
+            DrawClipMarks(context, vm, size.Width);
+
             if (vm.Gestures is { IsReordering: true, InsertIndex: >= 0 } gestures)
             {
                 var x = X(vm, vm.Timeline.StartOf(gestures.InsertIndex));
@@ -201,6 +207,35 @@ public sealed class TimelineControl : Control
         {
             var (top, height) = whole == MixTrack.A2 ? (TrackTop, TrackHeight) : (AudioTop, AudioHeight);
             context.DrawRectangle(null, SelectedPen, new Rect(Header + 1, top, Math.Max(1, size.Width - Header - 2), height), 4, 4);
+        }
+    }
+
+    /// <summary>
+    /// The clipping check's findings: a red band at the foot of the ruler and a red wash over A1 and A2, at least 3 px
+    /// wide so a single clipped sample still shows when zoomed out. Faded once the project has changed since the check.
+    /// </summary>
+    private static void DrawClipMarks(DrawingContext context, TimelineViewModel vm, double width)
+    {
+        var marks = vm.ClipMarks;
+        if (marks.Count == 0)
+            return;
+        var current = vm.ClipMarksCurrent;
+        var wash = current ? ClipMarkBrush : StaleClipMarkBrush;
+        var band = current ? ClipMarkRulerBrush : StaleClipMarkRulerBrush;
+        var lastRight = double.NegativeInfinity;
+        foreach (var mark in marks)
+        {
+            var x0 = X(vm, mark.Start);
+            var x1 = Math.Max(X(vm, mark.End), x0 + 3);
+            if (x1 < Header || x0 > width)
+                continue;
+            // Marks closer than a pixel would only stack their alpha.
+            x0 = Math.Max(x0, lastRight);
+            if (x1 <= x0)
+                continue;
+            lastRight = x1;
+            context.FillRectangle(band, new Rect(x0, RulerHeight - 5, x1 - x0, 5));
+            context.FillRectangle(wash, new Rect(x0, AudioTop, x1 - x0, TrackTop + TrackHeight - AudioTop));
         }
     }
 

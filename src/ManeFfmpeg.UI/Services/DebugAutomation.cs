@@ -513,6 +513,13 @@ internal static class DebugAutomation
                         if (arg.Length > 0)
                             SaveRetina(window.SpeakerButton, arg);
                         break;
+                    case "clip-scan":
+                        // clip-scan: runs the clipping check to its end and prints what it marked
+                        await vm.ScanClippingCommand.ExecuteAsync(null);
+                        Console.WriteLine($"[clip-scan] status='{vm.StatusMessage}' current={vm.ClipMarksCurrent} marks=" +
+                                          string.Join(" ", vm.ClipMarks.Select(m => string.Create(CultureInfo.InvariantCulture,
+                                              $"{m.Start.TotalSeconds:0.###}-{m.End.TotalSeconds:0.###}({m.PeakDb:+0.0;-0.0})"))));
+                        break;
                     case "meters":
                         // meters [png]: the level meters' state (and the mixer strip at 2×)
                         Console.WriteLine($"[meters] width={window.MixerStrip.Bounds.Width:0.#} {window.LevelMeters.Describe()}");

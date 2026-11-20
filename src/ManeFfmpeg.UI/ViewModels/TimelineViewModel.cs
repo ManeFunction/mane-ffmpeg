@@ -133,6 +133,12 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
 
     public KeyframeIndex? Keyframes(SourceMedia source) => owner.Catalog.Keyframes(source);
 
+    /// <summary>Where the last clipping check found the mix clipping, drawn red; see <see cref="ClipMarksCurrent"/>.</summary>
+    public IReadOnlyList<ClipRange> ClipMarks => owner.ClipMarks;
+
+    /// <summary>The project hasn't changed since the clipping check (otherwise its marks are drawn faded).</summary>
+    public bool ClipMarksCurrent => owner.ClipMarksCurrent;
+
     public void Seek(TimeSpan time, bool scrubbing) => owner.Preview.SeekTo(Clamp(time), scrubbing);
 
     public void EndScrub() => owner.Preview.EndScrub();
