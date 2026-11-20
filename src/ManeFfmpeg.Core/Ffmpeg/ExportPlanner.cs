@@ -239,13 +239,14 @@ public static class ExportPlanner
         return new Item(clip, source, media, video, args.NoAudio ? null : new HeardAudio(file, fileMedia, stream!));
     }
 
-    /// <summary>The A2 clips with their files; none when the preset drops audio.</summary>
+    /// <summary>The A2 clips heard on the timeline, with their files; none when the preset drops audio.</summary>
     private static List<TrackItem> ResolveTrack(ProjectState state, IReadOnlyDictionary<string, MediaInfo> mediaById, PresetArguments args)
     {
         var track = new List<TrackItem>();
         if (args.NoAudio)
             return track;
-        foreach (var clip in state.AudioTrack)
+        // What starts after the timeline ends isn't heard, so its file doesn't matter.
+        foreach (var clip in state.AudioTrack.Where(c => c.Start < state.Timeline.Duration))
         {
             var file = state.AudioFile(clip.FileId)
                 ?? throw new ExportPlanException("An A2 clip plays an audio file that is no longer in the project.");
@@ -260,12 +261,11 @@ public static class ExportPlanner
 
     private static IEnumerable<string> TrackNotes(Context ctx)
     {
-        if (!ctx.HasTrack)
-            yield break;
-        var heard = ctx.Track.Count(t => t.Clip.Start < ctx.Job.State.Timeline.Duration);
-        yield return heard == ctx.Track.Count
-            ? $"A2 is mixed in: {ctx.Track.Count} clip(s)."
-            : $"A2 is mixed in: {heard} of {ctx.Track.Count} clip(s); the rest start after the timeline ends.";
+        if (ctx.HasTrack)
+            yield return $"A2 is mixed in: {ctx.Track.Count} clip(s).";
+        var left = ctx.Args.NoAudio ? 0 : ctx.Job.State.AudioTrack.Count - ctx.Track.Count;
+        if (left > 0)
+            yield return $"{left} A2 clip(s) start after the timeline ends and are left out.";
     }
 
     private static bool IsWholeFile(Item item) =>
@@ -601,7 +601,7 @@ public static class ExportPlanner
         try
         {
             var items = state.Timeline.Clips.Select(c => Resolve(state, media, c, args)).ToList();
-            if (CopiedAudio(items, args, hasTrack: state.AudioTrack.Count > 0 && !args.NoAudio) is { } copied)
+            if (CopiedAudio(items, args, hasTrack: !args.NoAudio && state.AudioTrack.Any(c => c.Start < state.Timeline.Duration)) is { } copied)
                 return AudioExtension(copied.Item.Audio!.Codec);
             return AudioExtension(args.AudioCopy ? PresetArguments.Parse(preset.AudioFallbackArguments).AudioCodec : args.AudioCodec);
         }

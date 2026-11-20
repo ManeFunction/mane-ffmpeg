@@ -359,6 +359,29 @@ public class MixTests
     }
 
     [Fact]
+    public void A2_clips_after_the_timeline_ends_are_left_out()
+    {
+        var whole = Clip.Create("v", S(0), S(10));
+        var late = T("late", 12, 0, 5) with { FileId = "gone" };
+        var job = Job(Encode, [late], whole);
+        job = job with { State = job.State with { AudioFiles = job.State.AudioFiles.Add(new SourceMedia { Id = "gone", Path = "/m/gone.mp3" }) } };
+        // Its file isn't analyzed (or is missing), and the whole file is still passed through untouched.
+        var plan = ExportPlanner.Plan(job);
+        Assert.Equal(ExportMode.Passthrough, plan.Mode);
+        Assert.Contains(plan.Notes, n => n.Contains("1 A2 clip(s) start after the timeline ends"));
+        Assert.DoesNotContain(plan.Notes, n => n.Contains("A2 is mixed in"));
+
+        var mixed = ExportPlanner.Plan(Job(Encode, [T("a", 2, 0, 5), T("b", 10, 0, 5)], whole));
+        Assert.Contains(mixed.Notes, n => n == "A2 is mixed in: 1 clip(s).");
+        Assert.DoesNotContain(Graph(mixed), "[4:0]");
+
+        // The audio is still copied as it is, in its own file type.
+        var audio = Job(Preset.ExtractAudio, [late], whole);
+        Assert.Equal(ExportMode.AudioCopy, ExportPlanner.Plan(audio).Mode);
+        Assert.Equal("m4a", ExportPlanner.AudioExtensionFor(audio.State, audio.Media, Preset.ExtractAudio));
+    }
+
+    [Fact]
     public void The_A2_files_are_never_overwritten_and_presets_without_audio_ignore_A2()
     {
         var job = Job(Encode, [T("a", 0, 0, 30)], Clip.Create("v", S(0), S(10))) with { OutputPath = "/m/song.mp3" };
