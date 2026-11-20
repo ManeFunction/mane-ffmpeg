@@ -202,6 +202,7 @@ public static class TimelineEditor
 
     private static CutGrid Grid(Clip clip, Func<string, CutGrid?> grids) => grids(clip.SourceId) ?? CutGrid.Unknown(clip);
 
-    private static TimeSpan Clamp(TimeSpan value, TimeSpan min, TimeSpan max) =>
+    /// <summary>The time kept between <paramref name="min"/> and <paramref name="max"/>; the A2 edits use it too.</summary>
+    internal static TimeSpan Clamp(TimeSpan value, TimeSpan min, TimeSpan max) =>
         value < min ? min : value > max ? max : value;
 }

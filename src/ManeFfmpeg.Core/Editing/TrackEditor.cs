@@ -42,7 +42,7 @@ public static class TrackEditor
         var clip = track[index];
         var min = index > 0 ? track[index - 1].End : TimeSpan.Zero;
         var max = index + 1 < track.Count ? track[index + 1].Start - clip.Duration : TimeSpan.MaxValue;
-        start = Clamp(start, min, max < min ? min : max);
+        start = TimelineEditor.Clamp(start, min, max < min ? min : max);
         return start == clip.Start ? track : track.SetItem(index, clip with { Start = start });
     }
 
@@ -56,7 +56,7 @@ public static class TrackEditor
         var earliestStart = index > 0 ? track[index - 1].End : TimeSpan.Zero;
         // In can't go before the file's start, nor the start before the previous clip.
         var minIn = Max(TimeSpan.Zero, clip.In - (clip.Start - earliestStart));
-        newIn = Clamp(newIn, minIn, clip.Out - TimelineEditor.MinClipDuration);
+        newIn = TimelineEditor.Clamp(newIn, minIn, clip.Out - TimelineEditor.MinClipDuration);
         return newIn == clip.In ? track : track.SetItem(index, clip with { In = newIn, Start = clip.Start + (newIn - clip.In) });
     }
 
@@ -70,7 +70,7 @@ public static class TrackEditor
         var max = index + 1 < track.Count ? clip.Out + (track[index + 1].Start - clip.End) : TimeSpan.MaxValue;
         if (fileEnd is { } end && end < max)
             max = end;
-        newOut = Clamp(newOut, clip.In + TimelineEditor.MinClipDuration, Max(max, clip.In + TimelineEditor.MinClipDuration));
+        newOut = TimelineEditor.Clamp(newOut, clip.In + TimelineEditor.MinClipDuration, Max(max, clip.In + TimelineEditor.MinClipDuration));
         return newOut == clip.Out ? track : track.SetItem(index, clip with { Out = newOut });
     }
 
@@ -152,9 +152,6 @@ public static class TrackEditor
 
     private static ImmutableList<TrackClip> Sorted(ImmutableList<TrackClip> track) =>
         track.Sort((a, b) => a.Start.CompareTo(b.Start));
-
-    private static TimeSpan Clamp(TimeSpan value, TimeSpan min, TimeSpan max) =>
-        value < min ? min : value > max ? max : value;
 
     private static TimeSpan Max(TimeSpan a, TimeSpan b) => a > b ? a : b;
 }
