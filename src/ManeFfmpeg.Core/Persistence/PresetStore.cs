@@ -18,8 +18,28 @@ public sealed class PresetStore
         _path = path ?? Path.Combine(AppPaths.ConfigDirectory, "presets.json");
         var (presets, version) = Load(_path);
         _presets = presets ?? [.. Preset.BuiltIns];
-        if (presets is not null && version < CurrentVersion && Migrate(_presets, version))
+        var migrated = presets is not null && version < CurrentVersion && Migrate(_presets, version);
+        if ((presets is not null && RepairKinds(_presets)) || migrated)
             Persist();
+    }
+
+    /// <summary>
+    /// Gives the audio built-ins their kind back. A build before version 5 doesn't know about kinds, and saving there
+    /// drops them (and writes version 4 again); when this build next loads the file, its audio built-ins are already
+    /// listed, so the version 5 migration leaves them alone, and they would stay video presets for good.
+    /// </summary>
+    private static bool RepairKinds(List<Preset> presets)
+    {
+        var changed = false;
+        for (var i = 0; i < presets.Count; i++)
+        {
+            if (presets[i].Kind != PresetKind.Audio && Preset.BuiltIns.Any(b => b.Kind == PresetKind.Audio && b.Id == presets[i].Id))
+            {
+                presets[i] = presets[i] with { Kind = PresetKind.Audio };
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     /// <summary>

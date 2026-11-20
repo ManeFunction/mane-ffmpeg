@@ -127,6 +127,30 @@ public class PresetStoreTests
     }
 
     [Fact]
+    public void Audio_built_ins_saved_by_an_older_build_get_their_kind_back()
+    {
+        // What an older build writes after reading this build's file: the audio presets kept, their kind dropped.
+        var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, $$"""
+            { "version": 4, "presets": [
+              { "id": "builtin-plane-copy", "name": "copy (w/o encode)", "arguments": "-c:v copy -c:a copy" },
+              { "id": "{{Preset.ExtractAudio.Id}}", "name": "extract audio (as is)", "arguments": "{{Preset.ExtractAudio.Arguments}}" } ] }
+            """);
+        try
+        {
+            var store = new PresetStore(path);
+            Assert.Equal(PresetKind.Audio, store.Find(Preset.ExtractAudio.Id)?.Kind);
+            Assert.Equal(PresetKind.Video, store.Find("builtin-plane-copy")?.Kind);
+            Assert.Single(store.Presets, p => p.Id == Preset.ExtractAudio.Id);
+            Assert.Equal(PresetKind.Audio, new PresetStore(path).Find(Preset.ExtractAudio.Id)?.Kind);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void Version_4_file_gains_the_audio_built_ins_after_the_users_presets()
     {
         var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");
