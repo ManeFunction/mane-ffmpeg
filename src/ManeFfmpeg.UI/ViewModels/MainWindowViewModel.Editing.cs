@@ -315,13 +315,15 @@ public sealed partial class MainWindowViewModel
         var (next, id) = ProjectEditor.AddTrackClip(State, fileId, start, length);
         if (id is null)
         {
-            StatusMessage = "That part of A2 is taken: drop the file on an empty stretch.";
+            StatusMessage = TrackTakenMessage;
             return;
         }
         Commit(next);
         Timeline.SelectOnly(id);
         StatusMessage = TrackMessage(fileId);
     }
+
+    private const string TrackTakenMessage = "That part of A2 is taken: drop the file on an empty stretch.";
 
     private string TrackMessage(string fileId) =>
         $"{State.AudioFile(fileId)?.DisplayName} is mixed in on A2. Drag it to move it, drag its edges to trim it; Selection sets its volume.";

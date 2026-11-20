@@ -283,6 +283,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable, IA
             Timeline.SelectOnly(id);
             StatusMessage = TrackMessage(added.AudioFiles[0]);
         }
+        else if (added.AudioFiles.Count > 0 && ProbedLength(added.State, added.AudioFiles[0], probed) is not null)
+            StatusMessage = TrackTakenMessage;
     }
 
     /// <summary>Where a just-probed audio file's sound ends (the catalog may not have it yet).</summary>
