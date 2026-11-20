@@ -24,16 +24,7 @@ public sealed class PreviewPlayer : IDisposable
     private bool _timeline;
     private int? _sourceAudioStream;
     private bool _compact;
-    private TimelineMix? _mix;
-    private string _graph = "";
-    // The graph without its alignment point, and the tracks it mixes.
-    private string _graphKey = "";
-    private (string A1, string? A2)? _mixTracks;
-    // The graph mixes A2 in, so after a seek its inputs must be aligned again (see TimelineMix.Graph); while paused that
-    // waits for playback to start, so scrubbing doesn't rebuild the graph at every step.
-    private bool _aligns;
-    private bool _alignStale;
-    private TimeSpan? _lastSeek;
+    private readonly MixGraph _mix;
     private bool _paused = true;
     // Play was pressed while the mix was being realigned: playback starts once that seek has landed (resumeAt), so the
     // first moment isn't heard twice. The timer starts it anyway if mpv never reports the seek finished.
@@ -52,6 +43,11 @@ public sealed class PreviewPlayer : IDisposable
         mpv.PlaybackRestarted += _seeks.Restarted;
         mpv.PlaybackRestarted += () => Post(OnPlaybackRestarted);
         _resumeTimer = new Timer(_ => Post(() => Resume(force: true)));
+        _mix = new MixGraph(graph => mpv.SetString("lavfi-complex", graph), at =>
+        {
+            if (_loaded is not null)
+                _seeks.Seek(at);
+        }, CurrentPosition);
         mpv.PropertyChanged += (name, value) => Post(() => OnProperty(name, value));
         mpv.FileLoaded += entry => Post(() => OnFileLoaded(entry));
         mpv.FileFailed += (entry, error) => Post(() => OnFileFailed(entry, error));
@@ -113,10 +109,9 @@ public sealed class PreviewPlayer : IDisposable
         {
             _paused = value;
             _resumeAt = null;
-            if (!value && _aligns && _alignStale && (_lastSeek ?? CurrentPosition()) is { } at && BuildGraph(at))
+            if (!value && _mix.OnPlay() is { } at)
             {
                 // The rebuilt graph restarts playback: stay paused until the seek back has landed.
-                SeekBack(at);
                 _resumeAt = at;
                 _resumeTimer.Change(ResumeTimeout, Timeout.InfiniteTimeSpan);
                 return;
@@ -148,7 +143,7 @@ public sealed class PreviewPlayer : IDisposable
     /// </summary>
     public void LoadTimeline(string url, TimeSpan position, TimelineMix? mix = null)
     {
-        _mix = mix;
+        _mix.Mix = mix;
         if (IsTimelineLoaded && _loaded == url)
         {
             ApplyTracks();
@@ -190,19 +185,8 @@ public sealed class PreviewPlayer : IDisposable
         // every file starts from mpv's own choice, and the tracks are picked once it has loaded.
         Mpv.SetString("vid", "auto");
         Mpv.SetString("aid", "auto");
-        // The graph names the old file's tracks; ApplyTracks sets the new one once the file has loaded. No seek back: the
-        // file is being replaced, and a seek sent to it would hold up the first one for the new file.
-        if (_graph.Length > 0)
-        {
-            _graph = "";
-            Mpv.SetString("lavfi-complex", "");
-        }
-        _graphKey = "";
-        _mixTracks = null;
-        _aligns = false;
-        // The new file starts at "start": its graph is built for that position once it has loaded.
-        _alignStale = true;
-        _lastSeek = start;
+        // ApplyTracks builds the new file's graph once it has loaded.
+        _mix.OnLoad(start);
         Mpv.SetString("start", TimeFormat.Seconds(start));
         _entry = Mpv.LoadFile(target);
     }
@@ -212,23 +196,14 @@ public sealed class PreviewPlayer : IDisposable
     {
         if (_loaded is null)
             return;
-        _lastSeek = time;
         Levels.Reset();
-        if (_aligns)
-        {
-            if (_paused)
-                _alignStale = true;
-            else
-                BuildGraph(time);
-        }
+        _mix.OnSeek(time, _paused);
         _seeks.Seek(time);
     }
 
     public void StepFrame(bool back)
     {
-        _lastSeek = null;
-        if (_aligns)
-            _alignStale = true;
+        _mix.OnFrameStep();
         _seeks.ForgetLastSeek();
         Mpv.CommandAsync(back ? "frame-back-step" : "frame-step");
     }
@@ -317,52 +292,11 @@ public sealed class PreviewPlayer : IDisposable
             Mpv.SetString("vid", "no");
         else if (vid is not null)
             Mpv.SetString("vid", vid);
-        if (_timeline && _mix is { } mix && aid is not null)
-        {
-            _mixTracks = (aid, TrackId(count));
-            // A changed mix, or one whose alignment is stale, is built at the position (a compact toggle or a reload of
-            // the same mix leaves it alone).
-            if (mix.Graph(aid, _mixTracks.Value.A2) != _graphKey || _alignStale || _graph.Length == 0)
-                Realign(_alignStale ? _lastSeek ?? CurrentPosition() : CurrentPosition());
-            return;
-        }
-        _mixTracks = null;
-        _aligns = false;
-        _graphKey = "";
-        if (SetGraph(""))
-            SeekBack(CurrentPosition());
-        Mpv.SetString("aid", aid ?? "no");
+        if (!_mix.OnTracks(_timeline && _mix.Mix is not null && aid is not null ? (aid, TrackId(count)) : null))
+            Mpv.SetString("aid", aid ?? "no");
     }
 
     private TimeSpan? CurrentPosition() => Mpv.GetDouble("time-pos") is { } seconds ? TimeFormat.FromSeconds(seconds) : null;
-
-    /// <summary>Builds the mix aligned at <paramref name="at"/> and, if the graph changed, seeks back there.</summary>
-    private void Realign(TimeSpan? at)
-    {
-        if (BuildGraph(at))
-            SeekBack(at);
-    }
-
-    /// <summary>Sets the mix graph for the current tracks, aligned at <paramref name="at"/>; whether it changed.</summary>
-    private bool BuildGraph(TimeSpan? at)
-    {
-        if (_mix is not { } mix || _mixTracks is not var (a1, a2))
-            return false;
-        _graphKey = mix.Graph(a1, a2);
-        _aligns = mix.A2 is not null && a2 is not null;
-        _alignStale = false;
-        return SetGraph(_aligns ? mix.Graph(a1, a2, at ?? TimeSpan.Zero) : _graphKey);
-    }
-
-    /// <summary>
-    /// mpv restarts playback after a graph change with a seek of its own that lands on the next keyframe (up to a GOP
-    /// later); seeking back exactly keeps the position.
-    /// </summary>
-    private void SeekBack(TimeSpan? at)
-    {
-        if (_loaded is not null && at is { } time)
-            _seeks.Seek(time);
-    }
 
     /// <summary>The id of the EDL's A2 track, or null when it has none.</summary>
     private string? TrackId(long count)
@@ -371,19 +305,6 @@ public sealed class PreviewPlayer : IDisposable
             if (Mpv.GetString($"track-list/{i}/type") == "audio" && Mpv.GetString($"track-list/{i}/title") == TimelineEdl.TrackTitle)
                 return Mpv.GetString($"track-list/{i}/id");
         return null;
-    }
-
-    /// <summary>
-    /// Sets mpv's lavfi-complex graph, which then picks the audio tracks itself; "" goes back to the track in "aid".
-    /// Only a change is sent: mpv rebuilds the audio chain (a short gap) every time it is set.
-    /// </summary>
-    private bool SetGraph(string graph)
-    {
-        if (graph == _graph)
-            return false;
-        _graph = graph;
-        Mpv.SetString("lavfi-complex", graph);
-        return true;
     }
 
     private void Post(Action action)
