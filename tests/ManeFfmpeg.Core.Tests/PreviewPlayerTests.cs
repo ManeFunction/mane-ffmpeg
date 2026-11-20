@@ -121,9 +121,9 @@ public class PreviewPlayerTests(FfmpegFixture media) : IClassFixture<FfmpegFixtu
         Assert.Contains("volume='0+1*gte(t,2)'[a1]", player.Mpv.GetString("lavfi-complex"));
 
         // The same timeline with another volume changes only the graph, in place.
-        player.LoadTimeline(url, TimeSpan.Zero, TimelineMix.For(state with { Timeline = new Timeline([muted with { Volume = 0.5 }, clip]) }));
+        player.ApplyMix(TimelineMix.For(state with { Timeline = new Timeline([muted with { Volume = 0.5 }, clip]) }));
         Assert.Contains("volume='0.5+0.5*gte(t,2)'[a1]", player.Mpv.GetString("lavfi-complex"));
-        player.LoadTimeline(url, TimeSpan.Zero, TimelineMix.For(state));
+        player.LoadTimeline(PreviewTimeline.For(state, new Dictionary<string, MediaInfo> { ["s"] = info, ["t"] = tone }, silence)!, TimeSpan.Zero);
         await Settled("the start after the graph changed back");
 
         player.Paused = false;

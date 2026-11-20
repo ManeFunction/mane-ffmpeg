@@ -141,6 +141,21 @@ public sealed class PreviewPlayer : IDisposable
     /// Plays the timeline EDL starting at <paramref name="position"/>, mixed as <paramref name="mix"/> says (null plays A1
     /// as it is). When that EDL is already loaded only a changed mix is applied, in place.
     /// </summary>
+    public void LoadTimeline(PreviewTimeline timeline, TimeSpan position) => LoadTimeline(timeline.Url, position, timeline.Mix);
+
+    /// <summary>
+    /// Applies a changed mix to the timeline that is loaded, in place and without reloading (a volume being dragged).
+    /// Nothing happens while no timeline is loaded.
+    /// </summary>
+    public void ApplyMix(TimelineMix? mix)
+    {
+        if (!IsTimelineLoaded)
+            return;
+        _mix.Mix = mix;
+        ApplyTracks();
+    }
+
+    /// <inheritdoc cref="LoadTimeline(PreviewTimeline, TimeSpan)"/>
     public void LoadTimeline(string url, TimeSpan position, TimelineMix? mix = null)
     {
         _mix.Mix = mix;

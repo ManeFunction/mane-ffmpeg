@@ -256,9 +256,8 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
         // A volume drag changes only the mix, which is applied in place (and heard) as it goes.
         if (_owner.History.InGesture)
         {
-            if (_silencePath is not null && _preview.IsTimelineLoaded && TimelineEdl.Build(State, _owner.Media, _silencePath) is { } same
-                && _preview.IsLoaded(same))
-                _preview.LoadTimeline(same, Timeline.Playhead, TimelineMix.For(State));
+            if (_owner.IsVolumeDragging)
+                _preview.ApplyMix(TimelineMix.For(State));
             return;
         }
         if (!_owner.HasClips)
@@ -272,14 +271,14 @@ public sealed partial class PreviewViewModel : ViewModelBase, IDisposable
             _ = PrepareSilenceAsync();
             return;
         }
-        var url = TimelineEdl.Build(State, _owner.Media, _silencePath);
-        if (url is null)
+        var timeline = PreviewTimeline.For(State, _owner.Media, _silencePath);
+        if (timeline is null)
         {
             PreviewMessage = _owner.Sources.Any(s => s.IsProblem) ? "Some videos are missing; relink them in the Files panel." : "Analyzing videos…";
             return;
         }
         PreviewMessage = null;
-        _preview.LoadTimeline(url, Timeline.Playhead, TimelineMix.For(State));
+        _preview.LoadTimeline(timeline, Timeline.Playhead);
     }
 
     private async Task PrepareSilenceAsync()

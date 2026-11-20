@@ -212,6 +212,9 @@ public sealed partial class MainWindowViewModel
 
     private bool _volumeDragging;
 
+    /// <summary>The volume slider is being dragged: only the mix changes, so the preview applies it in place.</summary>
+    internal bool IsVolumeDragging => _volumeDragging;
+
     /// <summary>
     /// The selected clips' volume in percent (0–200), V1 or A2; the first selected clip's when they differ. With a whole
     /// track selected, that track's volume.
