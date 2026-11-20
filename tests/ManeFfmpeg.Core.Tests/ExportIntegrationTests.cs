@@ -502,7 +502,10 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
         var progress = new ProgressLog();
         using var cts = new CancellationTokenSource();
         var run = Task.Run(() => runner.RunAsync(plan, progress, cts.Token));
-        await Wait.Until(() => progress.Done > TimeSpan.Zero, "ffmpeg's first progress");
+        // Not the final report (which also has Done > 0): pausing after it would pause a finished export.
+        var total = plan.Steps.Aggregate(TimeSpan.Zero, (s, step) => s + step.Duration);
+        await Wait.Until(() => progress.Done > TimeSpan.Zero && progress.Done < total, "ffmpeg's first progress",
+            () => $"done {progress.Done} of {total}, finished {run.IsCompleted}");
         runner.Pause();
         await Task.Delay(300);
 

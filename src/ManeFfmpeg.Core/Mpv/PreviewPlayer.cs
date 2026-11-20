@@ -30,11 +30,9 @@ public sealed class PreviewPlayer : IDisposable
     // first moment isn't heard twice. The timer starts it anyway if mpv never reports the seek finished.
     private TimeSpan? _resumeAt;
     private readonly Timer _resumeTimer;
-    // Where the mix's last seek back should land, while CheckSeekBack watches it, how often it was resent, and where
-    // the last restart landed.
+    // Where the mix's last seek back should land, while CheckSeekBack watches it, and how often it was resent.
     private TimeSpan? _seekBack;
     private int _seekBackRetries;
-    private TimeSpan? _landed;
     private DateTime _seekBackUntil;
     private readonly Timer _seekBackTimer;
 
@@ -48,17 +46,11 @@ public sealed class PreviewPlayer : IDisposable
             armed => _seekTimer.Change(armed ? SeekPacer.CheckInterval : Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan));
         // Straight from mpv's event thread: the next seek shouldn't wait for a busy UI thread.
         mpv.PlaybackRestarted += _seeks.Restarted;
-        // The position is read right away: once playback runs on, it no longer tells where the seek landed.
-        mpv.PlaybackRestarted += () =>
+        mpv.PlaybackRestarted += () => Post(() =>
         {
-            var landed = CurrentPosition();
-            Post(() =>
-            {
-                _landed = landed;
-                CheckSeekBack();
-                Resume(force: false);
-            });
-        };
+            CheckSeekBack();
+            Resume(force: false);
+        });
         _seekBackTimer = new Timer(_ => Post(CheckSeekBack));
         _resumeTimer = new Timer(_ => Post(() => Resume(force: true)));
         _mix = new MixGraph(graph => mpv.SetString("lavfi-complex", graph), at =>
@@ -177,14 +169,20 @@ public sealed class PreviewPlayer : IDisposable
     /// refresh seek at once; when the seek back arrives while that one is still under way, mpv can merge the two and land
     /// on the next keyframe instead (seen under load: 0.5 s instead of 0). Runs on every restart and, as mpv doesn't
     /// always report a restart once it stops seeking, on a timer for a while after the seek back (a check can come before
-    /// the merged seek moves the position). Paused, the position is where it landed; playing, the last restart tells.
+    /// the merged seek moves the position). Only while paused: then the position is where the seek landed. Playing, it
+    /// runs on and can't tell (a position read at a restart event can be stale too), and seeking again would replay audio;
+    /// play pressed after a paused seek stays paused until the seek back has landed (Resume), so it is checked then.
     /// </summary>
     private void CheckSeekBack()
     {
         if (_seekBack is not { } target)
             return;
-        if (!_seeks.Idle || Mpv.GetString("seeking") != "no"
-            || (Mpv.GetString("pause") == "yes" ? CurrentPosition() : _landed) is not { } at)
+        if (Mpv.GetString("pause") != "yes")
+        {
+            _seekBack = null;
+            return;
+        }
+        if (!_seeks.Idle || Mpv.GetString("seeking") != "no" || CurrentPosition() is not { } at)
         {
             ArmSeekBackCheck();
             return;
