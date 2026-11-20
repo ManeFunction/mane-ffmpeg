@@ -646,7 +646,23 @@ public static class ExportPlanner
     {
         if (!ctx.AnyAudio)
             throw new ExportPlanException("The timeline has no audio to save.");
-        return CopiedAudio(ctx) is { } copied ? AudioCopy(ctx, copied.Item, copied.Placement) : AudioEncode(ctx);
+        // The output's name may have been chosen for other audio than the timeline now has (the copied codec, or the
+        // fallback once something stops the copy), so check that the file can hold what is written.
+        var extension = Path.GetExtension(ctx.Out).TrimStart('.');
+        string? reason = null, copiedCodec = null;
+        if (CopiedAudio(ctx) is { } copied)
+        {
+            copiedCodec = copied.Item.Audio!.Codec;
+            if (AudioContainer.Accepts(extension, copiedCodec) != false)
+                return AudioCopy(ctx, copied.Item, copied.Placement);
+            reason = $"a .{extension} file can't hold {copiedCodec} audio as it is";
+        }
+        var encoder = EncodedAudioCodec(ctx);
+        if (AudioContainer.Accepts(extension, encoder) == false)
+            throw new ExportPlanException(
+                $"A .{extension} file can't hold the {AudioContainer.Normalize(encoder!)} audio \"{ctx.Job.Preset.Name}\" writes here. " +
+                $"Name the file .{AudioExtension(copiedCodec ?? encoder)}, or press Auto.");
+        return AudioEncode(ctx, reason);
     }
 
     /// <summary>
@@ -694,7 +710,8 @@ public static class ExportPlanner
     }
 
     /// <summary>Every clip's audio (silence where a clip has none) joined in a filter graph, then encoded.</summary>
-    private static ExportPlan AudioEncode(Context ctx)
+    /// <param name="reason">Why the audio isn't copied, when nothing on the timeline stops it.</param>
+    private static ExportPlan AudioEncode(Context ctx, string? reason = null)
     {
         var notes = new List<string>();
         var inputs = new List<string>();
@@ -714,7 +731,7 @@ public static class ExportPlanner
         a.AddRange(inputs);
         a.AddRange(["-filter_complex", graph.ToString(), "-map", "[aout]"]);
         a.AddRange(AudioTokens(ctx, true, notes,
-            AudioReencodeReason(ctx, otherwise: n > 1 ? "the timeline has several clips" : "the audio doesn't cover the whole clip")));
+            AudioReencodeReason(ctx, otherwise: reason ?? (n > 1 ? "the timeline has several clips" : "the audio doesn't cover the whole clip"))));
         a.Add(ctx.Out);
         var duration = ctx.Items.Aggregate(TimeSpan.Zero, (s, it) => s + it.Clip.Duration);
         return new ExportPlan(ExportMode.AudioEncode, [new ExportStep("Saving audio", a, duration, true)], [], duration, notes);

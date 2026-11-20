@@ -382,6 +382,31 @@ public class MixTests
     }
 
     [Fact]
+    public void A_chosen_audio_file_name_must_hold_what_is_written()
+    {
+        var whole = Clip.Create("v", S(0), S(10));
+        // Named for the AAC that "as is" copies, then the volume changes: FLAC, the fallback, doesn't fit a .m4a.
+        var quiet = Job(Preset.ExtractAudio, [], whole with { Volume = 0.5 });
+        var error = Assert.Throws<ExportPlanException>(() => ExportPlanner.Plan(quiet));
+        Assert.Contains("A .m4a file can't hold the flac audio", error.Message);
+        Assert.Contains("Name the file .flac", error.Message);
+
+        // Named .flac while the AAC could be copied: it's encoded to FLAC instead, and the note says why.
+        var flac = ExportPlanner.Plan(Job(Preset.ExtractAudio, [], whole) with { OutputPath = "/out/edit.flac" });
+        Assert.Equal(ExportMode.AudioEncode, flac.Mode);
+        Assert.Contains("flac", flac.Steps[^1].Arguments);
+        Assert.Contains(flac.Notes, n => n.Contains("because a .flac file can't hold aac audio as it is"));
+
+        // A copy that can't be encoded to fit either names the file type it needs.
+        var mp3 = Job(Preset.ExtractAudio, [], whole) with { OutputPath = "/out/edit.mp3" };
+        Assert.Contains("Name the file .m4a", Assert.Throws<ExportPlanException>(() => ExportPlanner.Plan(mp3)).Message);
+
+        // Files that hold most codecs aren't second-guessed.
+        Assert.Equal(ExportMode.AudioEncode, ExportPlanner.Plan(quiet with { OutputPath = "/out/edit.mka" }).Mode);
+        Assert.Equal(ExportMode.AudioCopy, ExportPlanner.Plan(Job(Preset.ExtractAudio, [], whole)).Mode);
+    }
+
+    [Fact]
     public void The_A2_files_are_never_overwritten_and_presets_without_audio_ignore_A2()
     {
         var job = Job(Encode, [T("a", 0, 0, 30)], Clip.Create("v", S(0), S(10))) with { OutputPath = "/m/song.mp3" };
