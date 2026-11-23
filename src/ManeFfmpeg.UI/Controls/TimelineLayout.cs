@@ -45,6 +45,23 @@ public static class TimelineLayout
         return scroll >= lastPage ? scroll : Math.Min(t - visibleSeconds * 0.1, lastPage);
     }
 
+    /// <summary>
+    /// The zoom (pixels per second) and scroll (seconds at the left edge) that show <paramref name="start"/> to
+    /// <paramref name="end"/> across a track area <paramref name="viewportWidth"/> pixels wide, with
+    /// <see cref="FitPadding"/> pixels to spare split around it. Centered when the zoom limits keep it from filling the
+    /// width; never scrolled before the timeline's start.
+    /// </summary>
+    public static (double Zoom, double Scroll) FitRange(double viewportWidth, TimeSpan start, TimeSpan end, double minZoom, double maxZoom)
+    {
+        var seconds = Math.Max((end - start).TotalSeconds, 1e-3);
+        var zoom = Math.Clamp((viewportWidth - FitPadding) / seconds, minZoom, maxZoom);
+        var center = (start.TotalSeconds + end.TotalSeconds) / 2;
+        return (zoom, Math.Max(0, center - viewportWidth / zoom / 2));
+    }
+
+    /// <summary>Pixels left free around what a fit shows.</summary>
+    public const double FitPadding = 24;
+
     public static double RulerCenter => RulerHeight / 2;
 
     public static double VideoCenter => VideoTop + VideoHeight / 2;

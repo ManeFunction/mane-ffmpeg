@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - On Windows and Linux, a *Help* menu at the end of the menu bar with *Check for Updates…* and *About Mane FFmpeg*,
   which only the macOS app menu had.
+- Double-clicking a clip on the timeline (V1, A1 or A2) zooms and scrolls so that clip fills the visible width, the
+  way *Fit Timeline* does for the whole project.
+
 ### Changed
 - Once the clipping check has marked the timeline, its button turns into *Clear clipping*, which removes the marks.
 - Slipping a clip's audio on A1 with Shift held now snaps where the audio starts or runs out (or loops) to the clip's

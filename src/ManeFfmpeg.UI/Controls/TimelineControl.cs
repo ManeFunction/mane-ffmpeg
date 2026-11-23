@@ -536,9 +536,16 @@ public sealed class TimelineControl : Control
         var p = e.GetPosition(this);
         if (p.X < Header)
             return;
-        e.Pointer.Capture(this);
         e.Handled = true;
-        vm.Gestures.Press(HitTest(vm, p), (e.KeyModifiers & EditMenu.CommandModifier) != 0, (e.KeyModifiers & KeyModifiers.Shift) != 0);
+        var hit = HitTest(vm, p);
+        // A double-click on a clip zooms to it; the first click has already selected it.
+        if (e.ClickCount == 2 && hit.ClipId is { } clipId && hit.Zone != TimelineZone.Ruler)
+        {
+            vm.FitClip(clipId);
+            return;
+        }
+        e.Pointer.Capture(this);
+        vm.Gestures.Press(hit, (e.KeyModifiers & EditMenu.CommandModifier) != 0, (e.KeyModifiers & KeyModifiers.Shift) != 0);
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)

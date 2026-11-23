@@ -434,4 +434,28 @@ public class TimelineGestureTests
         gestures.Release();
         Assert.Equal(["m"], host.Selection);
     }
+
+    [Fact]
+    public void Fitting_a_range_fills_the_width_with_padding_split_around_it()
+    {
+        var (zoom, scroll) = TimelineLayout.FitRange(824, S(10), S(18), 0.02, 1200);
+        Assert.Equal(100, zoom, 6);
+        Assert.Equal(10 - TimelineLayout.FitPadding / 2 / 100, scroll, 6);
+    }
+
+    [Fact]
+    public void Fitting_a_range_at_the_start_does_not_scroll_before_zero()
+    {
+        var (zoom, scroll) = TimelineLayout.FitRange(824, S(0), S(8), 0.02, 1200);
+        Assert.Equal(100, zoom, 6);
+        Assert.Equal(0, scroll);
+    }
+
+    [Fact]
+    public void Fitting_a_range_too_short_for_the_max_zoom_centers_it()
+    {
+        var (zoom, scroll) = TimelineLayout.FitRange(1000, S(5), S(5.1), 0.02, 1200);
+        Assert.Equal(1200, zoom);
+        Assert.Equal(5.05 - 1000.0 / 1200 / 2, scroll, 6);
+    }
 }

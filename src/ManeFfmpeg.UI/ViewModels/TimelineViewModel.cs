@@ -189,9 +189,21 @@ public sealed partial class TimelineViewModel : ViewModelBase, ITimelineGestureH
     public void Fit()
     {
         var seconds = Math.Max(Timeline.Duration.TotalSeconds, 1);
-        Zoom = Math.Clamp((ViewportWidth - 24) / seconds, MinZoom, MaxZoom);
-        Scroll = 0;
+        FitRange(TimeSpan.Zero, TimeSpan.FromSeconds(seconds));
     }
+
+    /// <summary>Zooms and scrolls so the V1 or A2 clip &lt;paramref name="clipId"/&gt; fills the visible width.</summary>
+    public void FitClip(string clipId)
+    {
+        var index = Timeline.IndexOf(clipId);
+        if (index >= 0)
+            FitRange(Timeline.StartOf(index), Timeline.StartOf(index + 1));
+        else if (State.TrackClip(clipId) is { } trackClip)
+            FitRange(trackClip.Start, trackClip.End);
+    }
+
+    private void FitRange(TimeSpan start, TimeSpan end) =>
+        (Zoom, Scroll) = Controls.TimelineLayout.FitRange(ViewportWidth, start, end, MinZoom, MaxZoom);
 
     /// <summary>Zooms keeping the time under <paramref name="anchorX"/> (pixels from the track start) in place.</summary>
     public void ZoomBy(double factor, double anchorX)

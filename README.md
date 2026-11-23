@@ -176,6 +176,7 @@ Mouse:
 - Click the ruler to seek; drag on it to scrub. Only the ruler moves the playhead: clicks on V1 and A1 select. Hold Shift while scrubbing to snap the playhead to clip
   edges and to where a clip's audio starts, runs out or loops (shifted or short audio inside a clip).
 - Click a clip to select it; Shift extends the selection, ⌘/Ctrl toggles a clip in or out of it.
+- Double-click a clip (on V1, A1 or A2) to zoom so it fills the visible width.
 - Drag a clip to reorder it, drag its edges to trim, and drag on the audio row to slip its audio (hold Shift to snap where the audio starts or ends to the clip's start or end, Alt/Option for fine steps).
 - Drag an audio file from *Files → Audio* (or Finder, Explorer) onto a clip to replace its sound, or onto A2 to mix it in.
 - Drag an A2 clip to move it, and its edges to trim it.
