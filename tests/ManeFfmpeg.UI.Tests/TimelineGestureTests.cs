@@ -117,15 +117,82 @@ public class TimelineGestureTests
     }
 
     [Fact]
-    public void Shift_slips_at_a_tenth_of_the_speed()
+    public void Alt_slips_at_a_tenth_of_the_speed()
     {
         var host = ThreeClips();
         var gestures = new TimelineGestures(host);
         gestures.Press(new TimelineHit(TimelineZone.Audio, S(1.0), "a"), command: false, shift: false);
-        gestures.Move(S(1.05), shift: true);
-        gestures.Move(S(1.12), shift: true);
+        gestures.Move(S(1.05), shift: false, alt: true);
+        gestures.Move(S(1.12), shift: false, alt: true);
         gestures.Release();
         Assert.Equal(TimeSpan.FromMilliseconds(12), host.Timeline.Clips[0].AudioOffset);
+    }
+
+    [Fact]
+    public void Alt_pressed_or_released_mid_slip_changes_speed_from_where_the_audio_is()
+    {
+        var host = ThreeClips();
+        var gestures = new TimelineGestures(host);
+        gestures.Press(new TimelineHit(TimelineZone.Audio, S(1.0), "a"), command: false, shift: false);
+        gestures.Move(S(1.5), shift: false);
+        Assert.Equal(S(0.5), host.Timeline.Clips[0].AudioOffset);
+        gestures.Move(S(1.7), shift: false, alt: true);
+        Assert.Equal(S(0.52), host.Timeline.Clips[0].AudioOffset);
+        gestures.AltChanged(false);
+        gestures.Move(S(1.8), shift: false);
+        Assert.Equal(S(0.62), host.Timeline.Clips[0].AudioOffset);
+        gestures.AltChanged(true);
+        gestures.Move(S(0.8), shift: false, alt: true);
+        Assert.Equal(S(0.52), host.Timeline.Clips[0].AudioOffset);
+        gestures.Release();
+        Assert.Equal(S(0.52), host.Timeline.Clips[0].AudioOffset);
+        host.History.Undo();
+        Assert.Equal(TimeSpan.Zero, host.Timeline.Clips[0].AudioOffset);
+    }
+
+    [Fact]
+    public void Shift_snaps_the_slipped_audio_start_to_the_clip_end()
+    {
+        var host = ThreeClips();
+        host.AudioEnds["a"] = S(2);
+        var gestures = new TimelineGestures(host);
+        gestures.Press(new TimelineHit(TimelineZone.Audio, S(0.1), "a"), command: false, shift: false);
+        gestures.Move(S(1.0), shift: true);
+        Assert.Equal(S(0.9), host.Timeline.Clips[0].AudioOffset);
+        gestures.Move(S(2.05), shift: true);
+        Assert.Equal(S(2), host.Timeline.Clips[0].AudioOffset);
+        gestures.Release();
+        Assert.Equal(S(2), host.Timeline.Clips[0].AudioOffset);
+    }
+
+    [Fact]
+    public void Shift_snaps_the_slipped_audio_end_to_the_clip_start()
+    {
+        var host = new Host(new Timeline([C("a", 0, 2), C("b", 10, 13)]));
+        host.AudioEnds["b"] = S(14);
+        var gestures = new TimelineGestures(host);
+        // b's file runs out at 14 s (source time), 4 s after its in point: a slip of −4 s puts that at b's start.
+        gestures.Press(new TimelineHit(TimelineZone.Audio, S(4.5), "b"), command: false, shift: false);
+        gestures.Move(S(0.55), shift: true);
+        Assert.Equal(S(-4), host.Timeline.Clips[1].AudioOffset);
+        gestures.Move(S(0.55), shift: false);
+        Assert.Equal(S(-3.95), host.Timeline.Clips[1].AudioOffset);
+        gestures.ShiftChanged(true);
+        Assert.Equal(S(-4), host.Timeline.Clips[1].AudioOffset);
+        gestures.Release();
+    }
+
+    [Fact]
+    public void Shift_snaps_a_loop_seam_to_the_clip_start()
+    {
+        var replaced = TimelineEditor.ReplaceAudio(ThreeClips().Timeline, "a", "f");
+        var host = new Host(TimelineEditor.SetAudioLoop(replaced, new HashSet<string> { "a" }, true));
+        host.AudioEnds["a"] = S(0.5);
+        var gestures = new TimelineGestures(host);
+        gestures.Press(new TimelineHit(TimelineZone.Audio, S(1.0), "a"), command: false, shift: false);
+        gestures.Move(S(1.46), shift: true);
+        Assert.Equal(S(0.5), host.Timeline.Clips[0].ReplacedAudio!.Offset);
+        gestures.Release();
     }
 
     [Fact]

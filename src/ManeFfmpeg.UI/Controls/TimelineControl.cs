@@ -558,7 +558,7 @@ public sealed class TimelineControl : Control
             };
             return;
         }
-        vm.Gestures.Move(T(vm, p.X), shift: (e.KeyModifiers & KeyModifiers.Shift) != 0);
+        vm.Gestures.Move(T(vm, p.X), shift: (e.KeyModifiers & KeyModifiers.Shift) != 0, alt: (e.KeyModifiers & KeyModifiers.Alt) != 0);
         if (vm.Gestures.IsReordering)
             InvalidateVisual();
     }
@@ -568,6 +568,8 @@ public sealed class TimelineControl : Control
         base.OnKeyDown(e);
         if (e.Key is Key.LeftShift or Key.RightShift)
             Timeline?.Gestures.ShiftChanged(true);
+        if (e.Key is Key.LeftAlt or Key.RightAlt)
+            Timeline?.Gestures.AltChanged(true);
     }
 
     protected override void OnKeyUp(KeyEventArgs e)
@@ -575,6 +577,8 @@ public sealed class TimelineControl : Control
         base.OnKeyUp(e);
         if (e.Key is Key.LeftShift or Key.RightShift)
             Timeline?.Gestures.ShiftChanged(false);
+        if (e.Key is Key.LeftAlt or Key.RightAlt)
+            Timeline?.Gestures.AltChanged(false);
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)

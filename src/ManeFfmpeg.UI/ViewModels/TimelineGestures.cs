@@ -79,14 +79,15 @@ public interface ITimelineGestureHost
 /// ruler moves the playhead: a click there seeks, a drag scrubs. On the track rows a click selects (or clears the
 /// selection) and a drag reorders clips, trims edges or slips audio, or moves and trims A2 clips, each drag one undo
 /// step. Scrubbing with Shift held snaps the playhead to clip edges and audio edges; with Shift, a moved A2 clip or a
-/// dragged A2 edge snaps to the same points.
+/// dragged A2 edge snaps to the same points. Slipping A1 audio with Shift held snaps where the audio starts or runs out
+/// to the clip's start or end; with Alt (Option) held the slip goes at a tenth of the pointer's speed.
 /// </summary>
 public sealed class TimelineGestures(ITimelineGestureHost host)
 {
     /// <summary>How far (pixels) the pointer must move before a press on a clip becomes a drag.</summary>
     public const double DragThreshold = 4;
 
-    /// <summary>How close (pixels) a Shift-scrub must come to a clip or audio edge to snap to it.</summary>
+    /// <summary>How close (pixels) a Shift-scrub (or a Shift-slipped audio edge) must come to an edge to snap to it.</summary>
     public const double SnapRadius = 8;
 
     private enum Drag { None, Idle, Scrub, PendingClip, Reorder, TrimIn, TrimOut, PendingSlip, Slip, PendingTrack, TrackMove, TrackTrimIn, TrackTrimOut }
@@ -100,6 +101,12 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
     private ImmutableList<TrackClip>? _trackStart;
     private bool _command;
     private bool _shift;
+    private bool _alt;
+
+    // A slip is _slipBase plus the pointer's travel since _slipFrom (a tenth of it with Alt). Pressing or releasing Alt
+    // mid-slip moves both to where the audio is now, so the speed changes from there instead of from the press.
+    private TimeSpan _slipBase;
+    private TimeSpan _slipFrom;
 
     public bool IsActive => _drag != Drag.None;
 
@@ -113,7 +120,7 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
     public void Press(TimelineHit hit, bool command, bool shift)
     {
         Reset();
-        _pressTime = _lastTime = hit.Time;
+        _pressTime = _lastTime = _slipFrom = hit.Time;
         _command = command;
         _shift = shift;
         var index = hit.ClipId is { } id ? host.Timeline.IndexOf(id) : -1;
@@ -162,10 +169,14 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
     }
 
     /// <param name="time">Timeline time now under the pointer.</param>
-    /// <param name="shift">Shift is held: a scrub snaps to clip and audio edges, a slip goes at a tenth of the pointer's speed.</param>
-    public void Move(TimeSpan time, bool shift)
+    /// <param name="shift">Shift is held: a scrub snaps to clip and audio edges, a slip snaps the audio's edges to the clip's sides.</param>
+    /// <param name="alt">Alt (Option) is held: a slip goes at a tenth of the pointer's speed.</param>
+    public void Move(TimeSpan time, bool shift, bool alt = false)
     {
+        if (_drag == Drag.Slip)
+            RebaseSlip(alt);
         _lastTime = time;
+        _alt = alt;
         var delta = time - _pressTime;
         var dragged = Math.Abs(delta.TotalSeconds * host.Zoom) > DragThreshold;
         switch (_drag)
@@ -191,14 +202,11 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
                 SelectPressedClip();
                 host.BeginGesture();
                 _drag = Drag.Slip;
+                SlipAudio(time, shift);
                 break;
             case Drag.Slip:
-            {
-                var slip = TimeSpan.FromMilliseconds(Math.Round(delta.TotalMilliseconds * (shift ? 0.1 : 1)));
-                host.PreviewTimeline(TimelineEditor.NudgeAudioOffset(_gestureStart!, host.Selection, slip));
-                host.PreviewAudioDrag(slip);
+                SlipAudio(time, shift);
                 break;
-            }
             case Drag.PendingTrack when dragged:
                 SelectPressedTrackClip();
                 host.BeginGesture();
@@ -224,6 +232,76 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
             TrimTrack(_lastTime - _pressTime, shift);
         if (_drag == Drag.TrackMove)
             MoveTrack(_lastTime - _pressTime, shift);
+        if (_drag == Drag.Slip)
+            SlipAudio(_lastTime, shift);
+    }
+
+    /// <summary>Alt was pressed or released mid-gesture: a slip goes on at the new speed from where the audio is now.</summary>
+    public void AltChanged(bool alt)
+    {
+        if (_drag == Drag.Slip)
+            RebaseSlip(alt);
+        _alt = alt;
+    }
+
+    private void RebaseSlip(bool alt)
+    {
+        if (alt == _alt)
+            return;
+        _slipBase = RawSlip(_lastTime);
+        _slipFrom = _lastTime;
+    }
+
+    /// <summary>The slip for the pointer at <paramref name="time"/>, before any snapping.</summary>
+    private TimeSpan RawSlip(TimeSpan time) =>
+        _slipBase + TimeSpan.FromMilliseconds(Math.Round((time - _slipFrom).TotalMilliseconds * (_alt ? 0.1 : 1)));
+
+    /// <summary>
+    /// Slips the selected clips' audio for the pointer at <paramref name="time"/> (see <see cref="RawSlip"/>), with
+    /// <paramref name="shift"/> snapped so that where the pressed clip's audio starts
+    /// or runs out (or loops) lands on the clip's start or end, when one is within reach.
+    /// </summary>
+    private void SlipAudio(TimeSpan time, bool shift)
+    {
+        var slip = RawSlip(time);
+        if (shift)
+            slip = MagnetSlip(slip);
+        host.PreviewTimeline(TimelineEditor.NudgeAudioOffset(_gestureStart!, host.Selection, slip));
+        host.PreviewAudioDrag(slip);
+    }
+
+    /// <summary>
+    /// The slip nearest to <paramref name="slip"/> (within <see cref="SnapRadius"/> pixels) that puts an edge of the
+    /// pressed clip's audio on one of the clip's sides, else <paramref name="slip"/> itself.
+    /// </summary>
+    private TimeSpan MagnetSlip(TimeSpan slip)
+    {
+        var clip = _clip!;
+        var radius = TimeSpan.FromSeconds(SnapRadius / Math.Max(host.Zoom, 1e-9));
+        // Where the file's start falls inside the clip (clip-local time) before this drag.
+        var fileStart = clip.AudioSlip - clip.In;
+        var fileEnd = host.AudioEnd(clip) is { Ticks: > 0 } end ? end : (TimeSpan?)null;
+        TimeSpan? best = null;
+        void Consider(TimeSpan candidate)
+        {
+            if ((candidate - slip).Duration() <= radius && (best is not { } b || (candidate - slip).Duration() < (b - slip).Duration()))
+                best = candidate;
+        }
+
+        foreach (var side in (ReadOnlySpan<TimeSpan>)[TimeSpan.Zero, clip.Duration])
+        {
+            if (clip.LoopsAudio && fileEnd is { } length)
+            {
+                // Looped audio starts again every file length: bring the seam nearest to the side onto it.
+                var k = Math.Round((side - fileStart - slip).Ticks / (double)length.Ticks);
+                Consider(side - (fileStart + length * k));
+                continue;
+            }
+            Consider(side - fileStart);
+            if (fileEnd is { } e)
+                Consider(side - (fileStart + e));
+        }
+        return best ?? slip;
     }
 
     /// <summary>
@@ -343,5 +421,6 @@ public sealed class TimelineGestures(ITimelineGestureHost host)
         _trackClip = null;
         _trackStart = null;
         InsertIndex = -1;
+        _slipBase = TimeSpan.Zero;
     }
 }

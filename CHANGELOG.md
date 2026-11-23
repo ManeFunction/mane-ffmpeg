@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   which only the macOS app menu had.
 ### Changed
 - Once the clipping check has marked the timeline, its button turns into *Clear clipping*, which removes the marks.
+- Slipping a clip's audio on A1 with Shift held now snaps where the audio starts or runs out (or loops) to the clip's
+  start or end. Fine steps (a tenth of the pointer's speed) moved from Shift to Alt (Option on macOS).
 
 ## [2.3.0] - 2026-11-20
 ### Added
