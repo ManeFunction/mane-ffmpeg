@@ -463,7 +463,9 @@ public class ExportIntegrationTests(FfmpegFixture media) : IClassFixture<FfmpegF
         var frozen = progress.Done;
         await Task.Delay(1500);
         Assert.Equal(frozen, progress.Done);
-        Assert.False(run.IsCompleted);
+        Assert.False(run.IsCompleted, run.IsCompleted
+            ? $"the export ended while paused, at {frozen} of {plan.Duration}: {run.Result.Outcome} {run.Result.Message}\n{run.Result.Log}"
+            : "");
         // Starting another process still works (CliWrap starts it before returning the task).
         await Task.Run(() => media.ProbeAsync(media.Sync30)).WaitAsync(TimeSpan.FromSeconds(10));
 
