@@ -248,9 +248,10 @@ public class PreviewPlayerTests(FfmpegFixture media) : IClassFixture<FfmpegFixtu
             player.Unload();
             await Wait.Until(() => File.Exists(wav) && new FileInfo(wav).Length > 0, "the recorded audio");
             await Task.Delay(300);
-            // A1 at 14, A2 at 15.3, A1 at 16: compared as gaps from the first beep.
+            // A1 at 14, A2 at 15.3, A1 at 16: compared as gaps from the first beep. A slow machine can record past
+            // the stop (A1's beep at 18 s, 4 s on), so only the first 3 s from the first beep count.
             var (beeps, _) = await media.MeasureAudioAsync(wav);
-            var gaps = beeps.Select(b => b - beeps.FirstOrDefault()).ToList();
+            var gaps = beeps.Select(b => b - beeps.FirstOrDefault()).Where(g => g < 3).ToList();
             Assert.True(gaps.Count == 3 && Math.Abs(gaps[1] - 1.3) < 0.05 && Math.Abs(gaps[2] - 2) < 0.05,
                 $"{(seekFirst ? "after a seek" : "from the start")}: beeps at {string.Join(", ", beeps)}");
         }
