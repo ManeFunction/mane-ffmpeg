@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [2.3.1] - 2026-11-23
 ### Added
 - On Windows and Linux, a *Help* menu at the end of the menu bar with *Check for Updates…* and *About Mane FFmpeg*,
   which only the macOS app menu had.
