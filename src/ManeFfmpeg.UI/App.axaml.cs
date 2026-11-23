@@ -16,7 +16,7 @@ namespace ManeFfmpeg.UI;
 
 public partial class App : Application
 {
-    private const string CheckForUpdatesHeader = "Check for Updates…";
+    internal const string CheckForUpdatesHeader = "Check for Updates…";
     private const string CheckingForUpdatesHeader = "Checking for Update…";
 
     private NativeMenuItem? _updateItem;
@@ -136,21 +136,32 @@ public partial class App : Application
     private void OnAboutClicked(object? sender, EventArgs e)
     {
         if (WindowManager.Instance.Windows.LastOrDefault() is { } window)
-            _ = Dialogs.InfoAsync(window, "Mane FFmpeg",
-                $"A small video editor on top of your system ffmpeg.\n\nVersion {typeof(App).Assembly.GetName().Version?.ToString(3)}\n" +
-                $"ffmpeg: {AppServices.Instance.Tools?.VersionText ?? "not found"}\n" +
-                $"libmpv: {Core.Mpv.MpvLibrary.LoadedPath ?? "not found"}\n\n" +
-                "Powered by Ilia Petrov-Komotskii (Mane Function)",
-                "github.com/ManeFunction/mane-ffmpeg", "https://github.com/ManeFunction/mane-ffmpeg");
+            ShowAbout(window);
     }
 
-    private void OnCheckForUpdatesClicked(object? sender, EventArgs e) => _ = Updater.Instance.CheckAndOfferAsync(manual: true);
+    /// <summary>The About dialog, from the app menu on macOS and from Help elsewhere.</summary>
+    internal static void ShowAbout(Window owner) =>
+        _ = Dialogs.InfoAsync(owner, "Mane FFmpeg",
+            $"A small video editor on top of your system ffmpeg.\n\nVersion {typeof(App).Assembly.GetName().Version?.ToString(3)}\n" +
+            $"ffmpeg: {AppServices.Instance.Tools?.VersionText ?? "not found"}\n" +
+            $"libmpv: {Core.Mpv.MpvLibrary.LoadedPath ?? "not found"}\n\n" +
+            "Powered by Ilia Petrov-Komotskii (Mane Function)",
+            "github.com/ManeFunction/mane-ffmpeg", "https://github.com/ManeFunction/mane-ffmpeg");
 
-    /// <summary>The menu item can't be clicked while a check or the update window is open.</summary>
+    private void OnCheckForUpdatesClicked(object? sender, EventArgs e) => CheckForUpdates();
+
+    /// <summary>The menu's "Check for Updates…"; the update window opens over <paramref name="owner"/> when given.</summary>
+    internal static void CheckForUpdates(Window? owner = null) => _ = Updater.Instance.CheckAndOfferAsync(manual: true, owner: owner);
+
     private void ShowUpdateBusy()
     {
-        if (_updateItem is not { } item)
-            return;
+        if (_updateItem is { } item)
+            ShowUpdateBusy(item);
+    }
+
+    /// <summary>The menu item can't be clicked while a check or the update window is open.</summary>
+    internal static void ShowUpdateBusy(NativeMenuItem item)
+    {
         var busy = Updater.Instance.IsBusy;
         item.Header = busy ? CheckingForUpdatesHeader : CheckForUpdatesHeader;
         item.IsEnabled = !busy;

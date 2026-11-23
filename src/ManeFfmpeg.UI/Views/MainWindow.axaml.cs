@@ -177,14 +177,33 @@ public partial class MainWindow : Window, IMainWindowView
             Item("Edit Presets…", vm.ShowPresetsCommand),
         };
 
-        NativeMenu.SetMenu(this, new NativeMenu
+        var bar = new NativeMenu
         {
             new NativeMenuItem("File") { Menu = file },
             new NativeMenuItem("Edit") { Menu = edit },
             new NativeMenuItem("View") { Menu = view },
             new NativeMenuItem("Presets") { Menu = presets },
-        });
+        };
+        // macOS has these in the app menu (App.axaml); elsewhere they go in Help, the last menu.
+        if (!Platform.Current.HasGlobalAppMenu)
+            bar.Items.Add(new NativeMenuItem("Help") { Menu = BuildHelpMenu() });
+        NativeMenu.SetMenu(this, bar);
         EditMenu.BindShortcuts(this);
+    }
+
+    private NativeMenu BuildHelpMenu()
+    {
+        var updates = new NativeMenuItem(App.CheckForUpdatesHeader);
+        updates.Click += (_, _) => App.CheckForUpdates(owner: this);
+        App.ShowUpdateBusy(updates);
+        // The updater outlives this window: unsubscribe when it closes, or closed windows stay alive.
+        Action busyChanged = () => App.ShowUpdateBusy(updates);
+        Updater.Instance.BusyChanged += busyChanged;
+        Closed += (_, _) => Updater.Instance.BusyChanged -= busyChanged;
+
+        var about = new NativeMenuItem("About Mane FFmpeg");
+        about.Click += (_, _) => App.ShowAbout(this);
+        return new NativeMenu { updates, new NativeMenuItemSeparator(), about };
     }
 
     // ---- Keyboard ---------------------------------------------------------------------------------
