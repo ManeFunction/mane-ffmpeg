@@ -21,52 +21,59 @@ public sealed class FfmpegFactAttribute : FactAttribute
 /// Synthetic media for integration tests: black video with a white flash and a 1 kHz beep every
 /// 2 seconds, starting at 0, so A/V sync of any export can be measured with blackdetect/silencedetect.
 /// </summary>
-public sealed partial class FfmpegFixture : IDisposable
+public sealed partial class FfmpegFixture : IAsyncLifetime, IDisposable
 {
     private static readonly Lazy<FfmpegTools?> LazyTools = new(() => FfmpegLocator.LocateAsync().GetAwaiter().GetResult());
 
     public static FfmpegTools? Tools => LazyTools.Value;
 
-    public FfmpegFixture()
+    public FfmpegFixture() => Directory = System.IO.Directory.CreateTempSubdirectory("mane-ffmpeg-tests").FullName;
+
+    /// <summary>
+    /// Generates the media without blocking a thread-pool thread: six test classes build a fixture each, and blocking
+    /// them all for the seconds ffmpeg takes (longest on Windows) starved the pool, stalling other tests' timers.
+    /// </summary>
+    public async Task InitializeAsync()
     {
-        Directory = System.IO.Directory.CreateTempSubdirectory("mane-ffmpeg-tests").FullName;
         if (Tools is null)
             return;
-        Sync30 = Generate("sync30.mp4", 12, "640x360", "30", "-c:v libx264 -preset veryfast -g 30 -keyint_min 30 -sc_threshold 0 -pix_fmt yuv420p -c:a aac -b:a 128k");
-        Sync25 = Generate("sync25.mp4", 8, "1280x720", "25", "-c:v libx264 -preset veryfast -g 25 -pix_fmt yuv420p -c:a aac -b:a 128k");
-        NoAudio = Generate("noaudio.mp4", 6, "640x360", "30", "-c:v libx264 -preset veryfast -g 30 -pix_fmt yuv420p", audio: false);
-        SyncAlac = Generate("sync-alac.mov", 8, "640x360", "30", "-c:v libx264 -preset veryfast -g 30 -pix_fmt yuv420p -c:a alac");
-        TransportStream = Generate("sync.ts", 8, "640x360", "30", "-c:v libx264 -preset veryfast -g 30 -pix_fmt yuv420p -c:a aac -b:a 128k -f mpegts");
+        Sync30 = await GenerateAsync("sync30.mp4", 12, "640x360", "30", "-c:v libx264 -preset veryfast -g 30 -keyint_min 30 -sc_threshold 0 -pix_fmt yuv420p -c:a aac -b:a 128k");
+        Sync25 = await GenerateAsync("sync25.mp4", 8, "1280x720", "25", "-c:v libx264 -preset veryfast -g 25 -pix_fmt yuv420p -c:a aac -b:a 128k");
+        NoAudio = await GenerateAsync("noaudio.mp4", 6, "640x360", "30", "-c:v libx264 -preset veryfast -g 30 -pix_fmt yuv420p", audio: false);
+        SyncAlac = await GenerateAsync("sync-alac.mov", 8, "640x360", "30", "-c:v libx264 -preset veryfast -g 30 -pix_fmt yuv420p -c:a alac");
+        TransportStream = await GenerateAsync("sync.ts", 8, "640x360", "30", "-c:v libx264 -preset veryfast -g 30 -pix_fmt yuv420p -c:a aac -b:a 128k -f mpegts");
         Tone = Path.Combine(Directory, "tone.m4a");
-        Cli.Wrap(Tools!.Ffmpeg).WithArguments(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-t", "3",
+        await Cli.Wrap(Tools!.Ffmpeg).WithArguments(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-t", "3",
             "-i", "aevalsrc='if(between(t\\,0.3\\,0.4)\\,0.5*sin(2*PI*880*t)\\,0)':s=44100:c=stereo", "-c:a", "aac", "-b:a", "128k", Tone])
-            .ExecuteAsync().GetAwaiter().GetResult();
+            .ExecuteAsync();
         AudioGap = Path.Combine(Directory, "gap.m4a");
-        Cli.Wrap(Tools!.Ffmpeg).WithArguments(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-t", "8",
+        await Cli.Wrap(Tools!.Ffmpeg).WithArguments(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-t", "8",
             "-i", "aevalsrc='if(lt(mod(t\\,2)\\,0.1)\\,0.5*sin(2*PI*1000*t)\\,0)':s=48000:c=stereo",
             "-af", "asetpts='PTS+gte(T\\,3)*48000'", "-c:a", "aac", "-b:a", "128k", AudioGap])
-            .ExecuteAsync().GetAwaiter().GetResult();
+            .ExecuteAsync();
     }
 
+    public Task DisposeAsync() => Task.CompletedTask;
+
     public string Directory { get; }
-    public string Sync30 { get; } = "";
-    public string Sync25 { get; } = "";
-    public string NoAudio { get; } = "";
-    public string TransportStream { get; } = "";
+    public string Sync30 { get; private set; } = "";
+    public string Sync25 { get; private set; } = "";
+    public string NoAudio { get; private set; } = "";
+    public string TransportStream { get; private set; } = "";
 
     /// <summary>Like <see cref="Sync30"/> but 8 s, in a .mov with ALAC audio: a codec NUT can't carry.</summary>
-    public string SyncAlac { get; } = "";
+    public string SyncAlac { get; private set; } = "";
 
     /// <summary>3 s of audio only (AAC, 44.1 kHz) with one 880 Hz beep at 0.3–0.4 s.</summary>
-    public string Tone { get; } = "";
+    public string Tone { get; private set; } = "";
 
     /// <summary>
     /// 8 s of audio only (AAC, 48 kHz) beeping every 2 s, stamped 1 s later from 3 s on: a 1 s timestamp gap,
     /// so the beeps play at 0, 2, 5 and 7 s of its 9 s.
     /// </summary>
-    public string AudioGap { get; } = "";
+    public string AudioGap { get; private set; } = "";
 
-    private string Generate(string name, int seconds, string size, string rate, string codecArgs, bool audio = true)
+    private async Task<string> GenerateAsync(string name, int seconds, string size, string rate, string codecArgs, bool audio = true)
     {
         var path = Path.Combine(Directory, name);
         var args = new List<string>
@@ -80,7 +87,7 @@ public sealed partial class FfmpegFixture : IDisposable
                 "-i", "aevalsrc='if(lt(mod(t\\,2)\\,0.1)\\,0.5*sin(2*PI*1000*t)\\,0)':s=48000:c=stereo"]);
         args.AddRange(PresetArguments.Tokenize(codecArgs));
         args.Add(path);
-        Cli.Wrap(Tools!.Ffmpeg).WithArguments(args).ExecuteAsync().GetAwaiter().GetResult();
+        await Cli.Wrap(Tools!.Ffmpeg).WithArguments(args).ExecuteAsync();
         return path;
     }
 

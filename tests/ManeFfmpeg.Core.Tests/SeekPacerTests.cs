@@ -126,14 +126,18 @@ public class SeekPacerTests
             return true;
         }, _ => { });
         pacer.Seek(S(1));
-        var check = Task.Run(pacer.Check);
+        // Own threads, not the pool's: the fake mpv call blocks, and a busy pool can start a Task.Run seconds late.
+        var check = OnOwnThread(pacer.Check);
         Assert.True(asking.Wait(TimeSpan.FromSeconds(5)));
 
-        var dispose = Task.Run(pacer.Dispose);
+        var dispose = OnOwnThread(pacer.Dispose);
         await Task.Delay(200);
         Assert.False(dispose.IsCompleted, "Dispose returned while the check was still calling into mpv");
         answer.Set();
         await dispose.WaitAsync(TimeSpan.FromSeconds(5));
         await check.WaitAsync(TimeSpan.FromSeconds(5));
     }
+
+    private static Task OnOwnThread(Action action) =>
+        Task.Factory.StartNew(action, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 }
