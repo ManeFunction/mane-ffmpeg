@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using CliWrap;
 using CliWrap.Buffered;
+using ManeFfmpeg.Core.Persistence;
 using ManeFfmpeg.Core.Platforms;
 using ManeFfmpeg.Core.Platforms.Windows;
 
@@ -297,23 +298,24 @@ public class WindowsPlatformTests
         using var process = Process.Start(new ProcessStartInfo("cmd.exe", "/c ping -n 30 127.0.0.1 >nul") { CreateNoWindow = true })!;
         try
         {
-            IReadOnlyList<int> tree = [];
-            for (var i = 0; i < 50 && tree.Count < 2; i++)
+            // The tree also holds cmd.exe's conhost.exe, which may come first: wait for ping itself.
+            int? ping = null;
+            for (var i = 0; i < 50 && ping is null; i++)
             {
                 await Task.Delay(100);
-                tree = WindowsPlatform.ProcessTree(process.Id);
+                ping = WindowsPlatform.ProcessTree(process.Id).Skip(1).FirstOrDefault(id => NameOf(id) == "PING");
             }
-            Assert.True(tree.Count >= 2, "ping didn't start");
-            Assert.Equal(process.Id, tree[0]);
+            Assert.True(ping is not null, "ping didn't start");
 
+            // The shim and its real child; conhost.exe is Windows' console host, not part of the export's work.
             // A thread that is already blocked (cmd.exe waiting for ping) shows as suspended only once the kernel has
             // delivered the suspend to it, a moment after NtSuspendProcess returns; likewise for resuming.
             var frozen = Windows.Freeze(process.Id);
-            foreach (var id in tree)
-                await Wait.Until(() => IsSuspended(id), $"pid {id} to be suspended");
+            foreach (var id in new[] { process.Id, ping.Value })
+                await Wait.Until(() => IsSuspended(id), $"pid {id} to be suspended", () => Threads(id));
             frozen.Resume();
-            foreach (var id in tree)
-                await Wait.Until(() => !IsSuspended(id), $"pid {id} to be resumed");
+            foreach (var id in new[] { process.Id, ping.Value })
+                await Wait.Until(() => !IsSuspended(id), $"pid {id} to be resumed", () => Threads(id));
         }
         finally
         {
@@ -361,6 +363,29 @@ public class WindowsPlatformTests
         {
             return false;
         }
+    }
+
+    private static string? NameOf(int pid)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            return process.ProcessName.ToUpperInvariant();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The process's name and each thread's state, and the app log (which says when a suspend call failed).</summary>
+    private static string Threads(int pid)
+    {
+        using var process = Process.GetProcessById(pid);
+        var threads = process.Threads.Cast<ProcessThread>().Select(t =>
+            $"{t.Id} {t.ThreadState}{(t.ThreadState == System.Diagnostics.ThreadState.Wait ? $"/{t.WaitReason}" : "")}");
+        var log = File.Exists(AppLog.FilePath) ? File.ReadAllText(AppLog.FilePath) : "(no app log)";
+        return $"{process.ProcessName}: {string.Join(", ", threads)}\n{log}";
     }
 
     private static bool IsSuspended(int pid)

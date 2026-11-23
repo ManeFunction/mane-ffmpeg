@@ -42,14 +42,23 @@ public sealed partial class WindowsPlatform
     /// </summary>
     public IFrozenProcess Freeze(int pid)
     {
-        var tree = ProcessTree(pid);
-        foreach (var id in tree)
+        // A process can start a child after the tree is read and before it is suspended itself, so the tree is read
+        // again until it holds nothing new: once every process in it is suspended, none can start another.
+        var frozen = new List<int>();
+        for (var pass = 0; pass < 10; pass++)
         {
-            // A shim's child may have started before the shim joined the job.
-            AddToJob(id);
-            Call(id, NtSuspendProcess, "suspend");
+            var added = ProcessTree(pid).Where(id => !frozen.Contains(id)).ToList();
+            if (added.Count == 0)
+                break;
+            foreach (var id in added)
+            {
+                // A shim's child may have started before the shim joined the job.
+                AddToJob(id);
+                Call(id, NtSuspendProcess, "suspend");
+                frozen.Add(id);
+            }
         }
-        return new SuspendedProcesses([.. tree.Select(id => (id, StartTime(id)))]);
+        return new SuspendedProcesses([.. frozen.Select(id => (id, StartTime(id)))]);
     }
 
     private sealed class SuspendedProcesses(IReadOnlyList<(int Id, DateTime? Started)> tree) : IFrozenProcess
