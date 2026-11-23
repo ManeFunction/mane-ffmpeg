@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - On Windows and Linux, a *Help* menu at the end of the menu bar with *Check for Updates…* and *About Mane FFmpeg*,
   which only the macOS app menu had.
+### Changed
+- Once the clipping check has marked the timeline, its button turns into *Clear clipping*, which removes the marks.
 
 ## [2.3.0] - 2026-11-20
 ### Added

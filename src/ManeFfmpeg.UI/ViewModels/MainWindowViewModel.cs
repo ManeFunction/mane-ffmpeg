@@ -153,6 +153,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable, IA
             Timeline.Playhead = State.Timeline.Duration;
         RefreshDirty();
         OnPropertyChanged(nameof(HasClips));
+        OnPropertyChanged(nameof(ClipScanEnabled));
         OnPropertyChanged(nameof(TimelineDurationText));
         UndoCommand.NotifyCanExecuteChanged();
         RedoCommand.NotifyCanExecuteChanged();

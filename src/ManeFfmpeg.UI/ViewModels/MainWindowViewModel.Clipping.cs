@@ -11,6 +11,7 @@ namespace ManeFfmpeg.UI.ViewModels;
 /// The clipping scan: the whole timeline's audio, mixed exactly as it would be exported (clip, A1/A2 and A2 clip
 /// volumes), checked for samples at full scale. The clipped stretches are marked red on the timeline; once the project
 /// changes they stay as faded marks until the next scan (undoing back to the scanned state makes them current again).
+/// While marks are shown the button clears them instead of scanning.
 /// </summary>
 public sealed partial class MainWindowViewModel
 {
@@ -18,13 +19,31 @@ public sealed partial class MainWindowViewModel
     private ProjectState? _clipScanState;
 
     /// <summary>The last scan's clipped stretches, in timeline time; empty before any scan.</summary>
-    public IReadOnlyList<ClipRange> ClipMarks { get; private set; } = [];
+    public IReadOnlyList<ClipRange> ClipMarks
+    {
+        get;
+        private set
+        {
+            field = value;
+            OnPropertyChanged(nameof(HasClipMarks));
+            OnPropertyChanged(nameof(ClipScanText));
+            OnPropertyChanged(nameof(ClipScanEnabled));
+            OnPropertyChanged(nameof(ClipScanTip));
+        }
+    } = [];
+
+    /// <summary>The timeline shows marks from a scan, so the button clears them.</summary>
+    public bool HasClipMarks => ClipMarks.Count > 0;
+
+    /// <summary>Scanning needs clips; clearing stays possible even after every clip is deleted.</summary>
+    public bool ClipScanEnabled => HasClips || HasClipMarks || IsScanningClipping;
 
     /// <summary>The marks describe the project as it is now (nothing changed since the scan).</summary>
     public bool ClipMarksCurrent => ReferenceEquals(_clipScanState, State) || Equals(_clipScanState, State);
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ClipScanText))]
+    [NotifyPropertyChangedFor(nameof(ClipScanEnabled))]
     public partial bool IsScanningClipping { get; set; }
 
     [ObservableProperty]
@@ -33,15 +52,27 @@ public sealed partial class MainWindowViewModel
 
     public string ClipScanText => IsScanningClipping
         ? string.Create(CultureInfo.InvariantCulture, $"Scanning {ClipScanProgress * 100:0}%… ✕")
-        : "Check clipping";
+        : HasClipMarks ? "Clear clipping" : "Check clipping";
 
-    /// <summary>Starts a scan, or cancels the one running.</summary>
+    public string ClipScanTip => HasClipMarks
+        ? "Remove the clipping marks from the timeline."
+        : "Check the whole timeline's audio for clipping at the current clip and track volumes (as it would be exported). " +
+          "Clipped places are marked red on the timeline; click again while it runs to cancel.";
+
+    /// <summary>Starts a scan, cancels the one running, or clears the marks a finished one left.</summary>
     [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task ScanClipping()
     {
         if (_clipScan is { } running)
         {
             running.Cancel();
+            return;
+        }
+        if (HasClipMarks)
+        {
+            ForgetClipMarks();
+            Timeline.Invalidate();
+            StatusMessage = "Clipping marks cleared.";
             return;
         }
         await _app.ToolsLocated;

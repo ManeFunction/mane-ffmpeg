@@ -514,7 +514,7 @@ internal static class DebugAutomation
                             SaveRetina(window.SpeakerButton, arg);
                         break;
                     case "clip-scan":
-                        // clip-scan: runs the clipping check to its end and prints what it marked
+                        // clip-scan: runs the clipping check to its end and prints what it marked (with marks shown, clears them instead)
                         await vm.ScanClippingCommand.ExecuteAsync(null);
                         Console.WriteLine($"[clip-scan] status='{vm.StatusMessage}' current={vm.ClipMarksCurrent} marks=" +
                                           string.Join(" ", vm.ClipMarks.Select(m => string.Create(CultureInfo.InvariantCulture,
