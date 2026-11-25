@@ -293,13 +293,9 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         var dir = Path.GetDirectoryName(first.Path)!;
         var baseName = _owner.FilePath is not null ? _owner.ProjectName
             : Path.GetFileNameWithoutExtension(first.Path) + (IsAudioMode ? "-audio" : "-edit");
-        var ext = SelectedPreset is { Extension.Length: > 0 } p ? "." + p.Extension
-            : IsAudioMode ? "." + (SelectedPreset is { } audio ? ExportPlanner.AudioExtensionFor(State, Catalog.Media, audio) ?? "m4a" : "m4a")
-            : Path.GetExtension(first.Path);
-        var candidate = Path.Combine(dir, baseName + ext);
-        for (var n = 2; File.Exists(candidate) || State.Sources.Any(s => s.Path == candidate) || State.AudioFiles.Any(s => s.Path == candidate); n++)
-            candidate = Path.Combine(dir, $"{baseName}-{n}{ext}");
-        return candidate;
+        // Never one of the project's own files, even one that's missing right now.
+        return OutputNaming.FreePath(dir, baseName, OutputNaming.Extension(SelectedPreset, Kind, State, Catalog.Media, first.Path),
+            c => State.Sources.Any(s => s.Path == c) || State.AudioFiles.Any(s => s.Path == c));
     }
 
     internal void InvalidatePlanPreview()

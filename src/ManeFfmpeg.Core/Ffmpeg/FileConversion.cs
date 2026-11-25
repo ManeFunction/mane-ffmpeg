@@ -53,18 +53,8 @@ public static class FileConversion
     /// for video, or the audio codec's). An existing file is never replaced: "-2", "-3"… are added instead.
     /// </summary>
     public static string OutputPathFor(string path, Preset preset, ProjectState state, IReadOnlyDictionary<string, MediaInfo> media)
-    {
-        var extension = preset.Extension?.Trim().TrimStart('.') is { Length: > 0 } own ? own
-            : preset.Kind == PresetKind.Audio ? ExportPlanner.AudioExtensionFor(state, media, preset) ?? "m4a"
-            : Path.GetExtension(path).TrimStart('.');
-        var dir = Path.GetDirectoryName(Path.GetFullPath(path))!;
-        var name = Path.GetFileNameWithoutExtension(path);
-        var ext = extension.Length > 0 ? "." + extension : "";
-        var candidate = Path.Combine(dir, name + ext);
-        for (var n = 2; File.Exists(candidate) || Directory.Exists(candidate); n++)
-            candidate = Path.Combine(dir, $"{name}-{n}{ext}");
-        return candidate;
-    }
+        => OutputNaming.FreePath(Path.GetDirectoryName(Path.GetFullPath(path))!, Path.GetFileNameWithoutExtension(path),
+            OutputNaming.Extension(preset, preset.Kind, state, media, path));
 
     /// <summary>
     /// Converts the files one after another in <paramref name="session"/>, until it's cancelled. A file that fails
