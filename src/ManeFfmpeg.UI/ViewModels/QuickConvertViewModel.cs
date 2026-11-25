@@ -59,38 +59,15 @@ public sealed partial class QuickConvertViewModel(ConversionRequest request) : V
     {
         var files = request.Files.Select(Path.GetFullPath).Where(File.Exists).ToList();
         AppLog.Write($"Quick Action: preset {request.PresetId}, {files.Count} file(s)");
-        var failures = new List<string>();
+        List<string> failures;
         try
         {
-            if (_app.Presets.Find(request.PresetId) is not { } preset)
-            {
-                Fail("This preset no longer exists. Remove the Quick Action in Mane FFmpeg's Export Presets window.");
-                return;
-            }
-            Heading = $"Converting with “{preset.Name}”";
-            if (files.Count == 0)
-            {
-                Fail("None of the selected files could be found.");
-                return;
-            }
-            await _app.LocateToolsAsync();
-            if (_app.Tools is not { } tools)
-            {
-                Fail(_app.ToolsError ?? "ffmpeg wasn't found.");
-                return;
-            }
-            var keyframes = _app.Keyframes ?? new KeyframeService(tools);
-            using var awake = Platform.Current.KeepAwake($"Converting with {preset.Name}");
-            for (var i = 0; i < files.Count && !_cts.IsCancellationRequested; i++)
-            {
-                if (await ConvertAsync(files[i], i, files.Count, preset, tools, keyframes) is { } error)
-                    failures.Add($"{Path.GetFileName(files[i])}: {error}");
-            }
+            failures = await ConvertAllAsync(files);
         }
         catch (Exception ex)
         {
             AppLog.Write($"Quick Action failed: {ex}");
-            failures.Add(ex.Message);
+            failures = [ex.Message];
         }
         finally
         {
@@ -114,6 +91,31 @@ public sealed partial class QuickConvertViewModel(ConversionRequest request) : V
         Status = string.Join("\n", failures);
         ProgressText = _outputs.Count > 0 ? $"{_outputs.Count} of {files.Count} converted" : null;
         await NotifyAsync("Conversion failed", failures[0]);
+    }
+
+    /// <summary>
+    /// Converts the files one after another; returns why each one failed, or why none could start (no preset, no files,
+    /// no ffmpeg).
+    /// </summary>
+    private async Task<List<string>> ConvertAllAsync(List<string> files)
+    {
+        if (_app.Presets.Find(request.PresetId) is not { } preset)
+            return ["This preset no longer exists. Remove the Quick Action in Mane FFmpeg's Export Presets window."];
+        Heading = $"Converting with “{preset.Name}”";
+        if (files.Count == 0)
+            return ["None of the selected files could be found."];
+        await _app.LocateToolsAsync();
+        if (_app.Tools is not { } tools)
+            return [_app.ToolsError ?? "ffmpeg wasn't found."];
+        var keyframes = _app.Keyframes ?? new KeyframeService(tools);
+        using var awake = Platform.Current.KeepAwake($"Converting with {preset.Name}");
+        var failures = new List<string>();
+        for (var i = 0; i < files.Count && !_cts.IsCancellationRequested; i++)
+        {
+            if (await ConvertAsync(files[i], i, files.Count, preset, tools, keyframes) is { } error)
+                failures.Add($"{Path.GetFileName(files[i])}: {error}");
+        }
+        return failures;
     }
 
     /// <summary>Converts one file; returns why it failed, or null.</summary>
@@ -176,13 +178,6 @@ public sealed partial class QuickConvertViewModel(ConversionRequest request) : V
                 parts.Add(string.Create(CultureInfo.InvariantCulture, $"{speed:0.0#}×"));
         }
         ProgressText = string.Join(" · ", parts);
-    }
-
-    private void Fail(string message)
-    {
-        HasErrors = true;
-        Status = message;
-        ProgressText = null;
     }
 
     private async Task NotifyAsync(string title, string body)
