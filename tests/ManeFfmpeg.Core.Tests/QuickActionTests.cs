@@ -37,7 +37,8 @@ public class QuickActionTests(FfmpegFixture media) : IClassFixture<FfmpegFixture
             File.WriteAllText(Path.Combine(dir, "clip.mp4"), "");
             File.WriteAllText(Path.Combine(dir, "clip-2.mp4"), "");
             Assert.Equal(Path.Combine(dir, "clip-3.mp4"), FileConversion.OutputPathFor(source, Preset.Share, ProjectState.Empty, new Dictionary<string, MediaInfo>()));
-            Assert.Equal(Path.Combine(dir, "clip.m4a"), FileConversion.OutputPathFor(source, Preset.AudioM4a, ProjectState.Empty, new Dictionary<string, MediaInfo>()));        }
+            Assert.Equal(Path.Combine(dir, "clip.m4a"), FileConversion.OutputPathFor(source, Preset.AudioM4a, ProjectState.Empty, new Dictionary<string, MediaInfo>()));
+        }
         finally
         {
             Directory.Delete(dir, recursive: true);
