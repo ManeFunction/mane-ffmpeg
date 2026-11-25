@@ -30,12 +30,15 @@ public static class FileConversion
     public const string CommandLineFlag = "--quick-action";
 
     /// <summary>The conversion asked for on the command line, or null when the app was started normally.</summary>
+    /// <remarks>
+    /// Only the first argument counts, as a Quick Action passes it, so a file that happens to be called like the flag
+    /// (opened from the command line) can't turn a normal start into a conversion.
+    /// </remarks>
     public static ConversionRequest? Parse(IReadOnlyList<string> args)
     {
-        var at = args.ToList().IndexOf(CommandLineFlag);
-        if (at < 0 || at + 1 >= args.Count)
+        if (args.Count < 2 || args[0] != CommandLineFlag)
             return null;
-        return new ConversionRequest(args[at + 1], [.. args.Skip(at + 2).Where(a => a.Length > 0).Distinct()]);
+        return new ConversionRequest(args[1], [.. args.Skip(2).Where(a => a.Length > 0).Distinct()]);
     }
 
     /// <summary>A project of <paramref name="path"/> alone, as one clip from start to end, with its source's id.</summary>

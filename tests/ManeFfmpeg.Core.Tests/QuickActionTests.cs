@@ -17,6 +17,7 @@ public class QuickActionTests(FfmpegFixture media) : IClassFixture<FfmpegFixture
         Assert.Null(FileConversion.Parse([]));
         Assert.Null(FileConversion.Parse(["/a.mov"]));
         Assert.Null(FileConversion.Parse([FileConversion.CommandLineFlag]));
+        Assert.Null(FileConversion.Parse(["/v/a.mov", FileConversion.CommandLineFlag, "builtin-share"]));
         var request = FileConversion.Parse([FileConversion.CommandLineFlag, "builtin-share", "/v/a.mov", "/v/b b.mp4", "/v/a.mov"]);
         Assert.NotNull(request);
         Assert.Equal("builtin-share", request.PresetId);
