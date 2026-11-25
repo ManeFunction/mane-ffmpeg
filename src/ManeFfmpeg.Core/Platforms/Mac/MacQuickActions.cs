@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using ManeFfmpeg.Core.Model;
 using ManeFfmpeg.Core.Persistence;
 
@@ -17,7 +17,7 @@ namespace ManeFfmpeg.Core.Platforms.Mac;
 /// disabled, and listed alphabetically after the ordered Quick Actions. New ones are enabled and go last, so the order
 /// is the order they were added in.
 /// </param>
-public sealed partial class MacQuickActions(string servicesDirectory, Func<string, string> commandFor, Action? refresh = null,
+public sealed class MacQuickActions(string servicesDirectory, Func<string, string> commandFor, Action? refresh = null,
     IServicesMenu? servicesMenu = null) : IQuickActions
 {
     /// <summary>The Info.plist key that marks a workflow as this app's and names its preset.</summary>
@@ -67,38 +67,15 @@ public sealed partial class MacQuickActions(string servicesDirectory, Func<strin
             : [];
 
     /// <summary>The menu item's name in a workflow's Info.plist.</summary>
-    private static string? MenuNameOf(string workflow)
-    {
-        try
-        {
-            var plist = Path.Combine(workflow, "Contents", "Info.plist");
-            return File.Exists(plist) && MenuNamePattern().Match(File.ReadAllText(plist)) is { Success: true } m
-                ? SecurityElementUnescape(m.Groups[1].Value)
-                : null;
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-    }
+    private static string? MenuNameOf(string workflow) =>
+        InfoOf(workflow) is { } info && Plist.Get(info, "NSServices") is { } services
+            ? services.Elements("dict").Select(s => Plist.Get(s, "NSMenuItem")).OfType<XElement>()
+                .Select(item => Plist.Get(item, "default")?.Value).FirstOrDefault(name => name is not null)
+            : null;
 
-    [GeneratedRegex(@"<key>NSMenuItem</key>\s*<dict>\s*<key>default</key>\s*<string>([^<]*)</string>")]
-    private static partial Regex MenuNamePattern();
+    internal static string? PresetIdOf(string workflow) => InfoOf(workflow) is { } info ? Plist.Get(info, PresetKey)?.Value : null;
 
-    internal static string? PresetIdOf(string workflow)
-    {
-        try
-        {
-            var plist = Path.Combine(workflow, "Contents", "Info.plist");
-            return File.Exists(plist) && PresetIdPattern().Match(File.ReadAllText(plist)) is { Success: true } m
-                ? SecurityElementUnescape(m.Groups[1].Value)
-                : null;
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-    }
+    private static XElement? InfoOf(string workflow) => Plist.Load(Path.Combine(workflow, "Contents", "Info.plist"));
 
     /// <summary>
     /// The menu item: the preset's name on one line. Finder shows a ":" in a file name as "/" (and the other way round),
@@ -138,12 +115,6 @@ public sealed partial class MacQuickActions(string servicesDirectory, Func<strin
 
     /// <summary>Escapes element text: only &amp;, &lt; and &gt; need it, so the script stays readable in the file.</summary>
     private static string X(string text) => text.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
-
-    private static string SecurityElementUnescape(string text) =>
-        text.Replace("&lt;", "<").Replace("&gt;", ">").Replace("&quot;", "\"").Replace("&apos;", "'").Replace("&amp;", "&");
-
-    [GeneratedRegex(@"<key>ManeFfmpegPresetId</key>\s*<string>([^<]*)</string>")]
-    private static partial Regex PresetIdPattern();
 
     /// <summary>
     /// The menu icon: a system image name, as Automator's icon picker writes it. A video camera for video presets, a

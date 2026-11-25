@@ -246,16 +246,16 @@ public class QuickActionTests(FfmpegFixture media) : IClassFixture<FfmpegFixture
                 <key>ServicesShortcutsPresent</key><true/>
             </dict>
             """);
-        string Order() => string.Join(", ", FinderServices.Dict(prefs, "FinderOrdering").Elements("key")
+        string Order() => string.Join(", ", Plist.Dict(prefs, "FinderOrdering").Elements("key")
             .Select(k => $"{k.Value}={((System.Xml.Linq.XElement)k.NextNode!).Value}"));
 
         FinderServices.Add(prefs, "a", null);
         FinderServices.Add(prefs, "b", null);
         Assert.Equal("APPEXTENSION-rotate=0, is.workflow.actions.x=5, SERVICE-(null) - a - runWorkflowAsService=6, " +
             "SERVICE-(null) - b - runWorkflowAsService=7", Order());
-        var status = FinderServices.Dict(FinderServices.Dict(prefs, "NSServicesStatus"), "(null) - a - runWorkflowAsService");
+        var status = Plist.Dict(Plist.Dict(prefs, "NSServicesStatus"), "(null) - a - runWorkflowAsService");
         Assert.Contains("<key>FinderPreview</key><true />", status.ToString(System.Xml.Linq.SaveOptions.DisableFormatting));
-        Assert.Contains("SERVICE-(null) - a - runWorkflowAsService", FinderServices.Dict(prefs, "FinderActive").ToString());
+        Assert.Contains("SERVICE-(null) - a - runWorkflowAsService", Plist.Dict(prefs, "FinderActive").ToString());
 
         // A rename keeps the place; adding the same name again too.
         FinderServices.Add(prefs, "a2", "a");

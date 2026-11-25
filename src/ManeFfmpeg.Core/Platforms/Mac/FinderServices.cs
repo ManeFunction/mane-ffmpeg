@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Xml.Linq;
 using ManeFfmpeg.Core.Persistence;
+using static ManeFfmpeg.Core.Platforms.Mac.Plist;
 
 namespace ManeFfmpeg.Core.Platforms.Mac;
 
@@ -48,12 +49,11 @@ public sealed class FinderServices : IServicesMenu
         int? position = null;
         if (previousName is not null && previousName != name)
         {
-            position = Get(ordering, FinderKey(previousName)) is { Name.LocalName: "integer" } old && int.TryParse(old.Value, out var n) ? n : null;
+            position = Integer(ordering, FinderKey(previousName));
             Remove(prefs, previousName);
         }
-        position ??= Get(ordering, FinderKey(name)) is { Name.LocalName: "integer" } own && int.TryParse(own.Value, out var kept)
-            ? kept
-            : Values(ordering).Select(v => int.TryParse(v.Value, out var i) ? i : -1).DefaultIfEmpty(-1).Max() + 1;
+        position ??= Integer(ordering, FinderKey(name))
+            ?? Values(ordering).Select(v => int.TryParse(v.Value, out var i) ? i : -1).DefaultIfEmpty(-1).Max() + 1;
         Set(ordering, FinderKey(name), new XElement("integer", position));
         Set(Dict(prefs, "FinderActive"), FinderKey(name), new XElement("integer", 1));
         Set(Dict(prefs, "NSServicesStatus"), StatusKey(name), new XElement("dict",
@@ -124,39 +124,5 @@ public sealed class FinderServices : IServicesMenu
         if (process.ExitCode != 0)
             throw new InvalidOperationException($"defaults {string.Join(" ", args)}: {error.Trim()}");
         return output.Result;
-    }
-
-    // Property-list dictionaries: <key> elements, each followed by its value.
-
-    /// <summary>The dictionary under <paramref name="key"/>, added when missing.</summary>
-    internal static XElement Dict(XElement dict, string key)
-    {
-        if (Get(dict, key) is { Name.LocalName: "dict" } found)
-            return found;
-        var created = new XElement("dict");
-        Set(dict, key, created);
-        return created;
-    }
-
-    private static XElement? Get(XElement dict, string key) =>
-        dict.Elements("key").FirstOrDefault(k => k.Value == key)?.ElementsAfterSelf().FirstOrDefault();
-
-    private static IEnumerable<XElement> Values(XElement dict) =>
-        dict.Elements("key").Select(k => k.ElementsAfterSelf().FirstOrDefault()).OfType<XElement>();
-
-    private static void Set(XElement dict, string key, XElement value)
-    {
-        if (dict.Elements("key").FirstOrDefault(k => k.Value == key) is { } existing)
-            existing.ElementsAfterSelf().FirstOrDefault()?.ReplaceWith(value);
-        else
-            dict.Add(new XElement("key", key), value);
-    }
-
-    private static void Delete(XElement dict, string key)
-    {
-        if (dict.Elements("key").FirstOrDefault(k => k.Value == key) is not { } existing)
-            return;
-        existing.ElementsAfterSelf().FirstOrDefault()?.Remove();
-        existing.Remove();
     }
 }
