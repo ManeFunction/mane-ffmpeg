@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using ManeFfmpeg.UI.Services;
 using ManeFfmpeg.Core.Ffmpeg;
 using ManeFfmpeg.Core.Model;
+using ManeFfmpeg.Core.Persistence;
 using ManeFfmpeg.Core.Platforms;
 
 namespace ManeFfmpeg.UI.ViewModels;
@@ -12,7 +13,7 @@ namespace ManeFfmpeg.UI.ViewModels;
 public sealed partial class PresetsViewModel : ViewModelBase
 {
     private readonly AppServices _app = AppServices.Instance;
-    private readonly IQuickActions? _quickActions;
+    private readonly PresetLibrary _library;
     private bool _loading;
     private bool _reloading;
 
@@ -26,12 +27,12 @@ public sealed partial class PresetsViewModel : ViewModelBase
     /// <param name="quickActions">Finder's Quick Actions, or null where the platform has none (the button is hidden).</param>
     public PresetsViewModel(IQuickActions? quickActions)
     {
-        _quickActions = quickActions;
+        _library = new PresetLibrary(_app.Presets, quickActions);
         Reload(null);
     }
 
     /// <summary>Whether presets can be put in the file manager's context menu (macOS Finder's Quick Actions).</summary>
-    public bool HasQuickActions => _quickActions is not null;
+    public bool HasQuickActions => _library.HasQuickActions;
 
     /// <summary>Whether the selected preset is in Finder's Quick Actions.</summary>
     [ObservableProperty]
@@ -192,7 +193,7 @@ public sealed partial class PresetsViewModel : ViewModelBase
         Name = value?.Name ?? "";
         Arguments = value?.Arguments ?? "";
         _quickActionError = null;
-        IsQuickAction = value is not null && _quickActions?.IsInstalled(value.Id) == true;
+        IsQuickAction = value is not null && _library.HasQuickAction(value.Id);
         Extension = value?.Extension ?? "";
         AudioFallback = value?.AudioFallbackArguments ?? "";
         _loading = false;
@@ -247,46 +248,18 @@ public sealed partial class PresetsViewModel : ViewModelBase
             Extension = Extension.Trim().TrimStart('.'),
             AudioFallbackArguments = string.IsNullOrWhiteSpace(AudioFallback) ? Preset.DefaultAudioFallback : AudioFallback.Trim(),
         };
-        _app.Presets.Save(updated);
-        // The menu shows the preset's name; the workflow runs whatever the preset is when it's chosen.
-        if (updated.Name != preset.Name)
-            UpdateQuickAction(updated);
+        _library.Save(updated);
         Reload(updated.Id);
     }
 
     [RelayCommand]
     private void ToggleQuickAction()
     {
-        if (_quickActions is null || Selected is not { } preset)
+        if (!HasQuickActions || Selected is not { } preset)
             return;
-        try
-        {
-            if (IsQuickAction)
-                _quickActions.Remove(preset.Id);
-            else
-                _quickActions.Install(preset);
-            _quickActionError = null;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            _quickActionError = $"Couldn't change the Quick Action: {ex.Message}";
-        }
-        IsQuickAction = _quickActions.IsInstalled(preset.Id);
+        _quickActionError = _library.SetQuickAction(preset, on: !IsQuickAction);
+        IsQuickAction = _library.HasQuickAction(preset.Id);
         Analyze();
-    }
-
-    /// <summary>Renames the preset's Quick Action, if it has one, to its current name.</summary>
-    private void UpdateQuickAction(Preset preset)
-    {
-        try
-        {
-            if (_quickActions?.IsInstalled(preset.Id) == true)
-                _quickActions.Install(preset);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            ManeFfmpeg.Core.Persistence.AppLog.Write($"Couldn't rename the Quick Action of {preset.Name}: {ex.Message}");
-        }
     }
 
     [RelayCommand(CanExecute = nameof(IsModified))]
@@ -326,15 +299,7 @@ public sealed partial class PresetsViewModel : ViewModelBase
         if (Selected is not { } preset)
             return;
         var index = Presets.IndexOf(preset);
-        _app.Presets.Delete(preset.Id);
-        try
-        {
-            _quickActions?.Remove(preset.Id);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            ManeFfmpeg.Core.Persistence.AppLog.Write($"Couldn't remove the Quick Action of {preset.Name}: {ex.Message}");
-        }
+        _library.Delete(preset.Id);
         Reload(Presets.ElementAtOrDefault(Math.Max(0, index - 1))?.Id);
         if (index > 0 && index - 1 < Presets.Count)
             Selected = Presets[index - 1];
@@ -366,9 +331,7 @@ public sealed partial class PresetsViewModel : ViewModelBase
             return;
         if (!await ResolveEditsAsync())
             return;
-        _app.Presets.RestoreBuiltIns();
-        foreach (var builtIn in Preset.BuiltIns)
-            UpdateQuickAction(builtIn);
+        _library.RestoreBuiltIns();
         Reload(Selected?.Id);
     }
 }
