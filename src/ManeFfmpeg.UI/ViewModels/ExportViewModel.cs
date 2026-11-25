@@ -53,8 +53,11 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
     /// <summary>Set while the menu is refilled, when its selection changing isn't the user's choice.</summary>
     private bool _refilling;
 
-    /// <summary>Set while a project's preset is applied, which isn't remembered as the user's last choice.</summary>
-    private bool _applyingProject;
+    /// <summary>
+    /// Set while the code selects a preset (a project's, or the mode's after the menu was refilled), which isn't
+    /// remembered as the user's last choice.
+    /// </summary>
+    private bool _selectingFromCode;
 
     private ProjectState State => _owner.State;
     private SourceCatalog Catalog => _owner.Catalog;
@@ -161,7 +164,20 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         {
             _refilling = false;
         }
-        SelectedPreset = Mode.Preset;
+        SelectFromCode(Mode.Preset);
+    }
+
+    private void SelectFromCode(Preset? preset)
+    {
+        _selectingFromCode = true;
+        try
+        {
+            SelectedPreset = preset;
+        }
+        finally
+        {
+            _selectingFromCode = false;
+        }
     }
 
     /// <summary>The store's version of <paramref name="chosen"/>, or the default preset of that kind.</summary>
@@ -215,7 +231,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         if (_refilling)
             return;
         Mode.Preset = value;
-        if (value is not null && !_applyingProject)
+        if (value is not null && !_selectingFromCode)
             RememberPreset(Kind, value);
         if (!IsAudioMode && value is not null && PresetAnalysis.Of(value).Arguments is { } args)
             _owner.SnapToKeyframes = args.VideoCopy;
@@ -270,15 +286,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
             _owner.RefreshDirty();
             return;
         }
-        _applyingProject = true;
-        try
-        {
-            SelectedPreset = preset is { Kind: PresetKind.Video } ? preset : DefaultPreset(PresetKind.Video);
-        }
-        finally
-        {
-            _applyingProject = false;
-        }
+        SelectFromCode(preset is { Kind: PresetKind.Video } ? preset : DefaultPreset(PresetKind.Video));
         OutputPath = output;
     }
 
