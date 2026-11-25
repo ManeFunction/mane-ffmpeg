@@ -22,8 +22,9 @@ public interface IServicesMenu
 /// is keyed by the menu item: NSServicesStatus by "(null) - name - runWorkflowAsService", FinderOrdering and FinderActive
 /// by "SERVICE-" and the same. A workflow without an NSServicesStatus entry with FinderPreview 1 is disabled, and one
 /// without a FinderOrdering number is listed after the numbered ones, alphabetically. The preferences are read with
-/// <c>defaults export</c> and written back whole with <c>defaults import</c>, which goes through cfprefsd (editing the
-/// file directly would be undone by its cache).
+/// <c>defaults export</c> and written back with <c>defaults import</c>, which goes through cfprefsd (editing the file
+/// directly would be undone by its cache). The import merges by top-level key: each key in the file replaces its value
+/// as a whole, so a key deleted inside one of these dictionaries is gone, but a top-level key left out stays.
 /// </summary>
 public sealed class FinderServices : IServicesMenu
 {
@@ -76,7 +77,7 @@ public sealed class FinderServices : IServicesMenu
         try
         {
             var export = Run(["export", Domain, "-"], null);
-            var document = XDocument.Parse(export);
+            var document = Parse(export);
             var prefs = document.Root?.Element("dict") ?? throw new InvalidDataException("No dictionary in the pbs preferences.");
             change(prefs);
             Run(["import", Domain, "-"], Serialize(document));
@@ -86,6 +87,12 @@ public sealed class FinderServices : IServicesMenu
             AppLog.Write($"Couldn't update Finder's Quick Actions settings: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// The exported plist. Whitespace is kept: the whole domain is imported again, and without it a string of spaces
+    /// would come back empty.
+    /// </summary>
+    internal static XDocument Parse(string export) => XDocument.Parse(export, LoadOptions.PreserveWhitespace);
 
     /// <summary>
     /// The plist as text for <c>defaults import</c>. XDocument writes the plist DOCTYPE with an empty internal subset

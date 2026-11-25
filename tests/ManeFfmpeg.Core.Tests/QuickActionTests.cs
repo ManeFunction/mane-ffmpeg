@@ -248,13 +248,14 @@ public class QuickActionTests(FfmpegFixture media) : IClassFixture<FfmpegFixture
     [MacFact]
     public async Task Finders_settings_are_written_back_as_a_valid_property_list()
     {
-        var document = System.Xml.Linq.XDocument.Parse("""
+        var document = FinderServices.Parse("""
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
             <plist version="1.0">
             <dict>
                 <key>NSServicesStatus</key>
                 <dict><key>(null) - x - runShortcutAsService</key><dict><key>key_equivalent</key><string>#&#xF70B;</string></dict></dict>
+                <key>Blank</key><string>  </string>
             </dict>
             </plist>
             """);
@@ -269,6 +270,8 @@ public class QuickActionTests(FfmpegFixture media) : IClassFixture<FfmpegFixture
             var order = await Cli.Wrap("/usr/bin/plutil")
                 .WithArguments(["-extract", "FinderOrdering", "xml1", "-o", "-", path]).ExecuteBufferedAsync();
             Assert.Contains("SERVICE-(null) - for share &amp; &lt;more&gt; - runWorkflowAsService", order.StandardOutput);
+            var blank = await Cli.Wrap("/usr/bin/plutil").WithArguments(["-extract", "Blank", "raw", "-o", "-", path]).ExecuteBufferedAsync();
+            Assert.Equal("  ", blank.StandardOutput.TrimEnd('\n'));
         }
         finally
         {
