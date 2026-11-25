@@ -59,6 +59,13 @@ public sealed class AppServices : IMediaAnalyzers
         ToolsChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>Shows a system notification, unless they're turned off in Settings.</summary>
+    public async Task NotifyAsync(string title, string body)
+    {
+        if (Settings.Current.Notifications)
+            await Platform.Current.NotifyAsync(title, body);
+    }
+
     public void LoadMpv() => MpvLibrary.TryLoad(Settings.Current.LibMpvPath);
 
     /// <summary>Probes a file once per (size, modification time).</summary>

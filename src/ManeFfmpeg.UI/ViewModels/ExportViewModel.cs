@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Globalization;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -19,10 +18,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
     private readonly AppServices _app = AppServices.Instance;
 
     private readonly DispatcherTimer _planTimer;
-    private CancellationTokenSource? _exportCts;
-    private ExportRunner? _runner;
-    private IDisposable? _keepAwake;
-    private string? _keepAwakeReason;
+    private ExportSession? _session;
     private string? _lastOutputPath;
 
     /// <summary>The running export's latest progress, or what it's doing before ffmpeg starts.</summary>
@@ -417,27 +413,19 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         ExportProgress = 0;
         _progress = null;
         ShowPreparing("Preparing…");
-        _exportCts = new CancellationTokenSource();
-        // Created before planning, so a pause while finding keyframes holds the export too.
-        var runner = _runner = new ExportRunner(tools);
-        var workDir = Path.Combine(AppPaths.TempDirectory, "export-" + Guid.NewGuid().ToString("N")[..8]);
-        _keepAwakeReason = $"{(audio ? "Extracting audio to" : "Exporting")} {Path.GetFileName(output)}";
-        _keepAwake = Platform.Current.KeepAwake(_keepAwakeReason);
+        // Started before planning, so a pause while finding keyframes holds the export too.
+        var session = _session = new ExportSession($"{(audio ? "Extracting audio to" : "Exporting")} {Path.GetFileName(output)}", "Export");
         try
         {
-            var plan = await PlanAsync(output, workDir, ShowPreparing);
-            var progress = new Progress<ExportProgress>(OnExportProgress);
-            var token = _exportCts.Token;
-            AppLog.Write($"Export {plan.Mode} → {output}\n{plan.CommandText(tools.Ffmpeg)}");
-            var result = await Task.Run(() => runner.RunAsync(plan, progress, token));
-            AppLog.Write($"Export {result.Outcome}: {result.Message} ({result.Elapsed}){(result.Log is null ? "" : "\n" + result.Log)}");
+            var plan = await PlanAsync(output, ExportSession.NewWorkDirectory("export"), ShowPreparing);
+            var result = await session.RunAsync(tools, plan, new Progress<ExportProgress>(OnExportProgress));
             _lastOutputPath = output;
             switch (result.Outcome)
             {
                 case ExportOutcome.Succeeded:
-                    ShowExportResult($"✓ {result.Message} in {FormatElapsed(result.Elapsed)}", failed: false);
+                    ShowExportResult($"✓ {result.Message} in {ExportText.Duration(result.Elapsed)}", failed: false);
                     CanReveal = true;
-                    await NotifyAsync(audio ? "Audio extracted" : "Export finished", $"{Path.GetFileName(output)} is ready ({FormatElapsed(result.Elapsed)}).");
+                    await _app.NotifyAsync(audio ? "Audio extracted" : "Export finished", $"{Path.GetFileName(output)} is ready ({ExportText.Duration(result.Elapsed)}).");
                     break;
                 case ExportOutcome.Cancelled:
                     ShowExportResult($"{what} cancelled.", failed: false);
@@ -445,7 +433,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
                 default:
                     ShowExportResult($"{what} failed: {result.Message}", failed: true);
                     ExportLog = result.Log;
-                    await NotifyAsync($"{what} failed", $"{Path.GetFileName(output)}: {result.Message}");
+                    await _app.NotifyAsync($"{what} failed", $"{Path.GetFileName(output)}: {result.Message}");
                     break;
             }
         }
@@ -462,11 +450,8 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         {
             IsExporting = false;
             IsExportPaused = false;
-            _runner = null;
-            _keepAwake?.Dispose();
-            _keepAwake = null;
-            _exportCts?.Dispose();
-            _exportCts = null;
+            session.Dispose();
+            _session = null;
         }
     }
 
@@ -483,24 +468,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         ShowProgressText();
     }
 
-    private void ShowProgressText()
-    {
-        var parts = new List<string>();
-        if (IsExportPaused)
-            parts.Add("Paused");
-        if (_progress is { } p)
-        {
-            parts.Add($"{p.Fraction * 100:0}%");
-            parts.Add(p.StepTitle);
-            if (!IsExportPaused && p.Remaining is { } left && p.Fraction > 0.01)
-                parts.Add($"{FormatElapsed(left)} left");
-            if (!IsExportPaused && p.Speed is { } speed)
-                parts.Add(string.Create(CultureInfo.InvariantCulture, $"{speed:0.0#}×"));
-        }
-        else if (_preparing is not null)
-            parts.Add(_preparing);
-        ExportProgressText = string.Join(" · ", parts);
-    }
+    private void ShowProgressText() => ExportProgressText = ExportText.Progress(_progress, IsExportPaused, _preparing);
 
     private void ShowExportResult(string message, bool failed)
     {
@@ -509,38 +477,24 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         ExportProgressText = null;
     }
 
-    private async Task NotifyAsync(string title, string body)
-    {
-        if (_app.Settings.Current.Notifications)
-            await Platform.Current.NotifyAsync(title, body);
-    }
-
-    private static string FormatElapsed(TimeSpan t) =>
-        t.TotalHours >= 1 ? $"{(int)t.TotalHours}h {t.Minutes:D2}m" : t.TotalMinutes >= 1 ? $"{(int)t.TotalMinutes}m {t.Seconds:D2}s" : $"{Math.Max(1, (int)Math.Round(t.TotalSeconds))}s";
-
     [RelayCommand(CanExecute = nameof(CanPauseExport))]
     private void PauseExport()
     {
-        _runner?.Pause();
+        _session?.Pause();
         IsExportPaused = true;
-        // A paused export doesn't need the computer awake.
-        _keepAwake?.Dispose();
-        _keepAwake = null;
         ShowProgressText();
     }
 
     [RelayCommand(CanExecute = nameof(IsExportPaused))]
     private void ResumeExport()
     {
-        if (_keepAwakeReason is not null)
-            _keepAwake ??= Platform.Current.KeepAwake(_keepAwakeReason);
         IsExportPaused = false;
-        _runner?.Resume();
+        _session?.Resume();
         ShowProgressText();
     }
 
     [RelayCommand(CanExecute = nameof(IsExporting))]
-    private void CancelExport() => _exportCts?.Cancel();
+    private void CancelExport() => _session?.Cancel();
 
     [RelayCommand]
     private void RevealOutput()
@@ -553,6 +507,6 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
     {
         _app.Presets.Changed -= OnPresetsChanged;
         _planTimer.Stop();
-        _exportCts?.Cancel();
+        _session?.Cancel();
     }
 }

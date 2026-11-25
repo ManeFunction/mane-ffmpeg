@@ -8,6 +8,19 @@ namespace ManeFfmpeg.Core.Ffmpeg;
 public sealed record ConversionRequest(string PresetId, IReadOnlyList<string> Files);
 
 /// <summary>
+/// Where a conversion is: file <paramref name="Index"/> of <paramref name="Count"/>, its output once planned, and
+/// what it's doing before ffmpeg starts (<paramref name="Preparing"/>) or ffmpeg's progress.
+/// </summary>
+public sealed record ConversionStatus(int Index, int Count, string File, string? Output, string? Preparing, ExportProgress? Progress)
+{
+    /// <summary>How much of all the files is done, 0 to 1.</summary>
+    public double Fraction => (Index + (Progress?.Fraction ?? 0)) / Count;
+}
+
+/// <summary>The files a conversion saved, and why each failed one failed ("name: reason").</summary>
+public sealed record ConversionReport(IReadOnlyList<string> Outputs, IReadOnlyList<string> Failures);
+
+/// <summary>
 /// Converting whole files with a preset, outside the editor (Finder's Quick Actions): each file is planned as a project
 /// holding that one video as a single clip, so it goes through the same export as an edit would, and is saved next to it.
 /// </summary>
@@ -53,14 +66,63 @@ public static class FileConversion
         return candidate;
     }
 
+    /// <summary>
+    /// Converts the files one after another in <paramref name="session"/>, until it's cancelled. A file that fails
+    /// doesn't stop the others.
+    /// </summary>
+    public static async Task<ConversionReport> ConvertAsync(IReadOnlyList<string> files, Preset preset, FfmpegTools tools,
+        KeyframeService keyframes, ExportSession session, IProgress<ConversionStatus>? status)
+    {
+        var outputs = new List<string>();
+        var failures = new List<string>();
+        for (var i = 0; i < files.Count && !session.IsCancelled; i++)
+        {
+            var file = files[i];
+            var index = i;
+            void Report(string? output, string? preparing, ExportProgress? progress) =>
+                status?.Report(new ConversionStatus(index, files.Count, file, output, preparing, progress));
+            Report(null, "Preparing…", null);
+            try
+            {
+                var info = await new Ffprobe(tools).ProbeAsync(file, session.Token);
+                var plan = await PlanAsync(file, info, preset, keyframes, ExportSession.NewWorkDirectory("convert"), s => Report(null, s, null));
+                Report(plan.OutputPath, "Starting…", null);
+                var result = await session.RunAsync(tools, plan, new Relay<ExportProgress>(p => Report(plan.OutputPath, null, p)));
+                if (result.Outcome == ExportOutcome.Succeeded)
+                    outputs.Add(plan.OutputPath);
+                else if (result.Outcome == ExportOutcome.Failed)
+                    failures.Add($"{Path.GetFileName(file)}: {result.Message}");
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex) when (ex is ExportPlanException or FfprobeException)
+            {
+                failures.Add($"{Path.GetFileName(file)}: {ex.Message}");
+            }
+        }
+        return new ConversionReport(outputs, failures);
+    }
+
+    /// <summary>Passes reports on at once, on the reporting thread (the caller's <see cref="Progress{T}"/> moves them to its own).</summary>
+    private sealed class Relay<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
+    }
+
     /// <summary>The export that converts <paramref name="path"/> (probed as <paramref name="info"/>) with <paramref name="preset"/>.</summary>
-    public static async Task<ExportPlan> PlanAsync(string path, MediaInfo info, Preset preset, KeyframeService keyframes, string workDirectory)
+    /// <param name="status">Told what planning is waiting for ("Finding keyframes…").</param>
+    public static async Task<ExportPlan> PlanAsync(string path, MediaInfo info, Preset preset, KeyframeService keyframes, string workDirectory,
+        Action<string>? status = null)
     {
         var (state, sourceId) = ProjectOf(path, info);
         var media = new Dictionary<string, MediaInfo> { [sourceId] = info };
         var index = new Dictionary<string, KeyframeIndex>();
         if (preset.Kind == PresetKind.Video && PresetAnalysis.Of(preset).VideoCopy)
+        {
+            status?.Invoke("Finding keyframes…");
             index[sourceId] = await keyframes.GetAsync(path, info);
+        }
         return ExportPlanner.Plan(new ExportJob
         {
             State = state,

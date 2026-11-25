@@ -1,4 +1,3 @@
-using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ManeFfmpeg.Core.Ffmpeg;
@@ -17,9 +16,10 @@ namespace ManeFfmpeg.UI.ViewModels;
 public sealed partial class QuickConvertViewModel(ConversionRequest request) : ViewModelBase
 {
     private readonly AppServices _app = AppServices.Instance;
-    private readonly CancellationTokenSource _cts = new();
-    private readonly List<string> _outputs = [];
-    private ExportRunner? _runner;
+    private ExportSession? _session;
+    private bool _cancelled;
+    private IReadOnlyList<string> _outputs = [];
+    private ConversionStatus? _status;
 
     /// <summary>Closes the window.</summary>
     public Action? RequestClose { get; set; }
@@ -59,150 +59,91 @@ public sealed partial class QuickConvertViewModel(ConversionRequest request) : V
     {
         var files = request.Files.Select(Path.GetFullPath).Where(File.Exists).ToList();
         AppLog.Write($"Quick Action: preset {request.PresetId}, {files.Count} file(s)");
-        List<string> failures;
+        ConversionReport report;
         try
         {
-            failures = await ConvertAllAsync(files);
+            report = await ConvertAllAsync(files);
         }
         catch (Exception ex)
         {
             AppLog.Write($"Quick Action failed: {ex}");
-            failures = [ex.Message];
+            report = new ConversionReport([], [ex.Message]);
         }
         finally
         {
-            IsRunning = false;
-            IsPaused = false;
+            _session?.Dispose();
+            _session = null;
         }
+        _outputs = report.Outputs;
+        IsRunning = false;
+        IsPaused = false;
 
-        if (_cts.IsCancellationRequested)
+        if (_cancelled)
         {
             RequestClose?.Invoke();
             return;
         }
-        if (failures.Count == 0)
+        if (report.Failures.Count == 0)
         {
-            await NotifyAsync("Conversion finished",
+            await _app.NotifyAsync("Conversion finished",
                 _outputs.Count == 1 ? $"{Path.GetFileName(_outputs[0])} is ready." : $"{_outputs.Count} files are ready.");
             RequestClose?.Invoke();
             return;
         }
         HasErrors = true;
-        Status = string.Join("\n", failures);
+        Status = string.Join("\n", report.Failures);
         ProgressText = _outputs.Count > 0 ? $"{_outputs.Count} of {files.Count} converted" : null;
-        await NotifyAsync("Conversion failed", failures[0]);
+        await _app.NotifyAsync("Conversion failed", report.Failures[0]);
     }
 
     /// <summary>
-    /// Converts the files one after another; returns why each one failed, or why none could start (no preset, no files,
-    /// no ffmpeg).
+    /// Converts the files one after another; the report has why each one failed, or why none could start (no preset,
+    /// no files, no ffmpeg).
     /// </summary>
-    private async Task<List<string>> ConvertAllAsync(List<string> files)
+    private async Task<ConversionReport> ConvertAllAsync(List<string> files)
     {
         if (_app.Presets.Find(request.PresetId) is not { } preset)
-            return ["This preset no longer exists. Remove the Quick Action in Mane FFmpeg's Export Presets window."];
+            return new ConversionReport([], ["This preset no longer exists. Remove the Quick Action in Mane FFmpeg's Export Presets window."]);
         Heading = $"Converting with “{preset.Name}”";
         if (files.Count == 0)
-            return ["None of the selected files could be found."];
+            return new ConversionReport([], ["None of the selected files could be found."]);
         await _app.LocateToolsAsync();
         if (_app.Tools is not { } tools)
-            return [_app.ToolsError ?? "ffmpeg wasn't found."];
-        var keyframes = _app.Keyframes ?? new KeyframeService(tools);
-        using var awake = Platform.Current.KeepAwake($"Converting with {preset.Name}");
-        var failures = new List<string>();
-        for (var i = 0; i < files.Count && !_cts.IsCancellationRequested; i++)
-        {
-            if (await ConvertAsync(files[i], i, files.Count, preset, tools, keyframes) is { } error)
-                failures.Add($"{Path.GetFileName(files[i])}: {error}");
-        }
-        return failures;
-    }
-
-    /// <summary>Converts one file; returns why it failed, or null.</summary>
-    private async Task<string?> ConvertAsync(string file, int index, int count, Preset preset, FfmpegTools tools, KeyframeService keyframes)
-    {
-        FileText = count > 1 ? $"{index + 1} of {count}: {Path.GetFileName(file)}" : Path.GetFileName(file);
-        ProgressText = "Preparing…";
-        Progress = 100.0 * index / count;
-        var workDir = Path.Combine(AppPaths.TempDirectory, "convert-" + Guid.NewGuid().ToString("N")[..8]);
-        try
-        {
-            var info = await new Ffprobe(tools).ProbeAsync(file, _cts.Token);
-            if (preset.Kind == PresetKind.Video && PresetAnalysis.Of(preset).VideoCopy)
-                ProgressText = "Finding keyframes…";
-            var plan = await FileConversion.PlanAsync(file, info, preset, keyframes, workDir);
-            FileText = (count > 1 ? $"{index + 1} of {count}: " : "") + $"{Path.GetFileName(file)} → {Path.GetFileName(plan.OutputPath)}";
-            AppLog.Write($"Quick Action {plan.Mode} → {plan.OutputPath}\n{plan.CommandText(tools.Ffmpeg)}");
-            var runner = _runner = new ExportRunner(tools);
-            if (IsPaused)
-                runner.Pause();
-            var progress = new Progress<ExportProgress>(p => ShowProgress(p, index, count));
-            var result = await Task.Run(() => runner.RunAsync(plan, progress, _cts.Token));
-            AppLog.Write($"Quick Action {result.Outcome}: {result.Message} ({result.Elapsed}){(result.Log is null ? "" : "\n" + result.Log)}");
-            switch (result.Outcome)
-            {
-                case ExportOutcome.Succeeded:
-                    _outputs.Add(plan.OutputPath);
-                    return null;
-                case ExportOutcome.Cancelled:
-                    return null;
-                default:
-                    return result.Message;
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            return null;
-        }
-        catch (Exception ex) when (ex is ExportPlanException or FfprobeException)
-        {
-            return ex.Message;
-        }
-        finally
-        {
-            _runner = null;
-        }
-    }
-
-    private void ShowProgress(ExportProgress p, int index, int count)
-    {
-        Progress = 100.0 * (index + p.Fraction) / count;
-        var parts = new List<string> { $"{p.Fraction * 100:0}%" };
+            return new ConversionReport([], [_app.ToolsError ?? "ffmpeg wasn't found."]);
+        if (_cancelled)
+            return new ConversionReport([], []);
+        var session = _session = new ExportSession($"Converting with {preset.Name}", "Quick Action");
+        // Paused while ffmpeg was being looked for.
         if (IsPaused)
-            parts.Insert(0, "Paused");
-        else
-        {
-            if (p.Remaining is { } left && p.Fraction > 0.01)
-                parts.Add($"{FormatTime(left)} left");
-            if (p.Speed is { } speed)
-                parts.Add(string.Create(CultureInfo.InvariantCulture, $"{speed:0.0#}×"));
-        }
-        ProgressText = string.Join(" · ", parts);
+            session.Pause();
+        return await FileConversion.ConvertAsync(files, preset, tools, _app.Keyframes ?? new KeyframeService(tools), session,
+            new Progress<ConversionStatus>(Show));
     }
 
-    private async Task NotifyAsync(string title, string body)
+    private void Show(ConversionStatus s)
     {
-        if (_app.Settings.Current.Notifications)
-            await Platform.Current.NotifyAsync(title, body);
+        _status = s;
+        FileText = (s.Count > 1 ? $"{s.Index + 1} of {s.Count}: " : "") + Path.GetFileName(s.File)
+            + (s.Output is { } output ? $" → {Path.GetFileName(output)}" : "");
+        Progress = 100.0 * s.Fraction;
+        ShowProgressText();
     }
 
-    private static string FormatTime(TimeSpan t) =>
-        t.TotalHours >= 1 ? $"{(int)t.TotalHours}h {t.Minutes:D2}m" : t.TotalMinutes >= 1 ? $"{(int)t.TotalMinutes}m {t.Seconds:D2}s" : $"{Math.Max(1, (int)Math.Round(t.TotalSeconds))}s";
+    private void ShowProgressText()
+    {
+        if (IsRunning)
+            ProgressText = ExportText.Progress(_status?.Progress, IsPaused, _status?.Preparing, showStep: false);
+    }
 
     [RelayCommand(CanExecute = nameof(IsRunning))]
     private void Pause()
     {
+        IsPaused = !IsPaused;
         if (IsPaused)
-        {
-            IsPaused = false;
-            _runner?.Resume();
-        }
+            _session?.Pause();
         else
-        {
-            IsPaused = true;
-            _runner?.Pause();
-        }
-        ProgressText = IsPaused ? "Paused" : ProgressText;
+            _session?.Resume();
+        ShowProgressText();
     }
 
     /// <summary>Cancel while running (the partly written file is removed), Close afterwards.</summary>
@@ -221,8 +162,8 @@ public sealed partial class QuickConvertViewModel(ConversionRequest request) : V
     {
         if (!IsRunning)
             return;
-        _runner?.Resume();
-        _cts.Cancel();
+        _cancelled = true;
+        _session?.Cancel();
     }
 
     private bool CanReveal => !IsRunning && _outputs.Count > 0;
