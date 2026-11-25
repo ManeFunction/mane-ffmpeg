@@ -17,13 +17,11 @@ namespace ManeFfmpeg.Core.Platforms.Mac;
 /// disabled, and listed alphabetically after the ordered Quick Actions. New ones are enabled and go last, so the order
 /// is the order they were added in.
 /// </param>
-public sealed class MacQuickActions(string servicesDirectory, Func<string, string> commandFor, Action? refresh = null,
-    IServicesMenu? servicesMenu = null) : IQuickActions
+public sealed class MacQuickActions(string servicesDirectory, Func<string, string> commandFor, Action refresh,
+    IServicesMenu servicesMenu) : IQuickActions
 {
     /// <summary>The Info.plist key that marks a workflow as this app's and names its preset.</summary>
     internal const string PresetKey = "ManeFfmpegPresetId";
-
-    public string ServicesDirectory => servicesDirectory;
 
     public bool IsInstalled(string presetId) => WorkflowsOf(presetId).Any();
 
@@ -40,8 +38,8 @@ public sealed class MacQuickActions(string servicesDirectory, Func<string, strin
         File.WriteAllText(Path.Combine(contents, "Info.plist"), InfoPlist(name, preset.Id, icon));
         File.WriteAllText(Path.Combine(contents, "document.wflow"), Document(Script(preset), icon));
         AppLog.Write($"Quick Action “{name}” saved: {path}");
-        servicesMenu?.Added(name, previousName);
-        refresh?.Invoke();
+        servicesMenu.Added(name, previousName);
+        refresh();
     }
 
     public void Remove(string presetId)
@@ -52,12 +50,12 @@ public sealed class MacQuickActions(string servicesDirectory, Func<string, strin
             var name = MenuNameOf(path);
             Directory.Delete(path, recursive: true);
             if (name is not null)
-                servicesMenu?.Removed(name);
+                servicesMenu.Removed(name);
             AppLog.Write($"Quick Action removed: {path}");
             removed = true;
         }
         if (removed)
-            refresh?.Invoke();
+            refresh();
     }
 
     /// <summary>The workflows this app made for <paramref name="presetId"/> (normally one).</summary>
