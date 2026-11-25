@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [2.5.0] - 2026-11-25
 ### Added
 - **Finder Quick Actions (macOS):** a new *Add to Quick Actions* button in the presets window, for video and audio
   presets. Right-click videos in Finder → *Quick Actions* → the preset's name converts each whole video with it, in
