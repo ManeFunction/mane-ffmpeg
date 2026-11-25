@@ -383,6 +383,23 @@ public class PresetStoreTests
     }
 
     [Fact]
+    public void Last_chosen_presets_survive_a_restart()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"settings-{Guid.NewGuid():N}.json");
+        try
+        {
+            new SettingsStore(path).Update(s => s with { LastVideoPresetId = "mine-video", LastAudioPresetId = "mine-audio" });
+            var settings = new SettingsStore(path).Current;
+            Assert.Equal("mine-video", settings.LastVideoPresetId);
+            Assert.Equal("mine-audio", settings.LastAudioPresetId);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void Missing_fields_get_defaults()
     {
         var path = Path.Combine(Path.GetTempPath(), $"presets-{Guid.NewGuid():N}.json");

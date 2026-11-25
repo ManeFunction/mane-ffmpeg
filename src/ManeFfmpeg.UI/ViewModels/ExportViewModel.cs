@@ -53,6 +53,9 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
     /// <summary>Set while the menu is refilled, when its selection changing isn't the user's choice.</summary>
     private bool _refilling;
 
+    /// <summary>Set while a project's preset is applied, which isn't remembered as the user's last choice.</summary>
+    private bool _applyingProject;
+
     private ProjectState State => _owner.State;
     private SourceCatalog Catalog => _owner.Catalog;
     private IMainWindowView? View => _owner.View;
@@ -164,11 +167,27 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
     private Preset? Current(Preset? chosen, PresetKind kind) =>
         _app.Presets.Presets.FirstOrDefault(p => p.Id == chosen?.Id && p.Kind == kind) ?? DefaultPreset(kind);
 
-    /// <summary>"for storage" is the default for new projects, and "extract audio (as is)" for saving audio.</summary>
+    /// <summary>
+    /// The preset last chosen for this kind (kept between sessions), else "for storage" for video and "extract audio
+    /// (as is)" for saving audio.
+    /// </summary>
     private Preset? DefaultPreset(PresetKind kind)
     {
+        var presets = _app.Presets.Presets;
+        if (LastPresetId(kind) is { } last && presets.FirstOrDefault(p => p.Id == last && p.Kind == kind) is { } remembered)
+            return remembered;
         var id = kind == PresetKind.Audio ? Preset.ExtractAudio.Id : Preset.ForStorage.Id;
-        return _app.Presets.Presets.FirstOrDefault(p => p.Id == id) ?? _app.Presets.Presets.FirstOrDefault(p => p.Kind == kind);
+        return presets.FirstOrDefault(p => p.Id == id) ?? presets.FirstOrDefault(p => p.Kind == kind);
+    }
+
+    private string? LastPresetId(PresetKind kind) =>
+        kind == PresetKind.Audio ? _app.Settings.Current.LastAudioPresetId : _app.Settings.Current.LastVideoPresetId;
+
+    private void RememberPreset(PresetKind kind, Preset preset)
+    {
+        if (LastPresetId(kind) == preset.Id)
+            return;
+        _app.Settings.Update(s => kind == PresetKind.Audio ? s with { LastAudioPresetId = preset.Id } : s with { LastVideoPresetId = preset.Id });
     }
 
     partial void OnIsAudioModeChanged(bool value)
@@ -193,6 +212,8 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         if (_refilling)
             return;
         Mode.Preset = value;
+        if (value is not null && !_applyingProject)
+            RememberPreset(Kind, value);
         if (!IsAudioMode && value is not null && PresetAnalysis.Of(value).Arguments is { } args)
             _owner.SnapToKeyframes = args.VideoCopy;
         OnPropertyChanged(nameof(OutputDisplay));
@@ -246,7 +267,15 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
             _owner.RefreshDirty();
             return;
         }
-        SelectedPreset = preset is { Kind: PresetKind.Video } ? preset : DefaultPreset(PresetKind.Video);
+        _applyingProject = true;
+        try
+        {
+            SelectedPreset = preset is { Kind: PresetKind.Video } ? preset : DefaultPreset(PresetKind.Video);
+        }
+        finally
+        {
+            _applyingProject = false;
+        }
         OutputPath = output;
     }
 

@@ -33,6 +33,10 @@ public sealed record AppSettings
     public List<string> RecentProjects { get; set; } = [];
     public string? LastMediaFolder { get; set; }
     public string? LastProjectFolder { get; set; }
+    /// <summary>The video preset last chosen in the export bar; new projects start with it.</summary>
+    public string? LastVideoPresetId { get; set; }
+    /// <summary>The audio preset last chosen for Extract audio; every window starts with it.</summary>
+    public string? LastAudioPresetId { get; set; }
 }
 
 /// <summary>App-wide settings in settings.json.</summary>
