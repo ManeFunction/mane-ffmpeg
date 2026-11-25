@@ -112,7 +112,8 @@ public class ExportSessionTests(FfmpegFixture media) : IClassFixture<FfmpegFixtu
                     new KeyframeService(FfmpegFixture.Tools!), session, null);
                 await Task.Delay(1500);
                 Assert.False(converting.IsCompleted);
-                Assert.False(File.Exists(output));
+                // Only the empty file that claims the name.
+                Assert.Equal(0, new FileInfo(output).Length);
                 session.Resume();
                 Assert.Equal([output], (await converting).Outputs);
             }

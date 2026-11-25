@@ -68,6 +68,32 @@ public class QuickActionTests(FfmpegFixture media) : IClassFixture<FfmpegFixture
     }
 
     [FfmpegFact]
+    public async Task Conversions_planned_at_the_same_time_get_their_own_files()
+    {
+        var dir = Directory.CreateTempSubdirectory("mane-convert").FullName;
+        try
+        {
+            var video = Path.Combine(dir, "clip.mp4");
+            File.Copy(media.Sync25, video);
+            var info = await media.ProbeAsync(video);
+            var keyframes = new KeyframeService(FfmpegFixture.Tools!);
+            var first = await FileConversion.PlanAsync(video, info, Preset.ExtractAudio, keyframes, Path.Combine(dir, "w1"));
+            var second = await FileConversion.PlanAsync(video, info, Preset.ExtractAudio, keyframes, Path.Combine(dir, "w2"));
+            Assert.Equal(Path.Combine(dir, "clip.m4a"), first.OutputPath);
+            Assert.Equal(Path.Combine(dir, "clip-2.m4a"), second.OutputPath);
+            // Claimed as empty files until ffmpeg writes them.
+            Assert.Equal(0, new FileInfo(first.OutputPath).Length);
+            var result = await new ExportRunner(FfmpegFixture.Tools!).RunAsync(first, null, CancellationToken.None);
+            Assert.Equal(ExportOutcome.Succeeded, result.Outcome);
+            Assert.True(new FileInfo(first.OutputPath).Length > 0);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [FfmpegFact]
     public async Task A_file_without_video_is_refused()
     {
         var info = await media.ProbeAsync(media.Tone);

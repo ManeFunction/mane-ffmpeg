@@ -90,7 +90,9 @@ public static class FileConversion
                 var result = await session.RunAsync(tools, plan, new Relay<ExportProgress>(p => Report(plan.OutputPath, null, p)));
                 if (result.Outcome == ExportOutcome.Succeeded)
                     outputs.Add(plan.OutputPath);
-                else if (result.Outcome == ExportOutcome.Failed)
+                else
+                    DeleteClaim(plan.OutputPath);
+                if (result.Outcome == ExportOutcome.Failed)
                     failures.Add($"{Path.GetFileName(file)}: {result.Message}");
             }
             catch (OperationCanceledException)
@@ -123,14 +125,61 @@ public static class FileConversion
             status?.Invoke("Finding keyframes…");
             index[sourceId] = await keyframes.GetAsync(path, info);
         }
-        return ExportPlanner.Plan(new ExportJob
+        var output = ClaimOutputPath(path, preset, state, media);
+        try
         {
-            State = state,
-            Media = media,
-            Preset = preset,
-            OutputPath = OutputPathFor(path, preset, state, media),
-            WorkDirectory = workDirectory,
-            Keyframes = index,
-        });
+            return ExportPlanner.Plan(new ExportJob
+            {
+                State = state,
+                Media = media,
+                Preset = preset,
+                OutputPath = output,
+                WorkDirectory = workDirectory,
+                Keyframes = index,
+            });
+        }
+        catch
+        {
+            DeleteClaim(output);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// <see cref="OutputPathFor"/>, created as an empty file at once, so a conversion started at the same time (each
+    /// Quick Action is its own process) picks another name instead of overwriting this one: ffmpeg runs with -y.
+    /// </summary>
+    internal static string ClaimOutputPath(string path, Preset preset, ProjectState state, IReadOnlyDictionary<string, MediaInfo> media)
+    {
+        while (true)
+        {
+            var candidate = OutputPathFor(path, preset, state, media);
+            try
+            {
+                new FileStream(candidate, FileMode.CreateNew).Dispose();
+                return candidate;
+            }
+            catch (IOException) when (File.Exists(candidate) || Directory.Exists(candidate))
+            {
+                // Taken since it was picked; the next try numbers past it.
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                throw new ExportPlanException($"Can't save next to {Path.GetFileName(path)}: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>Removes a claimed output that nothing was written to (ffmpeg removes what it started writing itself).</summary>
+    private static void DeleteClaim(string output)
+    {
+        try
+        {
+            if (new FileInfo(output) is { Exists: true, Length: 0 })
+                File.Delete(output);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 }
