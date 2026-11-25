@@ -126,6 +126,7 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
         _owner = owner;
         _planTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(400), DispatcherPriority.Background, OnPlanTimer);
         ReloadPresets();
+        IsAudioMode = _app.Settings.Current.ExtractAudioMode;
         _app.Presets.Changed += OnPresetsChanged;
         owner.StateChanged += (_, _) => InvalidatePlanPreview();
         owner.Catalog.Changed += _ => InvalidatePlanPreview();
@@ -192,6 +193,8 @@ public sealed partial class ExportViewModel : ViewModelBase, IDisposable
 
     partial void OnIsAudioModeChanged(bool value)
     {
+        if (_app.Settings.Current.ExtractAudioMode != value)
+            _app.Settings.Update(s => s with { ExtractAudioMode = value });
         OutputPath = Mode.OutputPath;
         ReloadPresets();
         ExportStatus = null;

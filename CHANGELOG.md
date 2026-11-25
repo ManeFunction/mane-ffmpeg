@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 ### Changed
-- The app remembers the last video and audio presets you chose and starts with them after a restart. A project
-  you open still uses the preset saved in it.
+- The app remembers the last video and audio presets you chose, and whether the export button was on *Export video*
+  or *Extract audio*, and starts with them after a restart. A project you open still uses the video preset saved in it.
 
 ## [2.4.0] - 2026-11-23
 ### Added

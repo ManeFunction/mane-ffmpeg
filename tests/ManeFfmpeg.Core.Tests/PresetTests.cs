@@ -388,10 +388,11 @@ public class PresetStoreTests
         var path = Path.Combine(Path.GetTempPath(), $"settings-{Guid.NewGuid():N}.json");
         try
         {
-            new SettingsStore(path).Update(s => s with { LastVideoPresetId = "mine-video", LastAudioPresetId = "mine-audio" });
+            new SettingsStore(path).Update(s => s with { LastVideoPresetId = "mine-video", LastAudioPresetId = "mine-audio", ExtractAudioMode = true });
             var settings = new SettingsStore(path).Current;
             Assert.Equal("mine-video", settings.LastVideoPresetId);
             Assert.Equal("mine-audio", settings.LastAudioPresetId);
+            Assert.True(settings.ExtractAudioMode);
         }
         finally
         {

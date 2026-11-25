@@ -37,6 +37,8 @@ public sealed record AppSettings
     public string? LastVideoPresetId { get; set; }
     /// <summary>The audio preset last chosen for Extract audio; every window starts with it.</summary>
     public string? LastAudioPresetId { get; set; }
+    /// <summary>The export button was last switched to Extract audio; every window starts in that mode.</summary>
+    public bool ExtractAudioMode { get; set; }
 }
 
 /// <summary>App-wide settings in settings.json.</summary>
