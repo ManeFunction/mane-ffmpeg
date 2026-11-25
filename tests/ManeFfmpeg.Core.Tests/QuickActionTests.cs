@@ -161,17 +161,36 @@ public class QuickActionTests(FfmpegFixture media) : IClassFixture<FfmpegFixture
             Assert.Contains("--quick-action 'builtin-share' \"$@\"", document);
             Assert.Contains("com.apple.Automator.servicesMenu", document);
 
-            actions.Install(Preset.Share with { Name = "share: small / fast" });
-            // Finder shows the ":" as "/".
-            Assert.Equal("share- small : fast.workflow", Path.GetFileName(Only(dir)));
-            Assert.Contains("<string>share- small / fast</string>", File.ReadAllText(Path.Combine(Only(dir), "Contents", "Info.plist")));
+            actions.Install(Preset.Share with { Name = "share small" });
+            Assert.Equal("share small.workflow", Path.GetFileName(Only(dir)));
+            Assert.Contains("<string>share small</string>", File.ReadAllText(Path.Combine(Only(dir), "Contents", "Info.plist")));
 
             actions.Remove(Preset.Share.Id);
             Assert.Empty(Directory.GetDirectories(dir));
             Assert.False(actions.IsInstalled(Preset.Share.Id));
             Assert.Equal(3, refreshed.Count);
             // Enabled and ordered by the name the menu shows; a rename takes over the old name's place.
-            Assert.Equal(["+for share (compatibility)", "+share- small / fast (was for share (compatibility))", "-share- small / fast"], enabled);
+            Assert.Equal(["+for share (compatibility)", "+share small (was for share (compatibility))", "-share small"], enabled);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // Windows doesn't allow a ":" in a file name.
+    [UnixFact]
+    public void A_slash_in_the_name_is_stored_as_a_colon_and_a_colon_becomes_a_dash()
+    {
+        var enabled = new List<string>();
+        var (actions, dir, _) = Workflows(enabled);
+        try
+        {
+            actions.Install(Preset.Share with { Name = "share: small / fast" });
+            // Finder shows the ":" as "/".
+            Assert.Equal("share- small : fast.workflow", Path.GetFileName(Only(dir)));
+            Assert.Contains("<string>share- small / fast</string>", File.ReadAllText(Path.Combine(Only(dir), "Contents", "Info.plist")));
+            Assert.Equal(["+share- small / fast"], enabled);
         }
         finally
         {
