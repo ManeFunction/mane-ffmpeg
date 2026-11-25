@@ -3,6 +3,7 @@ using CliWrap.Buffered;
 using ManeFfmpeg.Core.Ffmpeg;
 using ManeFfmpeg.Core.Media;
 using ManeFfmpeg.Core.Model;
+using ManeFfmpeg.Core.Platforms;
 using ManeFfmpeg.Core.Platforms.Mac;
 
 namespace ManeFfmpeg.Core.Tests;
@@ -122,7 +123,7 @@ public class QuickActionTests(FfmpegFixture media) : IClassFixture<FfmpegFixture
         var dir = Directory.CreateTempSubdirectory("mane-services").FullName;
         var refreshed = new List<int>();
 #pragma warning disable CA1416
-        var actions = new MacQuickActions(dir, id => $"/usr/bin/open -n -a '/Applications/Mane FFmpeg.app' --args --quick-action {MacQuickActions.Quote(id)} \"$@\"",
+        var actions = new MacQuickActions(dir, id => $"/usr/bin/open -n -a '/Applications/Mane FFmpeg.app' --args --quick-action {UnixPlatform.Quote(id)} \"$@\"",
             () => refreshed.Add(1), new RecordingMenu(enabled));
 #pragma warning restore CA1416
         return (actions, dir, refreshed);

@@ -17,21 +17,21 @@ public sealed partial class MacPlatform
     /// </summary>
     private static string QuickActionCommand(string presetId)
     {
-        var tail = $"{FileConversion.CommandLineFlag} {MacQuickActions.Quote(presetId)} \"$@\"";
+        var tail = $"{FileConversion.CommandLineFlag} {Quote(presetId)} \"$@\"";
         var processPath = Environment.ProcessPath ?? "";
         if (BundleAround(processPath) is { } bundle)
         {
-            var byPath = $"/usr/bin/open -n -a {MacQuickActions.Quote(bundle)} --args {tail}";
-            return BundleId.Value is { } id ? $"{byPath} || /usr/bin/open -n -b {MacQuickActions.Quote(id)} --args {tail}" : byPath;
+            var byPath = $"/usr/bin/open -n -a {Quote(bundle)} --args {tail}";
+            return BundleId.Value is { } id ? $"{byPath} || /usr/bin/open -n -b {Quote(id)} --args {tail}" : byPath;
         }
         var command = new List<string> { processPath };
         // "dotnet ManeFfmpeg.dll"
         if (Platform.AppExecutable(processPath) is null)
             command.Add(Environment.GetCommandLineArgs()[0]);
         var root = Environment.GetEnvironmentVariable("DOTNET_ROOT") is { Length: > 0 } dotnetRoot
-            ? $"DOTNET_ROOT={MacQuickActions.Quote(dotnetRoot)} "
+            ? $"DOTNET_ROOT={Quote(dotnetRoot)} "
             : "";
-        return $"{root}{string.Join(" ", command.Select(MacQuickActions.Quote))} {tail} >/dev/null 2>&1 &";
+        return $"{root}{string.Join(" ", command.Select(Quote))} {tail} >/dev/null 2>&1 &";
     }
 
     /// <summary>Tells the system to read ~/Library/Services again, so the menu changes at once.</summary>

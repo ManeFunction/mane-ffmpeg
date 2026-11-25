@@ -136,9 +136,6 @@ public sealed partial class MacQuickActions(string servicesDirectory, Func<strin
         "# Made by Mane FFmpeg's presets window; remove it there.\n" +
         commandFor(preset.Id) + "\n";
 
-    /// <summary>Single-quotes a word for sh/zsh.</summary>
-    public static string Quote(string word) => "'" + word.Replace("'", "'\\''") + "'";
-
     /// <summary>Escapes element text: only &amp;, &lt; and &gt; need it, so the script stays readable in the file.</summary>
     private static string X(string text) => text.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
 
