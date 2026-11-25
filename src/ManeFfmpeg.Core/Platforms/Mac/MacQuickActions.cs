@@ -30,13 +30,15 @@ public sealed class MacQuickActions(string servicesDirectory, Func<string, strin
         var existing = WorkflowsOf(preset.Id).ToList();
         var previousName = existing.Select(MenuNameOf).FirstOrDefault(n => n is not null);
         var (path, name) = FreePath(MenuName(preset.Name), existing);
-        foreach (var old in existing.Where(p => p != path))
-            Directory.Delete(old, recursive: true);
         var contents = Path.Combine(path, "Contents");
         Directory.CreateDirectory(contents);
         var icon = IconFor(preset.Kind);
-        File.WriteAllText(Path.Combine(contents, "Info.plist"), InfoPlist(name, preset.Id, icon));
-        File.WriteAllText(Path.Combine(contents, "document.wflow"), Document(Script(preset), icon));
+        // Each file is replaced whole, and the old workflow only goes once the new one is there: a failed write
+        // leaves the preset with a Quick Action.
+        AtomicFile.WriteAllText(Path.Combine(contents, "document.wflow"), Document(Script(preset), icon));
+        AtomicFile.WriteAllText(Path.Combine(contents, "Info.plist"), InfoPlist(name, preset.Id, icon));
+        foreach (var old in existing.Where(p => p != path))
+            Directory.Delete(old, recursive: true);
         AppLog.Write($"Quick Action “{name}” saved: {path}");
         servicesMenu.Added(name, previousName);
         refresh();
