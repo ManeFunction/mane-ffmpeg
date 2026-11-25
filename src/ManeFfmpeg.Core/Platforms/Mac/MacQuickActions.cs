@@ -31,8 +31,7 @@ public sealed partial class MacQuickActions(string servicesDirectory, Func<strin
     {
         var existing = WorkflowsOf(preset.Id).ToList();
         var previousName = existing.Select(MenuNameOf).FirstOrDefault(n => n is not null);
-        var name = MenuName(preset.Name);
-        var path = FreePath(name, existing);
+        var (path, name) = FreePath(MenuName(preset.Name), existing);
         foreach (var old in existing.Where(p => p != path))
             Directory.Delete(old, recursive: true);
         var contents = Path.Combine(path, "Contents");
@@ -116,17 +115,19 @@ public sealed partial class MacQuickActions(string servicesDirectory, Func<strin
     private static string FileName(string menuName) => menuName.Replace('/', ':');
 
     /// <summary>
-    /// "&lt;name&gt;.workflow", unless another workflow (the user's own, or another preset's) has that name already:
-    /// then "&lt;name&gt; (Mane FFmpeg).workflow", numbered if needed. The preset's own workflow can be reused.
+    /// "&lt;name&gt;.workflow" and the menu item "&lt;name&gt;", unless another workflow (the user's own, or another preset's)
+    /// has that name already: then "&lt;name&gt; (Mane FFmpeg)", numbered if needed. The menu item is renamed too, because
+    /// Finder keeps its settings by the menu item's name: two items with one name would share them, and removing one
+    /// would turn the other off. The preset's own workflow can be reused.
     /// </summary>
-    private string FreePath(string name, IReadOnlyCollection<string> own)
+    private (string Path, string MenuName) FreePath(string name, IReadOnlyCollection<string> own)
     {
         for (var n = 1; ; n++)
         {
-            var candidate = Path.Combine(servicesDirectory,
-                FileName(n switch { 1 => name, 2 => $"{name} (Mane FFmpeg)", _ => $"{name} (Mane FFmpeg {n - 1})" }) + ".workflow");
+            var menuName = n switch { 1 => name, 2 => $"{name} (Mane FFmpeg)", _ => $"{name} (Mane FFmpeg {n - 1})" };
+            var candidate = Path.Combine(servicesDirectory, FileName(menuName) + ".workflow");
             if (!Directory.Exists(candidate) && !File.Exists(candidate) || own.Contains(candidate))
-                return candidate;
+                return (candidate, menuName);
         }
     }
 

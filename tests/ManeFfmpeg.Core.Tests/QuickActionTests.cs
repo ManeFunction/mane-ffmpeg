@@ -153,7 +153,8 @@ public class QuickActionTests(FfmpegFixture media) : IClassFixture<FfmpegFixture
     [Fact]
     public void A_workflow_with_the_same_name_is_left_alone()
     {
-        var (actions, dir, _) = Workflows();
+        var calls = new List<string>();
+        var (actions, dir, _) = Workflows(calls);
         try
         {
             var mine = Path.Combine(dir, "for share (compatibility).workflow", "Contents");
@@ -167,9 +168,15 @@ public class QuickActionTests(FfmpegFixture media) : IClassFixture<FfmpegFixture
             Assert.True(Directory.Exists(audio));
             Assert.Contains("<string>NSTouchBarAudioOutputVolumeHigh</string>", File.ReadAllText(Path.Combine(audio, "Info.plist")));
             Assert.Contains("<string>NSTouchBarAudioOutputVolumeHigh</string>", File.ReadAllText(Path.Combine(audio, "document.wflow")));
+            // The menu items are named like the folders: Finder's settings for the user's item are keyed by its name.
+            Assert.Contains("<string>for share (compatibility) (Mane FFmpeg)</string>",
+                File.ReadAllText(Path.Combine(dir, "for share (compatibility) (Mane FFmpeg).workflow", "Contents", "Info.plist")));
+            Assert.Contains("<string>for share (compatibility) (Mane FFmpeg 2)</string>", File.ReadAllText(Path.Combine(audio, "Info.plist")));
             actions.Remove(Preset.Share.Id);
             actions.Remove("other");
             Assert.Equal(["for share (compatibility).workflow"], Directory.GetDirectories(dir).Select(Path.GetFileName));
+            Assert.Equal(["+for share (compatibility) (Mane FFmpeg)", "+for share (compatibility) (Mane FFmpeg 2)",
+                "-for share (compatibility) (Mane FFmpeg)", "-for share (compatibility) (Mane FFmpeg 2)"], calls);
         }
         finally
         {
