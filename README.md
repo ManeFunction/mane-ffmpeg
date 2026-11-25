@@ -56,6 +56,14 @@ Built with C#, .NET 10 and Avalonia 12.
     - **copy (w/o encode)**: `-c:v copy -c:a copy` → same container as the source
     - **copy to mp4 (w/o encode)**: `-c:v copy -c:a copy` → `.mp4`. The same stream copy, for sources in another container.
   - Add, duplicate, delete, or restore the built-ins.
+  - **Finder Quick Actions (macOS):** *Add to Quick Actions* in the presets window puts the preset in Finder's
+    right-click menu under *Quick Actions*. Choosing it converts each selected video whole with that preset (audio
+    presets save its sound) into the same folder, named like the original (`clip.mov` → `clip.mp4`; an existing file
+    is never replaced, `clip-2.mp4` is written instead). A small window shows the progress with Pause and Cancel, and
+    a notification says when it's done. Quick Actions are listed in the order they were added (after the system's
+    own), so removing and adding them again rearranges them. Each is an Automator workflow in `~/Library/Services`
+    that starts the app; it always runs the preset as it is now, follows renames (keeping its place) and is removed
+    with the preset.
 - **Export**
   - The progress bar, ETA, speed and Cancel button all stay inside the window.
   - A system notification appears when an export finishes or fails.

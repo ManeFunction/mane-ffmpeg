@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using Avalonia;
+using ManeFfmpeg.Core.Ffmpeg;
 using ManeFfmpeg.Core.Mpv;
 using ManeFfmpeg.Core.Persistence;
 
@@ -22,7 +23,8 @@ internal static class Program
             AppLog.Write($"Unobserved task exception: {e.Exception}");
             e.SetObserved();
         };
-        if (TryRelaunchForBundledMpv(args) is { } exitCode)
+        // A Quick Action conversion needs no libmpv, so it never relaunches for it.
+        if (FileConversion.Parse(args) is null && TryRelaunchForBundledMpv(args) is { } exitCode)
             return exitCode;
         AppLog.Write($"Start {typeof(Program).Assembly.GetName().Version} args=[{string.Join(", ", args)}]");
         return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);

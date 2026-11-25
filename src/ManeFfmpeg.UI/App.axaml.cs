@@ -9,6 +9,7 @@ using ManeFfmpeg.UI.Services;
 using ManeFfmpeg.UI.ViewModels;
 using ManeFfmpeg.UI.Views;
 using ManeFfmpeg.Core.Desktop;
+using ManeFfmpeg.Core.Ffmpeg;
 using ManeFfmpeg.Core.Persistence;
 using ManeFfmpeg.Core.Platforms;
 
@@ -33,6 +34,14 @@ public partial class App : Application
             desktop.ShutdownMode = ShutdownMode.OnLastWindowClose;
             var services = AppServices.Instance;
             ApplyTheme(services.Settings.Current.Theme);
+            // Started by a Finder Quick Action: only the conversion's progress window, no editor, no libmpv, no
+            // startup dialogs. Files it got also arrive as "open document" events, which aren't listened to here.
+            if (FileConversion.Parse(desktop.Args ?? []) is { } conversion)
+            {
+                desktop.MainWindow = new QuickConvertWindow(new QuickConvertViewModel(conversion));
+                base.OnFrameworkInitializationCompleted();
+                return;
+            }
             services.LoadMpv();
             AppLog.Write(Core.Mpv.MpvLibrary.IsLoaded
                 ? $"libmpv {Core.Mpv.MpvLibrary.ApiVersion} from {Core.Mpv.MpvLibrary.LoadedPath}"

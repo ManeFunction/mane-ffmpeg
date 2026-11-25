@@ -178,6 +178,11 @@ public interface IPlatform
     /// <summary>Starts the script from <see cref="WriteUpdateScript"/> in the background; it outlives this process.</summary>
     void StartUpdateScript(string script);
 
+    // Quick Actions
+
+    /// <summary>Presets in the file manager's context menu (Finder's Quick Actions), or null where the app has none.</summary>
+    IQuickActions? QuickActions { get; }
+
     // Setup
 
     /// <summary>Installs missing tools (Homebrew, winget), or null where the app doesn't offer to.</summary>

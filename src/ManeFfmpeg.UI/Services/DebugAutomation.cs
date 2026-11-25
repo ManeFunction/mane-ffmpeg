@@ -377,6 +377,17 @@ internal static class DebugAutomation
                         await SnapshotWindowAsync(presets, arg);
                         break;
                     }
+                    case "quick-action":
+                    {
+                        // quick-action <preset id>: adds or removes the preset's Finder Quick Action, as its button does
+                        var presetsVm = new PresetsViewModel();
+                        if (presetsVm.Presets.All(p => p.Id != arg))
+                            presetsVm.KindIndex = 1;
+                        presetsVm.ListSelection = presetsVm.Presets.FirstOrDefault(p => p.Id == arg);
+                        presetsVm.ToggleQuickActionCommand.Execute(null);
+                        Console.WriteLine($"[quick-action] {arg}: installed={presetsVm.IsQuickAction} button='{presetsVm.QuickActionText}' warnings='{presetsVm.Warnings}'");
+                        break;
+                    }
                     case "settings-snapshot":
                         await SnapshotWindowAsync(new SettingsWindow(), arg);
                         break;

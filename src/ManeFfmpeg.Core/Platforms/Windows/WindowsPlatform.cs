@@ -148,6 +148,9 @@ public sealed partial class WindowsPlatform : IPlatform
 
     public IToolInstaller ToolInstaller { get; } = new WingetInstaller();
 
+    // Quick Actions are a Finder feature.
+    public IQuickActions? QuickActions => null;
+
     // Windows: Avalonia's own move and resize show no torn frame here.
 
     public bool TryChangeWindowFrame(nint handle, string? handleDescriptor, double topDown, double grow) => false;

@@ -63,6 +63,8 @@ public abstract partial class UnixPlatform : IPlatform
 
     public virtual string? UpdateCannotReplaceReason(string installed) => null;
 
+    public virtual IQuickActions? QuickActions => null;
+
     public virtual bool TryChangeWindowFrame(nint handle, string? handleDescriptor, double topDown, double grow) => false;
 
     // Tools

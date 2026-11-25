@@ -1,5 +1,6 @@
 using ManeFfmpeg.UI.ViewModels;
 using ManeFfmpeg.Core.Model;
+using ManeFfmpeg.Core.Platforms;
 
 namespace ManeFfmpeg.UI.Tests;
 
@@ -198,5 +199,49 @@ public class PresetsViewModelTests
         await vm.AddCommand.ExecuteAsync(null);
         Assert.Single(asked);
         Assert.Equal(count, vm.Presets.Count);
+    }
+
+    private sealed class FakeQuickActions : IQuickActions
+    {
+        public Dictionary<string, string> Installed { get; } = [];
+        public bool IsInstalled(string presetId) => Installed.ContainsKey(presetId);
+        public void Install(Preset preset) => Installed[preset.Id] = preset.Name;
+        public void Remove(string presetId) => Installed.Remove(presetId);
+    }
+
+    [Fact]
+    public void Without_quick_actions_the_button_is_hidden()
+    {
+        Assert.False(new PresetsViewModel(quickActions: null).HasQuickActions);
+    }
+
+    [Fact]
+    public void A_preset_is_added_to_quick_actions_renamed_with_it_and_removed_with_it()
+    {
+        var actions = new FakeQuickActions();
+        var vm = new PresetsViewModel(actions);
+        Assert.True(vm.HasQuickActions);
+        vm.AddCommand.Execute(null);
+        var id = vm.Selected!.Id;
+        Assert.False(vm.IsQuickAction);
+        Assert.Equal("Add to Quick Actions", vm.QuickActionText);
+
+        vm.ToggleQuickActionCommand.Execute(null);
+        Assert.True(vm.IsQuickAction);
+        Assert.Equal("Remove from Quick Actions", vm.QuickActionText);
+        Assert.Equal("New preset", actions.Installed[id]);
+
+        vm.Name = "Renamed";
+        vm.SaveCommand.Execute(null);
+        Assert.Equal("Renamed", actions.Installed[id]);
+        Assert.True(vm.IsQuickAction);
+
+        vm.ToggleQuickActionCommand.Execute(null);
+        Assert.False(vm.IsQuickAction);
+        Assert.Empty(actions.Installed);
+
+        vm.ToggleQuickActionCommand.Execute(null);
+        vm.DeleteCommand.Execute(null);
+        Assert.Empty(actions.Installed);
     }
 }

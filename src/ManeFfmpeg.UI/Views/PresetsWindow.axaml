@@ -102,16 +102,21 @@
                                        IsVisible="{Binding Warnings, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                         </StackPanel>
                     </Border>
-                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                        <Button Content="Revert" Command="{Binding RevertCommand}" />
-                        <Button Classes="accent save" Command="{Binding SaveCommand}">
-                            <!-- Both labels are always laid out (one hidden by opacity), so the width doesn't change with the state. -->
-                            <Panel>
-                                <TextBlock Classes="unsaved" Text="Save preset" HorizontalAlignment="Center" />
-                                <TextBlock Classes="saved" Text="Preset saved" HorizontalAlignment="Center" />
-                            </Panel>
-                        </Button>
-                    </StackPanel>
+                    <DockPanel>
+                        <!-- macOS only: the preset in Finder's right-click menu, under Quick Actions. -->
+                        <Button DockPanel.Dock="Left" Content="{Binding QuickActionText}" Command="{Binding ToggleQuickActionCommand}"
+                                IsVisible="{Binding HasQuickActions}" ToolTip.Tip="{Binding QuickActionHint}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                            <Button Content="Revert" Command="{Binding RevertCommand}" />
+                            <Button Classes="accent save" Command="{Binding SaveCommand}">
+                                <!-- Both labels are always laid out (one hidden by opacity), so the width doesn't change with the state. -->
+                                <Panel>
+                                    <TextBlock Classes="unsaved" Text="Save preset" HorizontalAlignment="Center" />
+                                    <TextBlock Classes="saved" Text="Preset saved" HorizontalAlignment="Center" />
+                                </Panel>
+                            </Button>
+                        </StackPanel>
+                    </DockPanel>
                 </StackPanel>
             </ScrollViewer>
         </Grid>

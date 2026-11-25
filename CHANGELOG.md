@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Added
+- **Finder Quick Actions (macOS):** a new *Add to Quick Actions* button in the presets window, for video and audio
+  presets. Right-click videos in Finder → *Quick Actions* → the preset's name converts each whole video with it, in
+  the same folder (`clip.mov` → `clip.mp4`, or `clip-2.mp4` if that exists). A small progress window with Pause and
+  Cancel shows while it runs, and a notification says when it's done. The button turns into *Remove from Quick
+  Actions*; renaming a preset renames its Quick Action, and deleting the preset removes it. Quick Actions are enabled
+  as soon as they're added, with a speaker icon for audio presets, and are listed in the order they were added.
+
 ### Changed
 - The app remembers the last video and audio presets you chose, and whether the export button was on *Export video*
   or *Extract audio*, and starts with them after a restart. A project you open still uses the video preset saved in it.
