@@ -117,6 +117,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   admin rights or Developer Mode), so it no longer has to be restarted as administrator.
 
 ## [2.2.0] - 2026-11-18
+**🎊 First Windows release! 🎊**
+
 ### Added
 - The audio row (A1) shows a small animated "Loading…" while a clip's file is analyzed and its waveform is built,
   instead of staying empty until the waveform appears.
@@ -174,6 +176,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Labels in dropdown lists are centred in their rows; they sat 1.5 to 2.5 px high.
 
 ## [2.0.0] - 2026-11-05
+**♬ You can import end edit audio now! ♬**
+
 ### Added
 - **Files** panel (was *Videos*) with *Video* and *Audio* tabs. Audio files get their own pastel colors. Add them with
   *+ Add audio…* or *File → Add Audio…* (⇧⌘I), or drop them on the window. Dropped files without video go to the
